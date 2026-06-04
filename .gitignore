@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+backups/
+certbot/conf/archive/
+certbot/conf/live/
+certbot/conf/accounts/
