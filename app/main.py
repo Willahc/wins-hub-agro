@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, Response, Form
 from fastapi.responses import (
-    HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse,
+    HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse, FileResponse,
 )
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -13,6 +13,7 @@ from pdf_generator import gerar_parecer_pdf
 import external_apis
 import psycopg2
 import psycopg2.extras
+from psycopg2 import pool as pgpool
 import logging
 import io
 import os
@@ -25,13 +26,32 @@ templates = Jinja2Templates(directory="frontend")
 
 
 @app.middleware("http")
-async def require_auth_for_api(request: Request, call_next):
-    """Exige sessão válida para todas as rotas /api/* (dados sensíveis e PII)."""
-    if request.url.path.startswith("/api/"):
+async def request_pipeline(request: Request, call_next):
+    """Exige sessão válida em /api/* (dados sensíveis/PII) e aplica cache longo
+    nos assets versionados de /static/vendor/."""
+    path = request.url.path
+    if path.startswith("/api/"):
         token = request.cookies.get("access_token")
         if not token or decode_token(token) is None:
             return JSONResponse({"error": "Não autenticado"}, status_code=401)
-    return await call_next(request)
+    response = await call_next(request)
+    if path.startswith("/static/vendor/"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
+
+
+@app.get("/sw.js")
+async def service_worker():
+    return FileResponse(
+        "frontend/sw.js", media_type="application/javascript",
+        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
+    )
+
+
+@app.get("/manifest.webmanifest")
+async def manifest():
+    return FileResponse("frontend/manifest.webmanifest",
+                        media_type="application/manifest+json")
 
 
 def _error(e):
@@ -64,34 +84,62 @@ PRIORIDADE_DEP = {
 }
 
 
+# Pool de conexões (reaproveita conexões em vez de abrir uma nova por query).
+_POOL = None
+
+
+def _get_pool():
+    global _POOL
+    if _POOL is None:
+        _POOL = pgpool.ThreadedConnectionPool(1, 12, **DB_CONFIG)
+    return _POOL
+
+
+def _fetch(sql, params, dict_rows):
+    """Executa um SELECT usando o pool. Só leitura -> autocommit (sem transações
+    pendentes). Em conexão morta (OperationalError), descarta e tenta 1x de novo."""
+    pool = _get_pool()
+    err = None
+    for _ in range(2):
+        conn = pool.getconn()
+        try:
+            conn.autocommit = True
+            cur = (conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                   if dict_rows else conn.cursor())
+            cur.execute(sql, params or {})
+            rows = cur.fetchall()
+            pool.putconn(conn)
+            return rows
+        except psycopg2.OperationalError as e:
+            err = e
+            try:
+                pool.putconn(conn, close=True)  # conexão morta -> remove do pool
+            except Exception:
+                pass
+        except Exception:
+            try:
+                pool.putconn(conn)
+            except Exception:
+                pass
+            raise
+    raise err
+
+
 def query(sql, params=None):
     """Run a SELECT and return a list of dict rows (decimals cast to float)."""
-    conn = psycopg2.connect(**DB_CONFIG)
-    try:
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute(sql, params or {})
-        rows = cur.fetchall()
-        result = []
-        for row in rows:
-            d = dict(row)
-            for k, v in d.items():
-                # JSON-serialize numeric/Decimal as float
-                if v.__class__.__name__ == "Decimal":
-                    d[k] = float(v)
-            result.append(d)
-        return result
-    finally:
-        conn.close()
+    result = []
+    for row in _fetch(sql, params, True):
+        d = dict(row)
+        for k, v in d.items():
+            # JSON-serialize numeric/Decimal as float
+            if v.__class__.__name__ == "Decimal":
+                d[k] = float(v)
+        result.append(d)
+    return result
 
 
 def scalar(sql, params=None):
-    conn = psycopg2.connect(**DB_CONFIG)
-    try:
-        cur = conn.cursor()
-        cur.execute(sql, params or {})
-        return cur.fetchone()[0]
-    finally:
-        conn.close()
+    return _fetch(sql, params, False)[0][0]
 
 
 def get_current_user(request: Request):
@@ -145,19 +193,19 @@ async def logout():
 @app.get("/api/stats")
 async def stats():
     try:
-        return {
-            "reprodutores": scalar("SELECT COUNT(*) FROM mercado.reprodutor"),
-            "avaliacoes": scalar("SELECT COUNT(*) FROM mercado.avaliacao"),
-            "centrais": scalar("SELECT COUNT(*) FROM catalogo.central"),
-            "ofertas": scalar("SELECT COUNT(*) FROM mercado.touro_oferta"),
-            "municipios": scalar(
-                "SELECT COUNT(*) FROM prospeccao.v_white_space_pecuaria"
-            ),
-            "desertos_vet": scalar(
-                "SELECT COUNT(*) FROM prospeccao.v_white_space_pecuaria "
-                "WHERE classificacao_vet = 'DESERTO VET'"
-            ),
-        }
+        # uma única ida ao banco (era 6 conexões/queries separadas)
+        return query(
+            """
+            SELECT
+              (SELECT COUNT(*) FROM mercado.reprodutor)            AS reprodutores,
+              (SELECT COUNT(*) FROM mercado.avaliacao)             AS avaliacoes,
+              (SELECT COUNT(*) FROM catalogo.central)              AS centrais,
+              (SELECT COUNT(*) FROM mercado.touro_oferta)          AS ofertas,
+              (SELECT COUNT(*) FROM prospeccao.v_white_space_pecuaria) AS municipios,
+              (SELECT COUNT(*) FROM prospeccao.v_white_space_pecuaria
+                 WHERE classificacao_vet = 'DESERTO VET')          AS desertos_vet
+            """
+        )[0]
     except Exception as e:
         return _error(e)
 
@@ -518,18 +566,31 @@ async def touro_detalhe(touro_id: int):
 @app.get("/api/racas/todas")
 async def racas_todas():
     try:
+        # Pré-agrega cada contagem separadamente p/ evitar a explosão de linhas
+        # do JOIN reprodutor×avaliacao×oferta (era ~989k linhas / 880ms -> ~10ms).
         return query(
             """
             SELECT ra.id, ra.sigla, ra.nome,
-                   COUNT(DISTINCT r.id) AS reprodutores,
-                   COUNT(DISTINCT av.reprodutor_id) AS com_avaliacao,
-                   COUNT(DISTINCT o.reprodutor_id) AS com_oferta
+                   rc.cnt AS reprodutores,
+                   COALESCE(ac.cnt, 0) AS com_avaliacao,
+                   COALESCE(oc.cnt, 0) AS com_oferta
             FROM catalogo.raca ra
-            LEFT JOIN mercado.reprodutor r ON r.raca_id = ra.id
-            LEFT JOIN mercado.avaliacao av ON av.reprodutor_id = r.id
-            LEFT JOIN mercado.touro_oferta o ON o.reprodutor_id = r.id
-            GROUP BY ra.id, ra.sigla, ra.nome
-            HAVING COUNT(DISTINCT r.id) > 0
+            JOIN (
+                SELECT raca_id, COUNT(*) AS cnt
+                FROM mercado.reprodutor GROUP BY raca_id
+            ) rc ON rc.raca_id = ra.id
+            LEFT JOIN (
+                SELECT r.raca_id, COUNT(DISTINCT a.reprodutor_id) AS cnt
+                FROM mercado.avaliacao a
+                JOIN mercado.reprodutor r ON r.id = a.reprodutor_id
+                GROUP BY r.raca_id
+            ) ac ON ac.raca_id = ra.id
+            LEFT JOIN (
+                SELECT r.raca_id, COUNT(DISTINCT o.reprodutor_id) AS cnt
+                FROM mercado.touro_oferta o
+                JOIN mercado.reprodutor r ON r.id = o.reprodutor_id
+                GROUP BY r.raca_id
+            ) oc ON oc.raca_id = ra.id
             ORDER BY reprodutores DESC
             """
         )
@@ -643,26 +704,28 @@ async def marketplace(uf: str = None, segmento: str = "corte"):
             """,
             {"uf": uf},
         )
+        # melhor oferta por touro (menor preço) já ordenada por IQGg e limitada no SQL
         oferta_top = query(
             """
-            SELECT DISTINCT ON (r.id) r.id, r.nome, c.nome AS central,
-                   r.fazenda_origem, o.preco_dose_brl AS preco_dose, iq.valor AS iqgg
-            FROM mercado.reprodutor r
-            JOIN mercado.touro_oferta o ON o.reprodutor_id = r.id
-            JOIN catalogo.central c ON c.id = o.central_id
-            JOIN (
-                SELECT reprodutor_id, MAX(valor) AS valor
-                FROM mercado.avaliacao WHERE caracteristica_id = %(iqgg)s
-                GROUP BY reprodutor_id
-            ) iq ON iq.reprodutor_id = r.id
-            WHERE o.preco_dose_brl > 0
-            ORDER BY r.id, o.preco_dose_brl ASC
+            SELECT * FROM (
+                SELECT DISTINCT ON (r.id) r.id, r.nome, c.nome AS central,
+                       r.fazenda_origem, o.preco_dose_brl AS preco_dose, iq.valor AS iqgg
+                FROM mercado.reprodutor r
+                JOIN mercado.touro_oferta o ON o.reprodutor_id = r.id
+                JOIN catalogo.central c ON c.id = o.central_id
+                JOIN (
+                    SELECT reprodutor_id, MAX(valor) AS valor
+                    FROM mercado.avaliacao WHERE caracteristica_id = %(iqgg)s
+                    GROUP BY reprodutor_id
+                ) iq ON iq.reprodutor_id = r.id
+                WHERE o.preco_dose_brl > 0
+                ORDER BY r.id, o.preco_dose_brl ASC
+            ) sub
+            ORDER BY iqgg DESC NULLS LAST
+            LIMIT 10
             """,
             {"iqgg": IQGG_ID},
         )
-        oferta_top = sorted(
-            oferta_top, key=lambda t: (t.get("iqgg") or 0), reverse=True
-        )[:10]
         return {
             "segmento": segmento,
             "uf": uf,
