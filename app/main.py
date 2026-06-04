@@ -762,6 +762,112 @@ async def mapa(uf: str = None, min_bovinos: int = 20000):
 
 
 # ---------------------------------------------------------------------------
+# Demanda & Expansão — inteligência de mercado a partir de dados antes ociosos:
+#   PPM/IBGE (rebanho por município, 2020-2023) -> tendência
+#   MapBiomas (pastagem por município) + PPM     -> taxa de lotação
+#   CNPJ sócios                                   -> grandes grupos (multi-fazenda)
+# ---------------------------------------------------------------------------
+@app.get("/api/demanda/tendencia")
+async def demanda_tendencia(uf: str = None, limit: int = 200, min_reb: int = 30000):
+    """Municípios por crescimento de rebanho bovino 2020->2023 (com lat/long p/ mapa)."""
+    try:
+        return query(
+            """
+            WITH t AS (
+                SELECT codigo_ibge_mun,
+                    MAX(efetivo_cabecas) FILTER (WHERE ano_referencia = 2020) AS c20,
+                    MAX(efetivo_cabecas) FILTER (WHERE ano_referencia = 2023) AS c23
+                FROM prospeccao.ppm_municipio
+                WHERE especie_codigo = 'BOV'
+                GROUP BY codigo_ibge_mun
+            )
+            SELECT m.nome AS municipio, m.uf,
+                   m.latitude AS lat, m.longitude AS lng,
+                   t.c23 AS rebanho, t.c20 AS rebanho_2020,
+                   ROUND(100.0 * (t.c23 - t.c20) / NULLIF(t.c20, 0), 1) AS crescimento_pct
+            FROM t
+            JOIN referencia.municipio m ON m.codigo_ibge = t.codigo_ibge_mun::int
+            WHERE t.c20 > 0 AND t.c23 >= %(min_reb)s
+              AND (%(uf)s IS NULL OR m.uf = %(uf)s)
+            ORDER BY crescimento_pct DESC
+            LIMIT %(limit)s
+            """,
+            {"uf": uf, "limit": min(limit, 1500), "min_reb": min_reb},
+        )
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/demanda/lotacao")
+async def demanda_lotacao(uf: str = None, limit: int = 50):
+    """Taxa de lotação (cabeças/ha) cruzando rebanho (PPM) x pastagem (MapBiomas).
+    Menor lotação + muita pastagem = pasto ocioso -> potencial de expansão do rebanho."""
+    try:
+        return query(
+            """
+            WITH past AS (
+                SELECT lower(municipio) AS m, state_acronym AS uf, SUM(area_ha) AS ha
+                FROM cobertura.mapbiomas_municipio
+                WHERE class_level_2 = '3.1. Pasture' AND ano = 2024
+                GROUP BY 1, 2
+            ),
+            herd AS (
+                SELECT lower(m.nome) AS nm, m.uf,
+                       m.latitude AS lat, m.longitude AS lng, m.nome AS nome,
+                       MAX(p.efetivo_cabecas) AS cab
+                FROM prospeccao.ppm_municipio p
+                JOIN referencia.municipio m ON m.codigo_ibge = p.codigo_ibge_mun::int
+                WHERE p.especie_codigo = 'BOV' AND p.ano_referencia = 2023
+                GROUP BY 1, 2, 3, 4, 5
+            )
+            SELECT h.nome AS municipio, h.uf, h.lat, h.lng,
+                   h.cab AS rebanho, ROUND(pa.ha) AS pastagem_ha,
+                   ROUND(h.cab / NULLIF(pa.ha, 0), 2) AS lotacao
+            FROM herd h
+            JOIN past pa ON pa.m = h.nm AND pa.uf = h.uf
+            WHERE pa.ha > 20000 AND h.cab > 20000
+              AND (%(uf)s IS NULL OR h.uf = %(uf)s)
+            ORDER BY lotacao ASC
+            LIMIT %(limit)s
+            """,
+            {"uf": uf, "limit": min(limit, 200)},
+        )
+    except Exception as e:
+        return _error(e)
+
+
+_WHALES_CACHE = {}
+
+
+@app.get("/api/demanda/whales")
+async def demanda_whales(uf: str = None, limit: int = 40):
+    """Sócios que controlam várias empresas rurais (grandes grupos = alvo B2B premium).
+    Cacheado: a base CNPJ é estática entre ingestões."""
+    try:
+        key = uf or "BR"
+        if key not in _WHALES_CACHE:
+            _WHALES_CACHE[key] = query(
+                """
+                SELECT s.nome_socio AS socio,
+                       COUNT(DISTINCT s.cnpj_basico) AS fazendas,
+                       string_agg(DISTINCT e.uf, ', ' ORDER BY e.uf) AS ufs
+                FROM cnpj.socio_rural s
+                JOIN cnpj.estabelecimento_rural e ON e.cnpj_basico = s.cnpj_basico
+                WHERE s.nome_socio IS NOT NULL
+                  AND (%(uf)s IS NULL OR e.uf = %(uf)s)
+                GROUP BY s.nome_socio
+                HAVING COUNT(DISTINCT s.cnpj_basico) >= 5
+                ORDER BY fazendas DESC
+                LIMIT 200
+                """,
+                {"uf": uf},
+            )
+        return _WHALES_CACHE[key][: min(limit, 200)]
+    except Exception as e:
+        return _error(e)
+
+
+# ---------------------------------------------------------------------------
 # Dados abertos via API externa (IBGE/SIDRA, BrasilAPI, Banco Central)
 # ---------------------------------------------------------------------------
 @app.get("/api/externo/leite")

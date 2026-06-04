@@ -252,6 +252,9 @@
             <div class="nav-item" :class="{active: section==='marketplace'}" @click="go('marketplace')">
                 <span class="ico">🛒</span> Marketplace
             </div>
+            <div class="nav-item" :class="{active: section==='demanda'}" @click="go('demanda')">
+                <span class="ico">📈</span> Demanda
+            </div>
             <div class="nav-item" :class="{active: section==='mapa'}" @click="go('mapa')">
                 <span class="ico">🗺️</span> Mapa
             </div>
@@ -582,6 +585,79 @@
                 </template>
             </section>
 
+            <!-- ============ DEMANDA & EXPANSÃO ============ -->
+            <section x-show="section==='demanda'">
+                <h2>📈 Demanda & Expansão</h2>
+                <p class="subtitle">Onde está e para onde vai a demanda — de dados antes ociosos: rebanho IBGE/PPM (2020–2023), pastagem MapBiomas e sócios da base CNPJ.</p>
+                <div class="toolbar">
+                    <label>UF:</label>
+                    <select x-model="demUf" @change="loadDemanda()">
+                        <option value="">Brasil (todas)</option>
+                        <template x-for="u in ufs" :key="u"><option :value="u" x-text="u"></option></template>
+                    </select>
+                </div>
+
+                <h2 style="font-size:17px;">🐂 Rebanho em expansão (2020 → 2023)</h2>
+                <p class="subtitle">Municípios cujo rebanho bovino mais cresceu — a fronteira da demanda por genética.</p>
+                <div class="card" style="margin:10px 0 28px;">
+                    <div class="loading" x-show="loading.demanda">Carregando…</div>
+                    <table x-show="!loading.demanda && tendencia.length">
+                        <thead><tr><th>Município</th><th>UF</th><th>Rebanho 2023</th><th>Crescimento</th></tr></thead>
+                        <tbody>
+                            <template x-for="(r,i) in tendencia.slice(0,15)" :key="'t'+i">
+                                <tr>
+                                    <td data-label="Município" x-text="r.municipio"></td>
+                                    <td data-label="UF" x-text="r.uf"></td>
+                                    <td data-label="Rebanho 2023" class="num" x-text="fmt(r.rebanho)"></td>
+                                    <td data-label="Crescimento" class="num"><span class="badge normal" x-text="'+'+Number(r.crescimento_pct).toFixed(0)+'%'"></span></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    <div class="empty" x-show="!loading.demanda && !tendencia.length">Sem dados para este filtro.</div>
+                </div>
+
+                <h2 style="font-size:17px;">🌱 Maior potencial de lotação (pasto ocioso)</h2>
+                <p class="subtitle">Muita pastagem e poucas cabeças por hectare = espaço para crescer o rebanho. Lotação = cabeças ÷ ha de pasto (MapBiomas × IBGE).</p>
+                <div class="card" style="margin:10px 0 28px;">
+                    <div class="loading" x-show="loading.demanda">Carregando…</div>
+                    <table x-show="!loading.demanda && lotacao.length">
+                        <thead><tr><th>Município</th><th>UF</th><th>Rebanho</th><th>Pastagem (ha)</th><th>Lotação (cab/ha)</th></tr></thead>
+                        <tbody>
+                            <template x-for="(r,i) in lotacao.slice(0,15)" :key="'l'+i">
+                                <tr>
+                                    <td data-label="Município" x-text="r.municipio"></td>
+                                    <td data-label="UF" x-text="r.uf"></td>
+                                    <td data-label="Rebanho" class="num" x-text="fmt(r.rebanho)"></td>
+                                    <td data-label="Pastagem (ha)" class="num" x-text="fmt(r.pastagem_ha)"></td>
+                                    <td data-label="Lotação" class="num"><span class="badge baixa" x-text="Number(r.lotacao).toFixed(2)"></span></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    <div class="empty" x-show="!loading.demanda && !lotacao.length">Sem dados para este filtro.</div>
+                </div>
+
+                <h2 style="font-size:17px;">🐋 Grandes grupos — sócios com várias fazendas</h2>
+                <p class="subtitle">Quem controla muitas empresas rurais (alvo B2B premium: um negócio, muitas fazendas). ⚠️ Nomes muito comuns podem somar homônimos — confirme pelo CNPJ.</p>
+                <div class="card" style="margin-top:10px;">
+                    <div class="loading" x-show="loading.demanda">Carregando…</div>
+                    <table x-show="!loading.demanda && whales.length">
+                        <thead><tr><th>Sócio</th><th>Fazendas</th><th>UFs</th></tr></thead>
+                        <tbody>
+                            <template x-for="(r,i) in whales.slice(0,20)" :key="'w'+i">
+                                <tr>
+                                    <td data-label="Sócio" x-text="r.socio"></td>
+                                    <td data-label="Fazendas" class="num" x-text="r.fazendas"></td>
+                                    <td data-label="UFs" x-text="r.ufs"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    <div class="empty" x-show="!loading.demanda && !whales.length">Sem grupos para este filtro.</div>
+                </div>
+            </section>
+
             <!-- ============ MAPA ============ -->
             <section x-show="section==='mapa'">
                 <h2>🗺️ Mapa — Rebanho & Cobertura Veterinária</h2>
@@ -590,6 +666,7 @@
                     <label>Camada:</label>
                     <select x-model="mapLayer" @change="loadMapa()">
                         <option value="rebanho">Rebanho & cobertura vet</option>
+                        <option value="tendencia">Crescimento do rebanho 2020→2023</option>
                         <option value="leite">Produção de leite (IBGE)</option>
                         <option value="valor">Valor da produção R$ (IBGE)</option>
                     </select>
@@ -614,6 +691,10 @@
                     </span>
                     <span style="font-size:13px;color:#777;" x-show="mapLayer==='valor'">
                         <span style="color:#b8860b;font-weight:700">●</span> Valor da produção animal (tamanho ∝ R$)
+                    </span>
+                    <span style="font-size:13px;color:#777;" x-show="mapLayer==='tendencia'">
+                        <span style="color:#1b7837;font-weight:700">●</span> rebanho subindo
+                        <span style="color:#c62828;font-weight:700;margin-left:10px">●</span> caindo (2020→2023, tamanho ∝ rebanho)
                     </span>
                 </div>
                 <div class="card" style="padding:0;">
@@ -766,13 +847,14 @@
                 ufFilter: '', racaFilter: '',
                 pageIdx: { whitespace: 0, arbitragem: 0 },
                 pageSize: 20,
-                loading: { whitespace: false, arbitragem: false, centrais: false, fazendas: false, matching: false, marketplace: false, mercado: false },
+                loading: { whitespace: false, arbitragem: false, centrais: false, fazendas: false, matching: false, marketplace: false, mercado: false, demanda: false },
                 loaded: {},
                 match: { finalidade: 'corte', prioridade: 'geral', uf: '', orcamento_max: null, raca_id: null, sexado: false },
                 matchResult: [], matchRan: false,
                 perfilAtual: null, exportando: false,
                 racasTodas: [],
                 mkt: { segmento: 'corte', uf: '' }, marketplace: null, leads: [],
+                demUf: '', tendencia: [], lotacao: [], whales: [],
                 mapUf: '', mapMin: 100000, mapLayer: 'rebanho', _map: null, _mapLayer: null,
                 touroModal: false, touro: null, _radar: null,
                 mercado: null, _chLeite: null, _chRebanho: null, _chAbate: null,
@@ -791,6 +873,7 @@
                     if (s === 'arbitragem' && !this.loaded.arbitragem) this.loadArbitragem();
                     if (s === 'rankings' && !this.loaded.rankings) { this.loadCentrais(); this.loadFazendas(); this.loaded.rankings = true; }
                     if (s === 'marketplace' && !this.loaded.marketplace) { this.loadMarketplace(); this.loaded.marketplace = true; }
+                    if (s === 'demanda' && !this.loaded.demanda) { this.loadDemanda(); this.loaded.demanda = true; }
                     if (s === 'mapa') { this.$nextTick(() => this.loadMapa()); }
                     if (s === 'mercado' && !this.loaded.mercado) { this.loadMercado(); this.loaded.mercado = true; }
                 },
@@ -896,6 +979,21 @@
                     return ({ '01': 'ME', '03': 'EPP', '05': 'Demais' })[p] || '—';
                 },
 
+                // ---- Demanda & Expansão ----
+                async loadDemanda() {
+                    this.loading.demanda = true;
+                    const q = this.demUf ? ('?uf=' + this.demUf) : '';
+                    const [t, l, w] = await Promise.all([
+                        fetch('/api/demanda/tendencia' + q).then(r => r.json()),
+                        fetch('/api/demanda/lotacao' + q).then(r => r.json()),
+                        fetch('/api/demanda/whales' + q).then(r => r.json()),
+                    ]);
+                    this.tendencia = Array.isArray(t) ? t : [];
+                    this.lotacao = Array.isArray(l) ? l : [];
+                    this.whales = Array.isArray(w) ? w : [];
+                    this.loading.demanda = false;
+                },
+
                 // ---- Mapa (Leaflet) ----
                 async loadMapa() {
                     if (typeof L === 'undefined') return;
@@ -932,6 +1030,21 @@
                                 radius: r, color: '#b8860b', fillColor: '#d4a017', fillOpacity: 0.55, weight: 1
                             }).bindPopup(
                                 `<b>${p.municipio} (${p.uf})</b><br>Valor produção: R$ ${Number(p.valor_mil_reais).toLocaleString('pt-BR')} mil/ano`
+                            ).addTo(group);
+                        });
+                    } else if (this.mapLayer === 'tendencia') {
+                        const qs = (this.mapUf ? `?uf=${this.mapUf}&` : '?') + `min_reb=30000`;
+                        pts = await (await fetch('/api/demanda/tendencia' + qs)).json();
+                        (Array.isArray(pts) ? pts : []).forEach(p => {
+                            if (p.lat == null || p.lng == null) return;
+                            const g = Number(p.crescimento_pct);
+                            const color = g >= 30 ? '#1b7837' : g >= 0 ? '#7fbf7b' : g >= -20 ? '#d9a441' : '#c62828';
+                            const r = Math.max(4, Math.min(20, Math.sqrt(p.rebanho) / 90));
+                            L.circleMarker([p.lat, p.lng], {
+                                radius: r, color, fillColor: color, fillOpacity: 0.6, weight: 1
+                            }).bindPopup(
+                                `<b>${p.municipio} (${p.uf})</b><br>Rebanho 2023: ${Number(p.rebanho).toLocaleString('pt-BR')}<br>`
+                                + `<b style="color:${color}">${g >= 0 ? '+' : ''}${g}%</b> vs 2020`
                             ).addTo(group);
                         });
                     } else {
