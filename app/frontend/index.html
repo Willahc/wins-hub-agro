@@ -147,11 +147,55 @@
         .pager button:disabled { opacity: .4; cursor: default; }
         .loading { padding: 40px; text-align: center; color: #aaa; font-size: 16px; }
         .empty { padding: 30px; text-align: center; color: #999; }
+
+        /* ---------- Menu mobile (hambúrguer + drawer) ---------- */
+        .hamburger {
+            display: none; background: none; border: none; color: white;
+            font-size: 24px; cursor: pointer; line-height: 1; padding: 0;
+        }
+        .nav-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 19; }
+
+        @media (max-width: 768px) {
+            header { padding: 14px 16px; }
+            header h1 { font-size: 17px; }
+            .user-info { font-size: 13px; gap: 10px; }
+            .hamburger { display: block; }
+
+            /* sidebar vira gaveta deslizante */
+            .sidebar {
+                position: fixed; top: 0; left: 0; height: 100vh; z-index: 20;
+                transform: translateX(-100%); transition: transform .25s ease;
+                box-shadow: 2px 0 16px rgba(0,0,0,.25); padding-top: 16px; overflow-y: auto;
+            }
+            .sidebar.open { transform: translateX(0); }
+            .nav-item { padding: 16px 22px; }
+
+            .content { padding: 18px 14px; }
+            h2 { font-size: 19px; }
+            .subtitle { font-size: 13px; margin-bottom: 18px; }
+            .kpi { padding: 18px; }
+            .kpi .value { font-size: 26px; }
+
+            /* tabelas largas: rolam dentro do card, sem estourar a tela */
+            .card { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+            table { min-width: 560px; }
+            table.mini { min-width: 0; }
+
+            .toolbar { gap: 10px; }
+            .form-grid { grid-template-columns: 1fr; }
+            .run-btn { width: 100%; }
+            #map { height: 62vh !important; }
+            .modal-cols { grid-template-columns: 1fr; }
+            .modal-body { padding: 18px; }
+        }
     </style>
 </head>
 <body x-data="hub()" x-init="init()">
     <header>
-        <h1>WiNS Hub <span class="brand">Agro</span></h1>
+        <div style="display:flex;align-items:center;gap:14px;">
+            <button class="hamburger" @click="mobileNav = !mobileNav" aria-label="Abrir menu">☰</button>
+            <h1>WiNS Hub <span class="brand">Agro</span></h1>
+        </div>
         <div class="user-info">
             <span>Olá, {{ user.name }}</span>
             <a href="/logout" class="logout">Sair</a>
@@ -159,7 +203,8 @@
     </header>
 
     <div class="layout">
-        <nav class="sidebar">
+        <div class="nav-overlay" x-show="mobileNav" @click="mobileNav=false" style="display:none;"></div>
+        <nav class="sidebar" :class="{open: mobileNav}">
             <div class="nav-item" :class="{active: section==='visao'}" @click="go('visao')">
                 <span class="ico">📊</span> Visão Geral
             </div>
@@ -680,6 +725,7 @@
         function hub() {
             return {
                 section: 'visao',
+                mobileNav: false,
                 stats: {},
                 ufs: [], racas: [],
                 whitespace: [], arbitragem: [], centrais: [], fazendas: [],
@@ -706,6 +752,7 @@
                 },
                 go(s) {
                     this.section = s;
+                    this.mobileNav = false;
                     if (s === 'whitespace' && !this.loaded.whitespace) this.loadWhitespace();
                     if (s === 'arbitragem' && !this.loaded.arbitragem) this.loadArbitragem();
                     if (s === 'rankings' && !this.loaded.rankings) { this.loadCentrais(); this.loadFazendas(); this.loaded.rankings = true; }
