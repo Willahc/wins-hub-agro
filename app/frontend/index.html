@@ -176,10 +176,36 @@
             .kpi { padding: 18px; }
             .kpi .value { font-size: 26px; }
 
-            /* tabelas largas: rolam dentro do card, sem estourar a tela */
-            .card { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-            table { min-width: 560px; }
-            table.mini { min-width: 0; }
+            /* tabelas viram CARTÕES empilhados: cada linha = um card com rótulo:valor,
+               tudo visível sem arrastar para o lado. (.mini, dos modais, fica como está) */
+            .card { overflow-x: visible; }
+            table:not(.mini) thead { display: none; }
+            table:not(.mini), table:not(.mini) tbody { display: block; width: 100%; }
+            table:not(.mini) tr {
+                display: block; margin: 12px; padding: 4px 0;
+                border: 1px solid #e6ece6; border-radius: 10px; background: #fff;
+                box-shadow: 0 1px 4px rgba(0,0,0,.04);
+            }
+            table:not(.mini) td {
+                display: flex; justify-content: space-between; align-items: center; gap: 14px;
+                padding: 10px 14px; border: none; border-top: 1px solid #f2f5f2;
+                text-align: right; overflow-wrap: anywhere;
+            }
+            table:not(.mini) td::before {
+                content: attr(data-label); flex: 0 0 40%; text-align: left;
+                font-size: 11px; font-weight: 700; text-transform: uppercase;
+                letter-spacing: .03em; color: #6b7a6b;
+            }
+            /* 1ª célula = título do cartão: rótulo em cima, valor em largura cheia */
+            table:not(.mini) td:first-child {
+                display: block; text-align: left; border-top: none;
+                padding: 12px 14px 8px; font-size: 15px; font-weight: 700; color: #1a3a1a;
+            }
+            table:not(.mini) td:first-child::before { display: block; flex: none; margin-bottom: 3px; }
+            /* células de ação (ficha/CNPJ, sem rótulo): só o botão, sem espaço vazio */
+            table:not(.mini) td[data-label=""]::before { display: none; }
+            table:not(.mini) td:empty { display: none; }
+            .best td:first-child::before { content: "★ " attr(data-label); }
 
             .toolbar { gap: 10px; }
             .form-grid { grid-template-columns: 1fr; }
@@ -269,11 +295,11 @@
                                 <tbody>
                                     <template x-for="row in page(whitespace, 'whitespace')" :key="row.municipio_nome + row.uf">
                                         <tr>
-                                            <td x-text="row.municipio_nome"></td>
-                                            <td x-text="row.uf"></td>
-                                            <td class="num" x-text="fmt(row.total_bovinos)"></td>
-                                            <td class="num" x-text="fmt(row.cnpj_vet)"></td>
-                                            <td><span class="badge" :class="badgeClass(row.classificacao_vet)" x-text="row.classificacao_vet"></span></td>
+                                            <td data-label="Município" x-text="row.municipio_nome"></td>
+                                            <td data-label="UF" x-text="row.uf"></td>
+                                            <td data-label="Bovinos" class="num" x-text="fmt(row.total_bovinos)"></td>
+                                            <td data-label="Estab. Vet" class="num" x-text="fmt(row.cnpj_vet)"></td>
+                                            <td data-label="Classificação"><span class="badge" :class="badgeClass(row.classificacao_vet)" x-text="row.classificacao_vet"></span></td>
                                         </tr>
                                     </template>
                                 </tbody>
@@ -312,12 +338,12 @@
                                 <tbody>
                                     <template x-for="(row, i) in page(arbitragem, 'arbitragem')" :key="row.registro + row.central + i">
                                         <tr :class="{best: row.preco_por_iqgg !== null && pageIdx.arbitragem===0 && i<3}">
-                                            <td x-text="row.nome_touro"></td>
-                                            <td x-text="row.raca"></td>
-                                            <td x-text="row.central"></td>
-                                            <td class="num" x-text="brl(row.preco_convencional)"></td>
-                                            <td class="num" x-text="row.iqgg !== null ? Number(row.iqgg).toFixed(2) : '—'"></td>
-                                            <td class="num" x-text="row.preco_por_iqgg !== null ? brl(row.preco_por_iqgg) : '—'"></td>
+                                            <td data-label="Touro" x-text="row.nome_touro"></td>
+                                            <td data-label="Raça" x-text="row.raca"></td>
+                                            <td data-label="Central" x-text="row.central"></td>
+                                            <td data-label="Preço dose" class="num" x-text="brl(row.preco_convencional)"></td>
+                                            <td data-label="IQGg" class="num" x-text="row.iqgg !== null ? Number(row.iqgg).toFixed(2) : '—'"></td>
+                                            <td data-label="R$/IQGg" class="num" x-text="row.preco_por_iqgg !== null ? brl(row.preco_por_iqgg) : '—'"></td>
                                         </tr>
                                     </template>
                                 </tbody>
@@ -346,10 +372,10 @@
                         <tbody>
                             <template x-for="row in centrais" :key="row.central">
                                 <tr>
-                                    <td x-text="row.central"></td>
-                                    <td class="num" x-text="fmt(row.total_touros)"></td>
-                                    <td class="num" x-text="fmt(row.total_ofertas)"></td>
-                                    <td class="num" x-text="row.preco_medio !== null ? brl(row.preco_medio) : '—'"></td>
+                                    <td data-label="Central" x-text="row.central"></td>
+                                    <td data-label="Touros" class="num" x-text="fmt(row.total_touros)"></td>
+                                    <td data-label="Ofertas" class="num" x-text="fmt(row.total_ofertas)"></td>
+                                    <td data-label="Preço médio" class="num" x-text="row.preco_medio !== null ? brl(row.preco_medio) : '—'"></td>
                                 </tr>
                             </template>
                         </tbody>
@@ -364,9 +390,9 @@
                         <tbody>
                             <template x-for="row in fazendas" :key="row.fazenda_origem">
                                 <tr>
-                                    <td x-text="row.fazenda_origem"></td>
-                                    <td class="num" x-text="fmt(row.total_reprodutores)"></td>
-                                    <td class="num" x-text="row.iqgg_medio !== null ? Number(row.iqgg_medio).toFixed(2) : '—'"></td>
+                                    <td data-label="Fazenda" x-text="row.fazenda_origem"></td>
+                                    <td data-label="Reprodutores" class="num" x-text="fmt(row.total_reprodutores)"></td>
+                                    <td data-label="IQGg médio" class="num" x-text="row.iqgg_medio !== null ? Number(row.iqgg_medio).toFixed(2) : '—'"></td>
                                 </tr>
                             </template>
                         </tbody>
@@ -447,14 +473,14 @@
                                 <tbody>
                                     <template x-for="row in matchResult" :key="row.id">
                                         <tr style="cursor:pointer" @click="abrirTouro(row.id)" title="Ver ficha completa">
-                                            <td><span class="badge" :class="scoreClass(row.score)" x-text="Number(row.score).toFixed(3)"></span></td>
-                                            <td x-text="row.nome"></td>
-                                            <td x-text="row.raca"></td>
-                                            <td x-text="row.central"></td>
-                                            <td class="num" x-text="brl(row.preco_dose)"></td>
-                                            <td class="num" x-text="row.iqgg !== null ? Number(row.iqgg).toFixed(2) : '—'"></td>
-                                            <td class="num" x-text="row.dep_prioritaria !== null ? Number(row.dep_prioritaria).toFixed(2) : '—'"></td>
-                                            <td class="num" x-text="row.preco_por_iqgg !== null ? brl(row.preco_por_iqgg) : '—'"></td>
+                                            <td data-label="Score"><span class="badge" :class="scoreClass(row.score)" x-text="Number(row.score).toFixed(3)"></span></td>
+                                            <td data-label="Touro" x-text="row.nome"></td>
+                                            <td data-label="Raça" x-text="row.raca"></td>
+                                            <td data-label="Central" x-text="row.central"></td>
+                                            <td data-label="Preço dose" class="num" x-text="brl(row.preco_dose)"></td>
+                                            <td data-label="IQGg" class="num" x-text="row.iqgg !== null ? Number(row.iqgg).toFixed(2) : '—'"></td>
+                                            <td data-label="DEP prior." class="num" x-text="row.dep_prioritaria !== null ? Number(row.dep_prioritaria).toFixed(2) : '—'"></td>
+                                            <td data-label="R$/IQGg" class="num" x-text="row.preco_por_iqgg !== null ? brl(row.preco_por_iqgg) : '—'"></td>
                                         </tr>
                                     </template>
                                 </tbody>
@@ -507,12 +533,12 @@
                                 <tbody>
                                     <template x-for="t in marketplace.oferta_top" :key="t.id">
                                         <tr style="cursor:pointer" @click="abrirTouro(t.id)">
-                                            <td x-text="t.nome"></td>
-                                            <td x-text="t.central"></td>
-                                            <td x-text="t.fazenda_origem || '—'"></td>
-                                            <td class="num" x-text="t.iqgg !== null ? Number(t.iqgg).toFixed(1) : '—'"></td>
-                                            <td class="num" x-text="brl(t.preco_dose)"></td>
-                                            <td class="num" style="color:#4a9e4a;font-weight:700">ficha ›</td>
+                                            <td data-label="Touro" x-text="t.nome"></td>
+                                            <td data-label="Central" x-text="t.central"></td>
+                                            <td data-label="Fazenda origem" x-text="t.fazenda_origem || '—'"></td>
+                                            <td data-label="IQGg" class="num" x-text="t.iqgg !== null ? Number(t.iqgg).toFixed(1) : '—'"></td>
+                                            <td data-label="Preço dose" class="num" x-text="brl(t.preco_dose)"></td>
+                                            <td data-label="" class="num" style="color:#4a9e4a;font-weight:700">ficha ›</td>
                                         </tr>
                                     </template>
                                 </tbody>
@@ -529,19 +555,19 @@
                                 <tbody>
                                     <template x-for="(l, i) in leads" :key="i">
                                         <tr>
-                                            <td>
+                                            <td data-label="Empresa / Produtor">
                                                 <span x-text="l.nome"></span>
                                                 <template x-if="l.enriquecido">
                                                     <span class="badge" style="margin-left:8px;background:#e8f5e9;color:#2e7d32;"
                                                           x-text="l.enriquecido.situacao + ' · ' + l.enriquecido.socios + ' sócio(s)'"></span>
                                                 </template>
                                             </td>
-                                            <td x-text="l.municipio"></td>
-                                            <td x-text="l.uf"></td>
-                                            <td x-text="l.telefone_1 ? ('(' + (l.ddd_1||'') + ') ' + l.telefone_1) : '—'"></td>
-                                            <td x-text="l.email || '—'"></td>
-                                            <td x-text="porteLabel(l.porte)"></td>
-                                            <td><button class="lookup-btn" @click="abrirCnpj(l.cnpj)" x-show="l.cnpj">🔍 CNPJ</button></td>
+                                            <td data-label="Município" x-text="l.municipio"></td>
+                                            <td data-label="UF" x-text="l.uf"></td>
+                                            <td data-label="Telefone" x-text="l.telefone_1 ? ('(' + (l.ddd_1||'') + ') ' + l.telefone_1) : '—'"></td>
+                                            <td data-label="E-mail" x-text="l.email || '—'"></td>
+                                            <td data-label="Porte" x-text="porteLabel(l.porte)"></td>
+                                            <td data-label=""><button class="lookup-btn" @click="abrirCnpj(l.cnpj)" x-show="l.cnpj">🔍 CNPJ</button></td>
                                         </tr>
                                     </template>
                                 </tbody>
