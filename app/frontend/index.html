@@ -4,10 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WiNS Hub Agro — Dashboard</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <meta name="theme-color" content="#1a3a1a">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="apple-touch-icon" href="/static/vendor/icon-192.png">
+    <link rel="stylesheet" href="/static/vendor/leaflet.css" />
+    <script src="/static/vendor/leaflet.js"></script>
+    <script src="/static/vendor/chart.umd.min.js"></script>
+    <script defer src="/static/vendor/alpine.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', sans-serif; background: #f5f7f5; color: #1a3a1a; }
@@ -747,6 +750,11 @@
             if (res.status === 401) { window.location.href = '/login'; }
             return res;
         };
+
+        // PWA: registra o service worker (cacheia a casca/libs p/ abrir rápido e offline).
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+        }
 
         function hub() {
             return {
