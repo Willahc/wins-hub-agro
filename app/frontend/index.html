@@ -669,6 +669,14 @@
     </div>
 
     <script>
+        // Se a sessão expirar, qualquer chamada /api/* responde 401 -> volta ao login.
+        const _origFetch = window.fetch;
+        window.fetch = async (...args) => {
+            const res = await _origFetch(...args);
+            if (res.status === 401) { window.location.href = '/login'; }
+            return res;
+        };
+
         function hub() {
             return {
                 section: 'visao',

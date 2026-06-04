@@ -1,5 +1,7 @@
 from fastapi import FastAPI, Request, Response, Form
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import (
+    HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -11,12 +13,32 @@ from pdf_generator import gerar_parecer_pdf
 import external_apis
 import psycopg2
 import psycopg2.extras
+import logging
 import io
 import os
+
+logger = logging.getLogger("wins_agro")
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 templates = Jinja2Templates(directory="frontend")
+
+
+@app.middleware("http")
+async def require_auth_for_api(request: Request, call_next):
+    """Exige sessão válida para todas as rotas /api/* (dados sensíveis e PII)."""
+    if request.url.path.startswith("/api/"):
+        token = request.cookies.get("access_token")
+        if not token or decode_token(token) is None:
+            return JSONResponse({"error": "Não autenticado"}, status_code=401)
+    return await call_next(request)
+
+
+def _error(e):
+    """Loga o erro real no servidor e devolve mensagem genérica ao cliente
+    (evita vazar SQL/estrutura interna)."""
+    logger.exception("Erro ao processar requisição: %s", e)
+    return {"error": "Erro interno ao processar a requisição."}
 
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "db"),
@@ -102,7 +124,11 @@ async def login(response: Response, email: str = Form(...), password: str = Form
         return RedirectResponse("/login?error=1", status_code=303)
     token = create_access_token({"sub": user["email"], "name": user["name"]})
     resp = RedirectResponse("/", status_code=303)
-    resp.set_cookie("access_token", token, httponly=True, max_age=60 * 60 * 8)
+    resp.set_cookie(
+        "access_token", token,
+        httponly=True, secure=True, samesite="lax",
+        max_age=60 * 60 * 8,
+    )
     return resp
 
 
@@ -133,7 +159,7 @@ async def stats():
             ),
         }
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 @app.get("/api/ufs")
@@ -145,7 +171,7 @@ async def ufs():
         )
         return [r["uf"] for r in rows]
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 @app.get("/api/racas")
@@ -162,7 +188,7 @@ async def racas():
             """
         )
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 @app.get("/api/whitespace")
@@ -181,7 +207,7 @@ async def whitespace(uf: str = None):
             {"uf": uf if uf else None},
         )
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 @app.get("/api/arbitragem")
@@ -215,7 +241,7 @@ async def arbitragem(raca: int = None):
             {"iqgg": IQGG_ID, "raca": raca},
         )
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 @app.get("/api/centrais")
@@ -235,7 +261,7 @@ async def centrais():
             """
         )
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 @app.get("/api/fazendas")
@@ -262,7 +288,7 @@ async def fazendas():
             {"iqgg": IQGG_ID},
         )
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 @app.get("/api/caracteristicas")
@@ -281,7 +307,7 @@ async def caracteristicas():
             },
         )
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 # ---------------------------------------------------------------------------
@@ -385,7 +411,7 @@ async def matching(req: MatchingRequest):
             "touros": rows,
         }
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 @app.post("/api/matching/pdf")
@@ -483,7 +509,7 @@ async def touro_detalhe(touro_id: int):
         )
         return touro
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 # ---------------------------------------------------------------------------
@@ -508,7 +534,7 @@ async def racas_todas():
             """
         )
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 # ---------------------------------------------------------------------------
@@ -538,7 +564,7 @@ async def grupos():
             """
         )
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 # ---------------------------------------------------------------------------
@@ -581,7 +607,7 @@ async def leads(uf: str = None, segmento: str = "corte", limit: int = 50):
             {"cnae": cnae, "uf": uf, "limit": min(limit, 2000)},
         )
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 @app.get("/api/marketplace")
@@ -645,7 +671,7 @@ async def marketplace(uf: str = None, segmento: str = "corte"):
             "oferta_top": oferta_top,
         }
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 # ---------------------------------------------------------------------------
@@ -669,7 +695,7 @@ async def mapa(uf: str = None, min_bovinos: int = 20000):
             {"mb": min_bovinos, "uf": uf},
         )
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 # ---------------------------------------------------------------------------
@@ -681,7 +707,7 @@ async def externo_leite():
     try:
         return await run_in_threadpool(external_apis.producao_leite_uf)
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 @app.get("/api/externo/rebanho")
@@ -690,7 +716,7 @@ async def externo_rebanho():
     try:
         return await run_in_threadpool(external_apis.rebanho_bovino_uf)
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 @app.get("/api/externo/indicadores")
@@ -699,7 +725,7 @@ async def externo_indicadores():
     try:
         return await run_in_threadpool(external_apis.indicadores)
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 @app.get("/api/externo/abate")
@@ -708,7 +734,7 @@ async def externo_abate():
     try:
         return await run_in_threadpool(external_apis.abate_bovino_uf)
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 @app.get("/api/externo/cnpj/{numero}")
@@ -717,7 +743,7 @@ async def externo_cnpj(numero: str):
     try:
         return await run_in_threadpool(external_apis.cnpj, numero)
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 @app.get("/api/externo/leite/mapa")
@@ -750,7 +776,7 @@ async def externo_leite_mapa(uf: str = None, min_litros: int = 5000):
         out.sort(key=lambda o: o["leite_mil_litros"], reverse=True)
         return out[:1500]
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 @app.get("/api/externo/valor/mapa")
@@ -782,7 +808,7 @@ async def externo_valor_mapa(uf: str = None, min_valor: int = 10000):
         out.sort(key=lambda o: o["valor_mil_reais"], reverse=True)
         return out[:1500]
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
 
 
 @app.get("/api/leads/csv")
@@ -831,4 +857,4 @@ async def leads_enriquecido(uf: str = None, segmento: str = "corte", top: int = 
                     }
         return base
     except Exception as e:
-        return {"error": str(e)}
+        return _error(e)
