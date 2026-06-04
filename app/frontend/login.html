@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WiNS Hub Agro — Login</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1a3a1a 0%, #2d5a2d 50%, #1a3a1a 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 48px 40px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .logo {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        .logo h1 {
+            font-size: 28px;
+            color: #1a3a1a;
+            font-weight: 800;
+        }
+        .logo span { color: #4a9e4a; }
+        .logo p { color: #666; font-size: 14px; margin-top: 4px; }
+        .field { margin-bottom: 20px; }
+        label { display: block; font-size: 13px; font-weight: 600; color: #333; margin-bottom: 6px; }
+        input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 15px;
+            transition: border-color 0.2s;
+            outline: none;
+        }
+        input:focus { border-color: #4a9e4a; }
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: #2d5a2d;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-top: 8px;
+        }
+        .btn:hover { background: #1a3a1a; }
+        .error {
+            background: #fff3f3;
+            border: 1px solid #ffcdd2;
+            color: #c62828;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="logo">
+            <h1>WiNS Hub <span>Agro</span></h1>
+            <p>Inteligência genética bovina</p>
+        </div>
+        {% if request.query_params.get('error') %}
+        <div class="error">Email ou senha incorretos.</div>
+        {% endif %}
+        <form method="POST" action="/login">
+            <div class="field">
+                <label>Email</label>
+                <input type="email" name="email" placeholder="mari@winshubagro.cloud" required>
+            </div>
+            <div class="field">
+                <label>Senha</label>
+                <input type="password" name="password" placeholder="••••••••" required>
+            </div>
+            <button type="submit" class="btn">Entrar</button>
+        </form>
+    </div>
+</body>
+</html>

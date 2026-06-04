@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WiNS Hub Agro — Dashboard</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f5f7f5; color: #1a3a1a; }
+        header {
+            background: #1a3a1a; color: white; padding: 16px 32px;
+            display: flex; justify-content: space-between; align-items: center;
+            position: sticky; top: 0; z-index: 10;
+        }
+        header h1 { font-size: 20px; font-weight: 800; }
+        header span.brand { color: #4a9e4a; }
+        .user-info { display: flex; align-items: center; gap: 16px; font-size: 14px; }
+        .logout { color: #aaa; text-decoration: none; }
+        .logout:hover { color: white; }
+
+        .layout { display: flex; min-height: calc(100vh - 57px); }
+        .sidebar {
+            width: 230px; background: #fff; border-right: 1px solid #e4e9e4;
+            padding: 24px 0; flex-shrink: 0;
+        }
+        .nav-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 14px 24px; cursor: pointer; font-size: 15px; font-weight: 600;
+            color: #555; border-left: 4px solid transparent; transition: all .15s;
+        }
+        .nav-item:hover { background: #f0f5f0; }
+        .nav-item.active { background: #eaf5ea; color: #1a3a1a; border-left-color: #4a9e4a; }
+        .nav-item .ico { font-size: 18px; }
+
+        .content { flex: 1; padding: 32px; max-width: 100%; overflow-x: auto; }
+        h2 { font-size: 22px; margin-bottom: 6px; color: #1a3a1a; }
+        .subtitle { color: #777; font-size: 14px; margin-bottom: 24px; }
+
+        .kpi-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px; margin-bottom: 40px;
+        }
+        .kpi {
+            background: white; border-radius: 12px; padding: 22px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06); border-left: 4px solid #4a9e4a;
+        }
+        .kpi.alert { border-left-color: #c62828; }
+        .kpi .value { font-size: 32px; font-weight: 800; color: #1a3a1a; }
+        .kpi.alert .value { color: #c62828; }
+        .kpi .label { font-size: 13px; color: #666; margin-top: 4px; }
+
+        .toolbar { display: flex; gap: 16px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }
+        .toolbar label { font-size: 13px; font-weight: 600; color: #555; }
+        select {
+            padding: 8px 12px; border: 2px solid #e0e0e0; border-radius: 8px;
+            font-size: 14px; outline: none; background: white; cursor: pointer;
+        }
+        select:focus { border-color: #4a9e4a; }
+
+        .form-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 18px 24px; margin-bottom: 22px;
+        }
+        .field { display: flex; flex-direction: column; gap: 6px; }
+        .field input[type="number"] {
+            padding: 8px 12px; border: 2px solid #e0e0e0; border-radius: 8px;
+            font-size: 14px; outline: none;
+        }
+        .field input[type="number"]:focus { border-color: #4a9e4a; }
+        .toggle { display: flex; align-items: center; gap: 10px; font-weight: 600; color: #2d5a2d; cursor: pointer; }
+        .toggle input { width: 20px; height: 20px; accent-color: #4a9e4a; cursor: pointer; }
+        .run-btn {
+            padding: 13px 28px; background: #2d5a2d; color: white; border: none;
+            border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background .2s;
+        }
+        .run-btn:hover { background: #1a3a1a; }
+        .run-btn:disabled { opacity: .6; cursor: default; }
+        .badge.score-high { background: #e8f5e9; color: #2e7d32; }
+        .badge.score-mid  { background: #fff8e1; color: #b8860b; }
+        .badge.score-low  { background: #eceff1; color: #607d8b; }
+
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,.55);
+            display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px;
+        }
+        .modal {
+            background: white; border-radius: 14px; width: 100%; max-width: 760px;
+            max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.4);
+        }
+        .modal-head {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            padding: 20px 24px; border-bottom: 1px solid #eee; background: #f8faf8;
+            border-radius: 14px 14px 0 0;
+        }
+        .modal-close { cursor: pointer; font-size: 20px; color: #999; line-height: 1; }
+        .modal-close:hover { color: #1a3a1a; }
+        .modal-body { padding: 24px; }
+        .modal-cols { display: grid; grid-template-columns: 1.1fr 1fr; gap: 28px; align-items: start; }
+        @media (max-width: 680px) { .modal-cols { grid-template-columns: 1fr; } }
+        table.mini { width: 100%; border-collapse: collapse; font-size: 13px; }
+        table.mini td { padding: 7px 8px; border-bottom: 1px solid #f0f0f0; }
+        table.mini td:first-child { color: #666; }
+        table.mini td.num { text-align: right; font-weight: 600; color: #1a3a1a; }
+        .leaflet-popup-content { font-family: 'Segoe UI', sans-serif; font-size: 13px; }
+        .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 900px) { .chart-grid { grid-template-columns: 1fr; } }
+        .lookup-btn {
+            background: #eaf5ea; border: 1px solid #cde3cd; color: #2d5a2d;
+            border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 700; cursor: pointer;
+        }
+        .lookup-btn:hover { background: #2d5a2d; color: white; }
+
+        .card {
+            background: white; border-radius: 12px; padding: 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06); overflow: hidden;
+        }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th {
+            background: #f3f6f3; text-align: left; padding: 12px 16px;
+            font-size: 12px; text-transform: uppercase; letter-spacing: .03em;
+            color: #555; font-weight: 700; white-space: nowrap;
+        }
+        td { padding: 12px 16px; border-top: 1px solid #eef2ee; }
+        tbody tr:hover { background: #fafcfa; }
+        td.num { text-align: right; font-variant-numeric: tabular-nums; }
+        .best { background: #eaf7ea !important; }
+        .best td:first-child::before { content: "★ "; color: #4a9e4a; }
+
+        .badge {
+            display: inline-block; padding: 4px 10px; border-radius: 20px;
+            font-size: 12px; font-weight: 700; white-space: nowrap;
+        }
+        .badge.deserto { background: #fdecea; color: #c62828; }
+        .badge.baixa   { background: #fff8e1; color: #b8860b; }
+        .badge.normal  { background: #e8f5e9; color: #2e7d32; }
+
+        .pager { display: flex; gap: 12px; align-items: center; justify-content: flex-end;
+                 padding: 14px 16px; font-size: 14px; color: #555; }
+        .pager button {
+            padding: 6px 14px; border: 1px solid #cdd8cd; background: white;
+            border-radius: 6px; cursor: pointer; font-weight: 600; color: #2d5a2d;
+        }
+        .pager button:disabled { opacity: .4; cursor: default; }
+        .loading { padding: 40px; text-align: center; color: #aaa; font-size: 16px; }
+        .empty { padding: 30px; text-align: center; color: #999; }
+    </style>
+</head>
+<body x-data="hub()" x-init="init()">
+    <header>
+        <h1>WiNS Hub <span class="brand">Agro</span></h1>
+        <div class="user-info">
+            <span>Olá, {{ user.name }}</span>
+            <a href="/logout" class="logout">Sair</a>
+        </div>
+    </header>
+
+    <div class="layout">
+        <nav class="sidebar">
+            <div class="nav-item" :class="{active: section==='visao'}" @click="go('visao')">
+                <span class="ico">📊</span> Visão Geral
+            </div>
+            <div class="nav-item" :class="{active: section==='whitespace'}" @click="go('whitespace')">
+                <span class="ico">🗺️</span> White-Space
+            </div>
+            <div class="nav-item" :class="{active: section==='arbitragem'}" @click="go('arbitragem')">
+                <span class="ico">💰</span> Arbitragem
+            </div>
+            <div class="nav-item" :class="{active: section==='rankings'}" @click="go('rankings')">
+                <span class="ico">🏆</span> Rankings
+            </div>
+            <div class="nav-item" :class="{active: section==='matching'}" @click="go('matching')">
+                <span class="ico">🎯</span> Matching
+            </div>
+            <div class="nav-item" :class="{active: section==='marketplace'}" @click="go('marketplace')">
+                <span class="ico">🛒</span> Marketplace
+            </div>
+            <div class="nav-item" :class="{active: section==='mapa'}" @click="go('mapa')">
+                <span class="ico">🗺️</span> Mapa
+            </div>
+            <div class="nav-item" :class="{active: section==='mercado'}" @click="go('mercado')">
+                <span class="ico">🌐</span> Mercado
+            </div>
+        </nav>
+
+        <main class="content">
+            <!-- ============ VISÃO GERAL ============ -->
+            <section x-show="section==='visao'">
+                <h2>Visão Geral</h2>
+                <p class="subtitle">Panorama da base de inteligência genética e prospecção.</p>
+                <div class="kpi-grid">
+                    <div class="kpi"><div class="value" x-text="fmt(stats.reprodutores)"></div><div class="label">Reprodutores cadastrados</div></div>
+                    <div class="kpi"><div class="value" x-text="fmt(stats.avaliacoes)"></div><div class="label">Avaliações DEP</div></div>
+                    <div class="kpi"><div class="value" x-text="fmt(stats.centrais)"></div><div class="label">Centrais de IA</div></div>
+                    <div class="kpi"><div class="value" x-text="fmt(stats.ofertas)"></div><div class="label">Ofertas comerciais</div></div>
+                    <div class="kpi"><div class="value" x-text="fmt(stats.municipios)"></div><div class="label">Municípios analisados</div></div>
+                    <div class="kpi alert"><div class="value" x-text="fmt(stats.desertos_vet)"></div><div class="label">Desertos Vet</div></div>
+                </div>
+            </section>
+
+            <!-- ============ WHITE-SPACE ============ -->
+            <section x-show="section==='whitespace'">
+                <h2>White-Space / Desertos Vet</h2>
+                <p class="subtitle">Municípios com maior rebanho e cobertura veterinária crítica (rebanho &gt; 50 mil cabeças).</p>
+                <div class="toolbar">
+                    <label>UF:</label>
+                    <select x-model="ufFilter" @change="loadWhitespace()">
+                        <option value="">Todas</option>
+                        <template x-for="u in ufs" :key="u"><option :value="u" x-text="u"></option></template>
+                    </select>
+                </div>
+                <div class="card">
+                    <div class="loading" x-show="loading.whitespace">Carregando…</div>
+                    <template x-if="!loading.whitespace">
+                        <div>
+                            <table x-show="whitespace.length">
+                                <thead><tr>
+                                    <th>Município</th><th>UF</th><th>Bovinos</th>
+                                    <th>Estab. Vet</th><th>Classificação</th>
+                                </tr></thead>
+                                <tbody>
+                                    <template x-for="row in page(whitespace, 'whitespace')" :key="row.municipio_nome + row.uf">
+                                        <tr>
+                                            <td x-text="row.municipio_nome"></td>
+                                            <td x-text="row.uf"></td>
+                                            <td class="num" x-text="fmt(row.total_bovinos)"></td>
+                                            <td class="num" x-text="fmt(row.cnpj_vet)"></td>
+                                            <td><span class="badge" :class="badgeClass(row.classificacao_vet)" x-text="row.classificacao_vet"></span></td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                            <div class="empty" x-show="!whitespace.length">Nenhum município encontrado.</div>
+                            <div class="pager" x-show="whitespace.length">
+                                <span x-text="pagerLabel('whitespace')"></span>
+                                <button @click="pageIdx.whitespace--" :disabled="pageIdx.whitespace===0">‹ Anterior</button>
+                                <button @click="pageIdx.whitespace++" :disabled="(pageIdx.whitespace+1)*pageSize >= whitespace.length">Próxima ›</button>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </section>
+
+            <!-- ============ ARBITRAGEM ============ -->
+            <section x-show="section==='arbitragem'">
+                <h2>Arbitragem Genética</h2>
+                <p class="subtitle">Touros ordenados por melhor custo-benefício (menor R$/IQGg). ★ = melhores deals.</p>
+                <div class="toolbar">
+                    <label>Raça:</label>
+                    <select x-model="racaFilter" @change="loadArbitragem()">
+                        <option value="">Todas</option>
+                        <template x-for="r in racas" :key="r.id"><option :value="r.id" x-text="r.nome"></option></template>
+                    </select>
+                </div>
+                <div class="card">
+                    <div class="loading" x-show="loading.arbitragem">Carregando…</div>
+                    <template x-if="!loading.arbitragem">
+                        <div>
+                            <table x-show="arbitragem.length">
+                                <thead><tr>
+                                    <th>Touro</th><th>Raça</th><th>Central</th>
+                                    <th>Preço dose</th><th>IQGg</th><th>R$/IQGg</th>
+                                </tr></thead>
+                                <tbody>
+                                    <template x-for="(row, i) in page(arbitragem, 'arbitragem')" :key="row.registro + row.central + i">
+                                        <tr :class="{best: row.preco_por_iqgg !== null && pageIdx.arbitragem===0 && i<3}">
+                                            <td x-text="row.nome_touro"></td>
+                                            <td x-text="row.raca"></td>
+                                            <td x-text="row.central"></td>
+                                            <td class="num" x-text="brl(row.preco_convencional)"></td>
+                                            <td class="num" x-text="row.iqgg !== null ? Number(row.iqgg).toFixed(2) : '—'"></td>
+                                            <td class="num" x-text="row.preco_por_iqgg !== null ? brl(row.preco_por_iqgg) : '—'"></td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                            <div class="empty" x-show="!arbitragem.length">Nenhum touro com preço encontrado.</div>
+                            <div class="pager" x-show="arbitragem.length">
+                                <span x-text="pagerLabel('arbitragem')"></span>
+                                <button @click="pageIdx.arbitragem--" :disabled="pageIdx.arbitragem===0">‹ Anterior</button>
+                                <button @click="pageIdx.arbitragem++" :disabled="(pageIdx.arbitragem+1)*pageSize >= arbitragem.length">Próxima ›</button>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </section>
+
+            <!-- ============ RANKINGS ============ -->
+            <section x-show="section==='rankings'">
+                <h2>Rankings</h2>
+                <p class="subtitle">Centrais de IA por volume de touros e fazendas de origem por número de reprodutores.</p>
+
+                <h2 style="font-size:17px;margin-top:8px;">🏢 Top Centrais de IA</h2>
+                <div class="card" style="margin:12px 0 32px;">
+                    <div class="loading" x-show="loading.centrais">Carregando…</div>
+                    <table x-show="!loading.centrais && centrais.length">
+                        <thead><tr><th>Central</th><th>Touros</th><th>Ofertas</th><th>Preço médio dose</th></tr></thead>
+                        <tbody>
+                            <template x-for="row in centrais" :key="row.central">
+                                <tr>
+                                    <td x-text="row.central"></td>
+                                    <td class="num" x-text="fmt(row.total_touros)"></td>
+                                    <td class="num" x-text="fmt(row.total_ofertas)"></td>
+                                    <td class="num" x-text="row.preco_medio !== null ? brl(row.preco_medio) : '—'"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+
+                <h2 style="font-size:17px;">🚜 Top Fazendas de Origem</h2>
+                <div class="card" style="margin-top:12px;">
+                    <div class="loading" x-show="loading.fazendas">Carregando…</div>
+                    <table x-show="!loading.fazendas && fazendas.length">
+                        <thead><tr><th>Fazenda</th><th>Reprodutores</th><th>IQGg médio</th></tr></thead>
+                        <tbody>
+                            <template x-for="row in fazendas" :key="row.fazenda_origem">
+                                <tr>
+                                    <td x-text="row.fazenda_origem"></td>
+                                    <td class="num" x-text="fmt(row.total_reprodutores)"></td>
+                                    <td class="num" x-text="row.iqgg_medio !== null ? Number(row.iqgg_medio).toFixed(2) : '—'"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- ============ MATCHING ============ -->
+            <section x-show="section==='matching'">
+                <h2>🎯 Motor de Matching</h2>
+                <p class="subtitle">Defina o perfil do fazendeiro e receba touros rankeados por adequação genética e custo.</p>
+
+                <div class="card" style="padding:24px;margin-bottom:24px;">
+                    <div class="form-grid">
+                        <div class="field">
+                            <label>Finalidade</label>
+                            <select x-model="match.finalidade">
+                                <option value="corte">Corte</option>
+                                <option value="leite">Leite</option>
+                                <option value="dupla">Dupla aptidão</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>Prioridade genética</label>
+                            <select x-model="match.prioridade">
+                                <option value="crescimento">Crescimento (GPD)</option>
+                                <option value="carcaca">Carcaça (AOL)</option>
+                                <option value="precocidade">Precocidade (PES)</option>
+                                <option value="fertilidade">Fertilidade (HP)</option>
+                                <option value="marmoreio">Marmoreio (MAR)</option>
+                                <option value="geral">Geral (IQGg)</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>UF</label>
+                            <select x-model="match.uf">
+                                <option value="">Qualquer</option>
+                                <template x-for="u in ufs" :key="u"><option :value="u" x-text="u"></option></template>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>Orçamento máx (R$/dose)</label>
+                            <input type="number" min="0" step="10" placeholder="Sem limite" x-model.number="match.orcamento_max">
+                        </div>
+                        <div class="field">
+                            <label>Raça</label>
+                            <select x-model.number="match.raca_id">
+                                <option :value="null">Qualquer</option>
+                                <template x-for="r in racasTodas" :key="r.id">
+                                    <option :value="r.id" :disabled="r.com_avaliacao == 0"
+                                            x-text="r.nome + (r.com_avaliacao > 0 ? ' ('+r.reprodutores+')' : ' — sem dados ainda')"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>Sêmen sexado?</label>
+                            <label class="toggle">
+                                <input type="checkbox" x-model="match.sexado">
+                                <span x-text="match.sexado ? 'Sim' : 'Não'"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <button class="run-btn" @click="runMatching()" :disabled="loading.matching">
+                        <span x-show="!loading.matching">🎯 Rodar Matching</span>
+                        <span x-show="loading.matching">Processando…</span>
+                    </button>
+                </div>
+
+                <div class="card" x-show="matchRan">
+                    <div class="loading" x-show="loading.matching">Calculando scores…</div>
+                    <template x-if="!loading.matching">
+                        <div>
+                            <table x-show="matchResult.length">
+                                <thead><tr>
+                                    <th>Score</th><th>Touro</th><th>Raça</th><th>Central</th>
+                                    <th>Preço dose</th><th>IQGg</th><th>DEP prior.</th><th>R$/IQGg</th>
+                                </tr></thead>
+                                <tbody>
+                                    <template x-for="row in matchResult" :key="row.id">
+                                        <tr style="cursor:pointer" @click="abrirTouro(row.id)" title="Ver ficha completa">
+                                            <td><span class="badge" :class="scoreClass(row.score)" x-text="Number(row.score).toFixed(3)"></span></td>
+                                            <td x-text="row.nome"></td>
+                                            <td x-text="row.raca"></td>
+                                            <td x-text="row.central"></td>
+                                            <td class="num" x-text="brl(row.preco_dose)"></td>
+                                            <td class="num" x-text="row.iqgg !== null ? Number(row.iqgg).toFixed(2) : '—'"></td>
+                                            <td class="num" x-text="row.dep_prioritaria !== null ? Number(row.dep_prioritaria).toFixed(2) : '—'"></td>
+                                            <td class="num" x-text="row.preco_por_iqgg !== null ? brl(row.preco_por_iqgg) : '—'"></td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                            <div class="empty" x-show="!matchResult.length">Nenhum touro atende a esse perfil. Tente afrouxar o orçamento ou a raça.</div>
+                            <div class="pager" x-show="matchResult.length"><span x-text="matchResult.length + ' touros rankeados'"></span></div>
+                        </div>
+                    </template>
+                </div>
+
+                <div x-show="matchResult.length > 0 && !loading.matching" style="margin-top:16px; text-align:right;">
+                    <button class="run-btn" @click="exportarPDF()" :disabled="exportando" style="background:#1a3a1a;">
+                        <span x-text="exportando ? 'Gerando PDF…' : '📄 Exportar Parecer PDF'"></span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- ============ MARKETPLACE (Oferta × Demanda) ============ -->
+            <section x-show="section==='marketplace'">
+                <h2>🛒 Marketplace — Oferta × Demanda</h2>
+                <p class="subtitle">Quem tem touro bom × quem cria gado. Demanda inferida da base CNPJ (criadores ativos por segmento e região).</p>
+                <div class="toolbar">
+                    <label>Segmento:</label>
+                    <select x-model="mkt.segmento" @change="loadMarketplace()">
+                        <option value="corte">Corte</option>
+                        <option value="leite">Leite</option>
+                    </select>
+                    <label>UF:</label>
+                    <select x-model="mkt.uf" @change="loadMarketplace()">
+                        <option value="">Brasil (todas)</option>
+                        <template x-for="u in ufs" :key="u"><option :value="u" x-text="u"></option></template>
+                    </select>
+                </div>
+
+                <div class="loading" x-show="loading.marketplace">Carregando…</div>
+                <template x-if="!loading.marketplace && marketplace">
+                    <div>
+                        <div class="kpi-grid">
+                            <div class="kpi"><div class="value" x-text="fmt(mktSum('criadores'))"></div><div class="label">Criadores (compradores potenciais)</div></div>
+                            <div class="kpi"><div class="value" x-text="fmt(mktSum('com_telefone'))"></div><div class="label">Com telefone</div></div>
+                            <div class="kpi"><div class="value" x-text="fmt(mktSum('com_email'))"></div><div class="label">Com e-mail</div></div>
+                            <div class="kpi"><div class="value" x-text="fmt(mktRebanho('rebanho'))"></div><div class="label">Rebanho (cabeças)</div></div>
+                            <div class="kpi alert"><div class="value" x-text="fmt(mktRebanho('desertos_vet'))"></div><div class="label">Desertos Vet na região</div></div>
+                        </div>
+
+                        <h2 style="font-size:17px;">🐂 Melhores touros para ofertar</h2>
+                        <div class="card" style="margin:12px 0 28px;">
+                            <table x-show="marketplace.oferta_top.length">
+                                <thead><tr><th>Touro</th><th>Central</th><th>Fazenda origem</th><th>IQGg</th><th>Preço dose</th><th></th></tr></thead>
+                                <tbody>
+                                    <template x-for="t in marketplace.oferta_top" :key="t.id">
+                                        <tr style="cursor:pointer" @click="abrirTouro(t.id)">
+                                            <td x-text="t.nome"></td>
+                                            <td x-text="t.central"></td>
+                                            <td x-text="t.fazenda_origem || '—'"></td>
+                                            <td class="num" x-text="t.iqgg !== null ? Number(t.iqgg).toFixed(1) : '—'"></td>
+                                            <td class="num" x-text="brl(t.preco_dose)"></td>
+                                            <td class="num" style="color:#4a9e4a;font-weight:700">ficha ›</td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <h2 style="font-size:17px;">📞 Leads — criadores para prospectar</h2>
+                            <button class="run-btn" style="padding:9px 18px;font-size:13px;" @click="exportarLeadsCSV()">⬇️ Exportar CSV (CRM)</button>
+                        </div>
+                        <div class="card" style="margin-top:12px;">
+                            <table x-show="leads.length">
+                                <thead><tr><th>Empresa / Produtor</th><th>Município</th><th>UF</th><th>Telefone</th><th>E-mail</th><th>Porte</th><th></th></tr></thead>
+                                <tbody>
+                                    <template x-for="(l, i) in leads" :key="i">
+                                        <tr>
+                                            <td>
+                                                <span x-text="l.nome"></span>
+                                                <template x-if="l.enriquecido">
+                                                    <span class="badge" style="margin-left:8px;background:#e8f5e9;color:#2e7d32;"
+                                                          x-text="l.enriquecido.situacao + ' · ' + l.enriquecido.socios + ' sócio(s)'"></span>
+                                                </template>
+                                            </td>
+                                            <td x-text="l.municipio"></td>
+                                            <td x-text="l.uf"></td>
+                                            <td x-text="l.telefone_1 ? ('(' + (l.ddd_1||'') + ') ' + l.telefone_1) : '—'"></td>
+                                            <td x-text="l.email || '—'"></td>
+                                            <td x-text="porteLabel(l.porte)"></td>
+                                            <td><button class="lookup-btn" @click="abrirCnpj(l.cnpj)" x-show="l.cnpj">🔍 CNPJ</button></td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                            <div class="empty" x-show="!leads.length">Sem leads para este filtro.</div>
+                            <div class="pager" x-show="leads.length"><span x-text="leads.length + ' criadores (top por contactabilidade)'"></span></div>
+                        </div>
+                    </div>
+                </template>
+            </section>
+
+            <!-- ============ MAPA ============ -->
+            <section x-show="section==='mapa'">
+                <h2>🗺️ Mapa — Rebanho & Cobertura Veterinária</h2>
+                <p class="subtitle">Municípios com maior rebanho. Cor = classificação vet. Clique num ponto para detalhes.</p>
+                <div class="toolbar">
+                    <label>Camada:</label>
+                    <select x-model="mapLayer" @change="loadMapa()">
+                        <option value="rebanho">Rebanho & cobertura vet</option>
+                        <option value="leite">Produção de leite (IBGE)</option>
+                        <option value="valor">Valor da produção R$ (IBGE)</option>
+                    </select>
+                    <label>UF:</label>
+                    <select x-model="mapUf" @change="loadMapa()">
+                        <option value="">Brasil</option>
+                        <template x-for="u in ufs" :key="u"><option :value="u" x-text="u"></option></template>
+                    </select>
+                    <label x-show="mapLayer==='rebanho'">Rebanho mínimo:</label>
+                    <select x-show="mapLayer==='rebanho'" x-model.number="mapMin" @change="loadMapa()">
+                        <option :value="100000">100 mil+</option>
+                        <option :value="50000">50 mil+</option>
+                        <option :value="20000">20 mil+</option>
+                    </select>
+                    <span style="font-size:13px;color:#777;" x-show="mapLayer==='rebanho'">
+                        <span style="color:#c62828;font-weight:700">●</span> Deserto Vet
+                        <span style="color:#b8860b;font-weight:700;margin-left:10px">●</span> Baixa cobertura
+                        <span style="color:#2e7d32;font-weight:700;margin-left:10px">●</span> Normal
+                    </span>
+                    <span style="font-size:13px;color:#777;" x-show="mapLayer==='leite'">
+                        <span style="color:#1565c0;font-weight:700">●</span> Produção de leite (tamanho ∝ litros)
+                    </span>
+                    <span style="font-size:13px;color:#777;" x-show="mapLayer==='valor'">
+                        <span style="color:#b8860b;font-weight:700">●</span> Valor da produção animal (tamanho ∝ R$)
+                    </span>
+                </div>
+                <div class="card" style="padding:0;">
+                    <div id="map" style="height:560px;width:100%;border-radius:12px;"></div>
+                </div>
+            </section>
+
+            <!-- ============ MERCADO & DADOS ABERTOS ============ -->
+            <section x-show="section==='mercado'">
+                <h2>🌐 Mercado & Dados Abertos</h2>
+                <p class="subtitle">Conectado em tempo real ao IBGE/SIDRA, Banco Central e BrasilAPI. Inclui a dimensão <b>leite</b> (lado produção).</p>
+
+                <div class="loading" x-show="loading.mercado">Consultando APIs públicas…</div>
+                <template x-if="!loading.mercado && mercado">
+                    <div>
+                        <div class="kpi-grid">
+                            <div class="kpi"><div class="value" x-text="mercado.indicadores?.dolar ? ('R$ ' + Number(mercado.indicadores.dolar.valor).toFixed(2)) : '—'"></div><div class="label">Dólar comercial (BCB)</div></div>
+                            <div class="kpi"><div class="value" x-text="fmt(leiteTotal())"></div><div class="label">Produção de leite BR (mil L/ano)</div></div>
+                            <div class="kpi"><div class="value" x-text="fmt(rebanhoTotal())"></div><div class="label">Rebanho bovino BR (cabeças)</div></div>
+                            <div class="kpi"><div class="value" x-text="mercado.leite?.[0]?.ano || '—'"></div><div class="label">Ano de referência IBGE</div></div>
+                        </div>
+
+                        <div class="chart-grid">
+                            <div class="card" style="padding:18px;">
+                                <h2 style="font-size:16px;margin-bottom:12px;">🥛 Produção de leite — Top 12 UFs (mil litros)</h2>
+                                <canvas id="chartLeite" height="200"></canvas>
+                            </div>
+                            <div class="card" style="padding:18px;">
+                                <h2 style="font-size:16px;margin-bottom:12px;">🐄 Rebanho bovino — Top 12 UFs (cabeças)</h2>
+                                <canvas id="chartRebanho" height="200"></canvas>
+                            </div>
+                        </div>
+                        <div class="card" style="padding:18px;margin-top:20px;">
+                            <h2 style="font-size:16px;margin-bottom:4px;">🔪 Abate de bovinos — Top 12 UFs (cabeças)</h2>
+                            <p class="subtitle" style="margin-bottom:12px;" x-text="'Pesquisa Trimestral do Abate · ' + (mercado.abate?.[0]?.periodo || '')"></p>
+                            <canvas id="chartAbate" height="120"></canvas>
+                        </div>
+                        <p class="subtitle" style="margin-top:18px;">Fontes: IBGE/SIDRA (PPM + Abate Trimestral), Banco Central (SGS), BrasilAPI · ao vivo e cacheados. <i>Preço diário do boi (CEPEA) não tem API aberta acessível — bloqueado por Cloudflare.</i></p>
+                    </div>
+                </template>
+            </section>
+        </main>
+    </div>
+
+    <!-- ============ MODAL CNPJ (BrasilAPI) ============ -->
+    <div class="modal-overlay" x-show="cnpjModal" @click="cnpjModal=false" style="display:none;">
+        <div class="modal" @click.stop style="max-width:560px;">
+            <div class="modal-head">
+                <h2 style="font-size:18px;">🔍 Consulta CNPJ (BrasilAPI)</h2>
+                <span class="modal-close" @click="cnpjModal=false">✕</span>
+            </div>
+            <div class="modal-body">
+                <div class="loading" x-show="cnpjLoading">Consultando Receita…</div>
+                <template x-if="!cnpjLoading && cnpjData">
+                    <div>
+                        <table class="mini" x-show="!cnpjData.error">
+                            <tbody>
+                                <tr><td>Razão social</td><td class="num" x-text="cnpjData.razao_social || '—'"></td></tr>
+                                <tr><td>Situação</td><td class="num" x-text="cnpjData.situacao || '—'"></td></tr>
+                                <tr><td>CNAE</td><td class="num" x-text="cnpjData.cnae || '—'"></td></tr>
+                                <tr><td>Capital social</td><td class="num" x-text="cnpjData.capital_social != null ? brl(cnpjData.capital_social) : '—'"></td></tr>
+                                <tr><td>Município/UF</td><td class="num" x-text="(cnpjData.municipio||'—') + '/' + (cnpjData.uf||'')"></td></tr>
+                                <tr><td>Telefone</td><td class="num" x-text="cnpjData.telefone || '—'"></td></tr>
+                                <tr><td>E-mail</td><td class="num" x-text="cnpjData.email || '—'"></td></tr>
+                                <tr><td>Abertura</td><td class="num" x-text="cnpjData.abertura || '—'"></td></tr>
+                            </tbody>
+                        </table>
+                        <h3 style="font-size:14px;margin:16px 0 8px;" x-show="!cnpjData.error">Sócios (QSA)</h3>
+                        <table class="mini" x-show="!cnpjData.error">
+                            <tbody>
+                                <template x-for="(s,i) in (cnpjData.socios||[])" :key="i">
+                                    <tr><td x-text="s.nome"></td><td class="num" x-text="s.qualificacao"></td></tr>
+                                </template>
+                                <tr x-show="!(cnpjData.socios||[]).length"><td colspan="2" style="color:#999">Sem sócios listados.</td></tr>
+                            </tbody>
+                        </table>
+                        <div class="empty" x-show="cnpjData.error" x-text="cnpjData.error"></div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ MODAL FICHA DO TOURO ============ -->
+    <div class="modal-overlay" x-show="touroModal" @click="fecharTouro()" style="display:none;">
+        <div class="modal" @click.stop x-show="touroModal">
+            <template x-if="touro">
+                <div>
+                    <div class="modal-head">
+                        <div>
+                            <h2 x-text="touro.nome" style="font-size:20px;"></h2>
+                            <p class="subtitle" style="margin:2px 0 0;" x-text="(touro.raca || 'Nelore') + ' · Reg. ' + (touro.registro||'—') + (touro.central ? ' · ' + touro.central : '')"></p>
+                        </div>
+                        <span class="modal-close" @click="fecharTouro()">✕</span>
+                    </div>
+                    <div class="modal-body">
+                        <div class="modal-cols">
+                            <div>
+                                <canvas id="radarTouro" height="260"></canvas>
+                            </div>
+                            <div>
+                                <table class="mini">
+                                    <tbody>
+                                        <tr><td>IQGg genômico</td><td class="num" x-text="depVal(touro.iqg_genomico ?? touro.iqgg)"></td></tr>
+                                        <tr><td>Fazenda origem</td><td class="num" x-text="touro.fazenda_origem || '—'"></td></tr>
+                                        <tr><td>Genotipado</td><td class="num" x-text="touro.genotipado ? 'Sim' : 'Não'"></td></tr>
+                                        <tr><td>CEIP</td><td class="num" x-text="touro.ceip ? 'Sim' : 'Não'"></td></tr>
+                                        <tr><td>Consanguinidade</td><td class="num" x-text="touro.consanguinidade != null ? touro.consanguinidade + '%' : '—'"></td></tr>
+                                        <tr><td>Nascimento</td><td class="num" x-text="touro.data_nascimento || '—'"></td></tr>
+                                    </tbody>
+                                </table>
+                                <h3 style="font-size:14px;margin:16px 0 8px;color:#1a3a1a;">Ofertas comerciais</h3>
+                                <table class="mini">
+                                    <tbody>
+                                        <template x-for="(o,i) in (touro.ofertas||[])" :key="i">
+                                            <tr><td x-text="o.central"></td><td class="num" x-text="brl(o.preco_dose_brl)"></td></tr>
+                                        </template>
+                                        <tr x-show="!(touro.ofertas||[]).length"><td colspan="2" style="color:#999">Sem oferta comercial cadastrada.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <script>
+        function hub() {
+            return {
+                section: 'visao',
+                stats: {},
+                ufs: [], racas: [],
+                whitespace: [], arbitragem: [], centrais: [], fazendas: [],
+                ufFilter: '', racaFilter: '',
+                pageIdx: { whitespace: 0, arbitragem: 0 },
+                pageSize: 20,
+                loading: { whitespace: false, arbitragem: false, centrais: false, fazendas: false, matching: false, marketplace: false, mercado: false },
+                loaded: {},
+                match: { finalidade: 'corte', prioridade: 'geral', uf: '', orcamento_max: null, raca_id: null, sexado: false },
+                matchResult: [], matchRan: false,
+                perfilAtual: null, exportando: false,
+                racasTodas: [],
+                mkt: { segmento: 'corte', uf: '' }, marketplace: null, leads: [],
+                mapUf: '', mapMin: 100000, mapLayer: 'rebanho', _map: null, _mapLayer: null,
+                touroModal: false, touro: null, _radar: null,
+                mercado: null, _chLeite: null, _chRebanho: null, _chAbate: null,
+                cnpjModal: false, cnpjData: null, cnpjLoading: false,
+
+                init() {
+                    this.loadStats();
+                    this.loadUfs();
+                    this.loadRacas();
+                    this.loadRacasTodas();
+                },
+                go(s) {
+                    this.section = s;
+                    if (s === 'whitespace' && !this.loaded.whitespace) this.loadWhitespace();
+                    if (s === 'arbitragem' && !this.loaded.arbitragem) this.loadArbitragem();
+                    if (s === 'rankings' && !this.loaded.rankings) { this.loadCentrais(); this.loadFazendas(); this.loaded.rankings = true; }
+                    if (s === 'marketplace' && !this.loaded.marketplace) { this.loadMarketplace(); this.loaded.marketplace = true; }
+                    if (s === 'mapa') { this.$nextTick(() => this.loadMapa()); }
+                    if (s === 'mercado' && !this.loaded.mercado) { this.loadMercado(); this.loaded.mercado = true; }
+                },
+
+                async loadStats() { this.stats = await (await fetch('/api/stats')).json(); },
+                async loadUfs() { this.ufs = await (await fetch('/api/ufs')).json(); },
+                async loadRacas() { this.racas = await (await fetch('/api/racas')).json(); },
+                async loadRacasTodas() { this.racasTodas = await (await fetch('/api/racas/todas')).json(); },
+
+                async loadWhitespace() {
+                    this.loading.whitespace = true; this.pageIdx.whitespace = 0;
+                    const q = this.ufFilter ? ('?uf=' + this.ufFilter) : '';
+                    this.whitespace = await (await fetch('/api/whitespace' + q)).json();
+                    this.loaded.whitespace = true; this.loading.whitespace = false;
+                },
+                async loadArbitragem() {
+                    this.loading.arbitragem = true; this.pageIdx.arbitragem = 0;
+                    const q = this.racaFilter ? ('?raca=' + this.racaFilter) : '';
+                    this.arbitragem = await (await fetch('/api/arbitragem' + q)).json();
+                    this.loaded.arbitragem = true; this.loading.arbitragem = false;
+                },
+                async loadCentrais() {
+                    this.loading.centrais = true;
+                    this.centrais = await (await fetch('/api/centrais')).json();
+                    this.loading.centrais = false;
+                },
+                async loadFazendas() {
+                    this.loading.fazendas = true;
+                    this.fazendas = await (await fetch('/api/fazendas')).json();
+                    this.loading.fazendas = false;
+                },
+                async runMatching() {
+                    this.loading.matching = true; this.matchRan = true;
+                    const body = {
+                        finalidade: this.match.finalidade,
+                        prioridade: this.match.prioridade,
+                        uf: this.match.uf || null,
+                        raca_id: this.match.raca_id || null,
+                        orcamento_max: (this.match.orcamento_max > 0) ? this.match.orcamento_max : null,
+                        sexado: !!this.match.sexado,
+                    };
+                    // salva o perfil exato desta busca para reuso no export PDF
+                    this.perfilAtual = { ...body };
+                    const res = await fetch('/api/matching', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body),
+                    });
+                    const data = await res.json();
+                    this.matchResult = data.touros || [];
+                    this.loading.matching = false;
+                },
+                async exportarPDF() {
+                    if (!this.perfilAtual) return;
+                    this.exportando = true;
+                    try {
+                        const res = await fetch('/api/matching/pdf', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.perfilAtual),
+                        });
+                        if (!res.ok) throw new Error('Erro ao gerar PDF');
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `parecer_zootecnico_${new Date().toISOString().slice(0,10)}.pdf`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                    } catch (e) {
+                        alert('Erro ao gerar PDF. Tente novamente.');
+                    } finally {
+                        this.exportando = false;
+                    }
+                },
+                scoreClass(s) {
+                    if (s >= 0.8) return 'score-high';
+                    if (s >= 0.6) return 'score-mid';
+                    return 'score-low';
+                },
+
+                // ---- Marketplace ----
+                async loadMarketplace() {
+                    this.loading.marketplace = true;
+                    const qs = `?segmento=${this.mkt.segmento}` + (this.mkt.uf ? `&uf=${this.mkt.uf}` : '');
+                    const mk = await fetch('/api/marketplace' + qs).then(r => r.json());
+                    this.marketplace = mk;
+                    this.loading.marketplace = false;
+                    // leads com enriquecimento automático dos top 5 (BrasilAPI) — pode demorar, carrega depois
+                    this.leads = [];
+                    const lds = await fetch('/api/leads/enriquecido' + qs + '&top=5').then(r => r.json());
+                    this.leads = Array.isArray(lds) ? lds : [];
+                },
+                mktSum(field) {
+                    if (!this.marketplace) return 0;
+                    return (this.marketplace.demanda || []).reduce((a, r) => a + (Number(r[field]) || 0), 0);
+                },
+                mktRebanho(field) {
+                    if (!this.marketplace) return 0;
+                    return (this.marketplace.rebanho || []).reduce((a, r) => a + (Number(r[field]) || 0), 0);
+                },
+                porteLabel(p) {
+                    return ({ '01': 'ME', '03': 'EPP', '05': 'Demais' })[p] || '—';
+                },
+
+                // ---- Mapa (Leaflet) ----
+                async loadMapa() {
+                    if (typeof L === 'undefined') return;
+                    if (!this._map) {
+                        this._map = L.map('map').setView([-15.0, -55.0], 4);
+                        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                            maxZoom: 18, attribution: '© OpenStreetMap'
+                        }).addTo(this._map);
+                    } else {
+                        this._map.invalidateSize();
+                    }
+                    if (this._mapLayer) { this._map.removeLayer(this._mapLayer); }
+                    const group = L.layerGroup();
+                    let pts = [];
+                    if (this.mapLayer === 'leite') {
+                        const qs = (this.mapUf ? `?uf=${this.mapUf}&` : '?') + `min_litros=5000`;
+                        pts = await (await fetch('/api/externo/leite/mapa' + qs)).json();
+                        (Array.isArray(pts) ? pts : []).forEach(p => {
+                            if (p.lat == null || p.lng == null) return;
+                            const r = Math.max(4, Math.min(20, Math.sqrt(p.leite_mil_litros) / 30));
+                            L.circleMarker([p.lat, p.lng], {
+                                radius: r, color: '#1565c0', fillColor: '#1976d2', fillOpacity: 0.55, weight: 1
+                            }).bindPopup(
+                                `<b>${p.municipio} (${p.uf})</b><br>Leite: ${Number(p.leite_mil_litros).toLocaleString('pt-BR')} mil L/ano`
+                            ).addTo(group);
+                        });
+                    } else if (this.mapLayer === 'valor') {
+                        const qs = (this.mapUf ? `?uf=${this.mapUf}&` : '?') + `min_valor=10000`;
+                        pts = await (await fetch('/api/externo/valor/mapa' + qs)).json();
+                        (Array.isArray(pts) ? pts : []).forEach(p => {
+                            if (p.lat == null || p.lng == null) return;
+                            const r = Math.max(4, Math.min(20, Math.sqrt(p.valor_mil_reais) / 60));
+                            L.circleMarker([p.lat, p.lng], {
+                                radius: r, color: '#b8860b', fillColor: '#d4a017', fillOpacity: 0.55, weight: 1
+                            }).bindPopup(
+                                `<b>${p.municipio} (${p.uf})</b><br>Valor produção: R$ ${Number(p.valor_mil_reais).toLocaleString('pt-BR')} mil/ano`
+                            ).addTo(group);
+                        });
+                    } else {
+                        const qs = (this.mapUf ? `?uf=${this.mapUf}&` : '?') + `min_bovinos=${this.mapMin}`;
+                        pts = await (await fetch('/api/map' + qs)).json();
+                        const colors = { 'DESERTO VET': '#c62828', 'BAIXA COBERTURA': '#b8860b', 'NORMAL': '#2e7d32' };
+                        (Array.isArray(pts) ? pts : []).forEach(p => {
+                            if (p.lat == null || p.lng == null) return;
+                            const r = Math.max(4, Math.min(18, Math.sqrt(p.bovinos) / 110));
+                            L.circleMarker([p.lat, p.lng], {
+                                radius: r, color: colors[p.classificacao_vet] || '#607d8b',
+                                fillColor: colors[p.classificacao_vet] || '#607d8b', fillOpacity: 0.6, weight: 1
+                            }).bindPopup(
+                                `<b>${p.municipio} (${p.uf})</b><br>Rebanho: ${Number(p.bovinos).toLocaleString('pt-BR')}<br>`
+                                + `Estab. vet: ${p.cnpj_vet}<br><b style="color:${colors[p.classificacao_vet]||'#607d8b'}">${p.classificacao_vet}</b>`
+                            ).addTo(group);
+                        });
+                    }
+                    group.addTo(this._map);
+                    this._mapLayer = group;
+                    const arr = Array.isArray(pts) ? pts : [];
+                    const target = this.mapUf && arr.length ? [arr[0].lat, arr[0].lng] : [-15.0, -55.0];
+                    this._map.setView(target, this.mapUf ? 6 : 4);
+                },
+
+                // ---- Ficha do touro (modal + radar) ----
+                async abrirTouro(id) {
+                    this.touro = null; this.touroModal = true;
+                    const data = await (await fetch('/api/touro/' + id)).json();
+                    if (data.error) { this.touroModal = false; alert('Touro não encontrado.'); return; }
+                    this.touro = data;
+                    this.$nextTick(() => this.renderRadar());
+                },
+                fecharTouro() {
+                    this.touroModal = false;
+                    if (this._radar) { this._radar.destroy(); this._radar = null; }
+                },
+                renderRadar() {
+                    const el = document.getElementById('radarTouro');
+                    if (!el || typeof Chart === 'undefined' || !this.touro) return;
+                    if (this._radar) { this._radar.destroy(); this._radar = null; }
+                    const t = this.touro;
+                    const labels = ['Crescim. (PS)', 'Ganho (GPD)', 'Carcaça (AOL)', 'Marmoreio', 'Fertil. (HP)', 'Precoc. (PES)'];
+                    const vals = [t.dep_ps, t.dep_gpd, t.dep_aol, t.dep_mar, t.dep_hp, t.dep_pes].map(v => v == null ? 0 : Number(v));
+                    this._radar = new Chart(el, {
+                        type: 'radar',
+                        data: { labels, datasets: [{ label: t.nome, data: vals,
+                            backgroundColor: 'rgba(74,158,74,0.25)', borderColor: '#2d5a2d', borderWidth: 2, pointBackgroundColor: '#2d5a2d' }] },
+                        options: { responsive: true, plugins: { legend: { display: false } },
+                            scales: { r: { ticks: { display: false } } } }
+                    });
+                },
+                depVal(v) { return v == null ? '—' : Number(v).toFixed(2); },
+
+                // ---- Mercado & dados abertos ----
+                async loadMercado() {
+                    this.loading.mercado = true;
+                    const [ind, leite, reb, abate] = await Promise.all([
+                        fetch('/api/externo/indicadores').then(r => r.json()),
+                        fetch('/api/externo/leite').then(r => r.json()),
+                        fetch('/api/externo/rebanho').then(r => r.json()),
+                        fetch('/api/externo/abate').then(r => r.json()),
+                    ]);
+                    this.mercado = {
+                        indicadores: ind,
+                        leite: Array.isArray(leite) ? leite : [],
+                        rebanho: Array.isArray(reb) ? reb : [],
+                        abate: Array.isArray(abate) ? abate : [],
+                    };
+                    this.loading.mercado = false;
+                    this.$nextTick(() => this.renderMercadoCharts());
+                },
+                leiteTotal() { return this.mercado ? (this.mercado.leite || []).reduce((a, r) => a + (r.leite_mil_litros || 0), 0) : 0; },
+                rebanhoTotal() { return this.mercado ? (this.mercado.rebanho || []).reduce((a, r) => a + (r.bovinos || 0), 0) : 0; },
+                renderMercadoCharts() {
+                    if (typeof Chart === 'undefined' || !this.mercado) return;
+                    const barOpts = { responsive: true, plugins: { legend: { display: false } },
+                        scales: { y: { ticks: { callback: v => Number(v).toLocaleString('pt-BR') } } } };
+                    const leite = (this.mercado.leite || []).slice(0, 12);
+                    const reb = (this.mercado.rebanho || []).slice(0, 12);
+                    const abate = (this.mercado.abate || []).slice(0, 12);
+                    if (this._chLeite) this._chLeite.destroy();
+                    if (this._chRebanho) this._chRebanho.destroy();
+                    if (this._chAbate) this._chAbate.destroy();
+                    const elL = document.getElementById('chartLeite');
+                    const elR = document.getElementById('chartRebanho');
+                    const elA = document.getElementById('chartAbate');
+                    if (elL) this._chLeite = new Chart(elL, {
+                        type: 'bar',
+                        data: { labels: leite.map(x => x.uf_sigla || x.uf),
+                            datasets: [{ data: leite.map(x => x.leite_mil_litros), backgroundColor: '#4a9e4a' }] },
+                        options: barOpts });
+                    if (elR) this._chRebanho = new Chart(elR, {
+                        type: 'bar',
+                        data: { labels: reb.map(x => x.uf_sigla || x.uf),
+                            datasets: [{ data: reb.map(x => x.bovinos), backgroundColor: '#2d5a2d' }] },
+                        options: barOpts });
+                    if (elA) this._chAbate = new Chart(elA, {
+                        type: 'bar',
+                        data: { labels: abate.map(x => x.uf_sigla || x.uf),
+                            datasets: [{ data: abate.map(x => x.cabecas), backgroundColor: '#a1561f' }] },
+                        options: barOpts });
+                },
+                async abrirCnpj(cnpj) {
+                    if (!cnpj) return;
+                    this.cnpjData = null; this.cnpjModal = true; this.cnpjLoading = true;
+                    this.cnpjData = await (await fetch('/api/externo/cnpj/' + cnpj)).json();
+                    this.cnpjLoading = false;
+                },
+                exportarLeadsCSV() {
+                    const qs = `?segmento=${this.mkt.segmento}` + (this.mkt.uf ? `&uf=${this.mkt.uf}` : '') + '&limit=1000';
+                    window.location.href = '/api/leads/csv' + qs;
+                },
+
+                page(arr, key) {
+                    const start = this.pageIdx[key] * this.pageSize;
+                    return arr.slice(start, start + this.pageSize);
+                },
+                pagerLabel(key) {
+                    const total = this[key].length;
+                    const pages = Math.ceil(total / this.pageSize) || 1;
+                    const cur = this.pageIdx[key] + 1;
+                    return `${total} registros · página ${cur}/${pages}`;
+                },
+
+                fmt(n) { return (n === null || n === undefined) ? '...' : Number(n).toLocaleString('pt-BR'); },
+                brl(n) { return (n === null || n === undefined) ? '—' : 'R$ ' + Number(n).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}); },
+                badgeClass(c) {
+                    if (c === 'DESERTO VET') return 'deserto';
+                    if (c === 'BAIXA COBERTURA') return 'baixa';
+                    return 'normal';
+                },
+            }
+        }
+    </script>
+</body>
+</html>
