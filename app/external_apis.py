@@ -196,6 +196,58 @@ def boi_gordo():
     return _cached("boi_gordo", 6 * 3600, fetch)
 
 
+def _cotacao_data_valor(url, lo, hi):
+    """Extrai o par data(dd/mm/aaaa)->valor da tabela de cotações (robusto)."""
+    import re
+    html = _html(url)
+    m = re.search(r"(\d{2}/\d{2}/\d{4})[^0-9]{0,200}?(\d{1,3}(?:\.\d{3})*,\d{2})", html)
+    if not m:
+        return None
+    v = _to_float(m.group(2).replace(".", "").replace(",", "."))
+    if v and lo <= v <= hi:
+        return {"valor": v, "data": m.group(1)}
+    return None
+
+
+def leite_preco():
+    """Preço do leite ao produtor (CEPEA, R$/litro, média Brasil) — via Notícias Agrícolas.
+    Âncora na linha 'Brasil' da tabela de Preços ao Produtor."""
+    import re
+
+    def fetch():
+        try:
+            html = _html("https://www.noticiasagricolas.com.br/cotacoes/leite")
+        except Exception:
+            return None
+        m = re.search(r"Brasil</td>\s*<td>(\d,\d{2,4})", html)
+        if not m:
+            return None
+        v = _to_float(m.group(1).replace(",", "."))
+        if not v or not (0.5 <= v <= 6):
+            return None
+        return {"valor": v, "unidade": "R$/litro",
+                "fonte": "CEPEA Preços ao Produtor (Notícias Agrícolas)"}
+    return _cached("leite_preco", 12 * 3600, fetch)
+
+
+def graos():
+    """Milho e soja (R$/saca) — Indicadores ESALQ via Notícias Agrícolas."""
+    def fetch():
+        out = {}
+        try:
+            out["milho"] = _cotacao_data_valor(
+                "https://www.noticiasagricolas.com.br/cotacoes/milho", 30, 250)
+        except Exception:
+            out["milho"] = None
+        try:
+            out["soja"] = _cotacao_data_valor(
+                "https://www.noticiasagricolas.com.br/cotacoes/soja", 80, 350)
+        except Exception:
+            out["soja"] = None
+        return out
+    return _cached("graos", 6 * 3600, fetch)
+
+
 def indicadores():
     """Banco Central (SGS): dólar comercial (série 1) e Selic meta (série 432)."""
     def fetch():
