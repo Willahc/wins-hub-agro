@@ -225,3 +225,140 @@ def gerar_parecer_pdf(perfil: dict, touros: list) -> bytes:
     doc.build(story)
     buffer.seek(0)
     return buffer.read()
+
+
+UF_NOME = {
+    "TO": "Tocantins", "MT": "Mato Grosso", "MS": "Mato Grosso do Sul",
+    "GO": "Goiás", "PA": "Pará", "MG": "Minas Gerais", "SP": "São Paulo",
+    "BA": "Bahia", "RO": "Rondônia", "MA": "Maranhão", "GO": "Goiás",
+}
+
+
+def gerar_relatorio_territorial(uf: str, dados: dict) -> bytes:
+    """Relatório territorial executivo de um estado (panorama + alvos de prospecção)."""
+    pan = dados.get("panorama") or {}
+    prioritarios = dados.get("prioritarios") or []
+    grupos = dados.get("grandes_grupos") or []
+    uf_nome = UF_NOME.get(uf, uf)
+
+    def _i(v):
+        return _num(v) or 0
+
+    reb24 = _i(pan.get("rebanho_2024"))
+    reb20 = _i(pan.get("rebanho_2020"))
+    cresc = (100.0 * (reb24 - reb20) / reb20) if reb20 else 0
+    n_fmt = lambda v: f"{int(_i(v)):,}".replace(",", ".")
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=2 * cm, rightMargin=2 * cm,
+                            topMargin=2 * cm, bottomMargin=2 * cm)
+    styles = getSampleStyleSheet()
+    story = []
+    st_titulo = ParagraphStyle('t', fontSize=26, textColor=BRANCO, alignment=TA_CENTER,
+                               fontName='Helvetica-Bold', spaceAfter=8)
+    st_sub = ParagraphStyle('s', fontSize=15, textColor=VERDE_MEDIO, alignment=TA_CENTER,
+                            fontName='Helvetica', spaceAfter=6)
+    st_data = ParagraphStyle('d', fontSize=11, textColor=colors.black, alignment=TA_CENTER,
+                             fontName='Helvetica')
+    st_h2 = ParagraphStyle('h2', fontSize=14, textColor=VERDE_ESCURO,
+                           fontName='Helvetica-Bold', spaceAfter=10)
+    st_body = ParagraphStyle('b', fontSize=10, textColor=colors.black, fontName='Helvetica',
+                             spaceAfter=6, leading=15)
+
+    # --- CAPA ---
+    capa = Table([[Paragraph("WiNS Hub Agro", st_titulo)]], colWidths=[17 * cm])
+    capa.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), VERDE_ESCURO),
+        ('TOPPADDING', (0, 0), (-1, -1), 70), ('BOTTOMPADDING', (0, 0), (-1, -1), 18),
+    ]))
+    story += [Spacer(1, 3 * cm), capa, Spacer(1, 0.5 * cm),
+              Paragraph("RELATÓRIO TERRITORIAL", st_sub),
+              Paragraph(f"{uf_nome} ({uf}) — Inteligência de Prospecção", st_sub),
+              Spacer(1, 1 * cm),
+              Paragraph(f"Gerado em {datetime.now().strftime('%d/%m/%Y')} &middot; "
+                        "Base IBGE/PPM 2024, MapBiomas, CNPJ e cobertura veterinária", st_data),
+              PageBreak()]
+
+    # --- PANORAMA ---
+    story += [Paragraph(f"PANORAMA DA PECUÁRIA — {uf_nome}", st_h2),
+              HRFlowable(width="100%", color=VERDE_CLARO), Spacer(1, 0.3 * cm)]
+    cresc_txt = f"+{cresc:.0f}%" if cresc >= 0 else f"{cresc:.0f}%"
+    pan_data = [
+        ["Rebanho bovino (2024)", f"{n_fmt(reb24)} cabeças"],
+        ["Crescimento do rebanho (2020→2024)", cresc_txt],
+        ["Municípios analisados", n_fmt(pan.get("municipios"))],
+        ["Desertos Vet (rebanho alto, sem suporte técnico)", n_fmt(pan.get("desertos_vet"))],
+        ["Criadores de corte (CNPJ ativo)", n_fmt(pan.get("criadores_corte"))],
+        ["Criadores de leite (CNPJ ativo)", n_fmt(pan.get("criadores_leite"))],
+        ["Criadores com contato (tel./e-mail)", n_fmt(pan.get("com_contato"))],
+    ]
+    t = Table(pan_data, colWidths=[10 * cm, 7 * cm])
+    t.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'), ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ROWBACKGROUNDS', (0, 0), (-1, -1), [CINZA, BRANCO]),
+        ('TOPPADDING', (0, 0), (-1, -1), 7), ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8), ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+    ]))
+    story += [t, Spacer(1, 0.6 * cm)]
+
+    # --- MUNICÍPIOS PRIORITÁRIOS ---
+    story += [Paragraph("MUNICÍPIOS PRIORITÁRIOS — onde a Mari entra primeiro", st_h2),
+              HRFlowable(width="100%", color=VERDE_CLARO), Spacer(1, 0.2 * cm),
+              Paragraph("Desertos Vet ordenados por rebanho: maior gado, <b>zero suporte "
+                        "técnico</b> = maior potencial de consultoria e venda de genética.", st_body),
+              Spacer(1, 0.2 * cm)]
+    rows = [["#", "Município", "Rebanho (cab.)", "Estab. Vet"]]
+    for i, m in enumerate(prioritarios[:15], 1):
+        rows.append([str(i), (m.get("municipio") or "—")[:28],
+                     n_fmt(m.get("bovinos")), n_fmt(m.get("cnpj_vet"))])
+    tp = Table(rows, colWidths=[1 * cm, 8 * cm, 4.5 * cm, 3.5 * cm])
+    tp.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), VERDE_ESCURO), ('TEXTCOLOR', (0, 0), (-1, 0), BRANCO),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'), ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [CINZA, BRANCO]),
+        ('ALIGN', (2, 0), (-1, -1), 'RIGHT'), ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+        ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#cccccc')),
+    ]))
+    story += [tp, PageBreak()]
+
+    # --- GRANDES GRUPOS ---
+    if grupos:
+        story += [Paragraph("GRANDES GRUPOS — alvos B2B (sócios multi-fazenda)", st_h2),
+                  HRFlowable(width="100%", color=VERDE_CLARO), Spacer(1, 0.2 * cm),
+                  Paragraph("Pessoas que controlam várias empresas rurais no estado: um "
+                            "negócio fecha muitas fazendas.", st_body), Spacer(1, 0.2 * cm)]
+        gr = [["Sócio", "Fazendas no estado"]]
+        for g in grupos[:10]:
+            gr.append([(g.get("socio") or "—")[:45], n_fmt(g.get("fazendas"))])
+        tg = Table(gr, colWidths=[12 * cm, 5 * cm])
+        tg.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), VERDE_ESCURO), ('TEXTCOLOR', (0, 0), (-1, 0), BRANCO),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'), ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [CINZA, BRANCO]),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#cccccc')),
+        ]))
+        story += [tg, Spacer(1, 0.6 * cm)]
+
+    # --- ESTRATÉGIA ---
+    story += [Paragraph("ESTRATÉGIA DE ATUAÇÃO", st_h2),
+              HRFlowable(width="100%", color=VERDE_CLARO), Spacer(1, 0.3 * cm),
+              Paragraph(
+                  f"O estado de <b>{uf_nome}</b> reúne <b>{n_fmt(reb24)} cabeças</b> e "
+                  f"<b>{n_fmt(pan.get('desertos_vet'))} Desertos Vet</b> — municípios com rebanho "
+                  "expressivo e <b>zero suporte técnico veterinário</b>. É exatamente o vazio onde "
+                  "a consultoria técnica entra: a Mari atua como consultora nesses municípios, usa o "
+                  "<b>Motor de Matching</b> do WiNS Hub Agro para recomendar o reprodutor adequado ao "
+                  "perfil de cada fazenda, emite o <b>parecer zootécnico</b> e converte a recomendação "
+                  "em venda — sendo o canal de distribuição técnica nos mercados ainda não atendidos.",
+                  st_body),
+              Spacer(1, 0.5 * cm),
+              Paragraph("Relatório gerado automaticamente pela plataforma <b>WiNS Hub Agro</b>. "
+                        "Dados: IBGE/PPM (rebanho 2024), MapBiomas (pastagem), Receita Federal (CNPJ) "
+                        f"e cobertura veterinária. {datetime.now().strftime('%d/%m/%Y %H:%M')}.", st_body)]
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.read()

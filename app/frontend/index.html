@@ -255,6 +255,9 @@
             <div class="nav-item" :class="{active: section==='demanda'}" @click="go('demanda')">
                 <span class="ico">📈</span> Demanda
             </div>
+            <div class="nav-item" :class="{active: section==='territorio'}" @click="go('territorio')">
+                <span class="ico">📍</span> Território
+            </div>
             <div class="nav-item" :class="{active: section==='mapa'}" @click="go('mapa')">
                 <span class="ico">🗺️</span> Mapa
             </div>
@@ -665,6 +668,72 @@
                 </div>
             </section>
 
+            <!-- ============ TERRITÓRIO ============ -->
+            <section x-show="section==='territorio'">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+                    <div>
+                        <h2>📍 Relatório Territorial</h2>
+                        <p class="subtitle">Inteligência de prospecção por estado: panorama, alvos prioritários (Desertos Vet) e grandes grupos. Pronto para apresentar.</p>
+                    </div>
+                    <div class="toolbar" style="margin:0;">
+                        <label>UF:</label>
+                        <select x-ref="terUfSel" x-model="terUf" @change="loadTerritorio()">
+                            <template x-for="u in ufs" :key="u"><option :value="u" x-text="u"></option></template>
+                        </select>
+                        <button class="run-btn" style="padding:9px 18px;font-size:13px;background:#1a3a1a;" @click="exportarTerritorioPDF()">📄 Exportar PDF</button>
+                    </div>
+                </div>
+
+                <div class="loading" x-show="loading.territorio">Carregando…</div>
+                <template x-if="!loading.territorio && territorio">
+                    <div>
+                        <div class="kpi-grid">
+                            <div class="kpi"><div class="value" x-text="fmt(territorio.panorama.rebanho_2024)"></div><div class="label">Rebanho 2024 (cabeças)</div></div>
+                            <div class="kpi"><div class="value" x-text="terCrescimento()"></div><div class="label">Crescimento 2020→2024</div></div>
+                            <div class="kpi alert"><div class="value" x-text="fmt(territorio.panorama.desertos_vet)"></div><div class="label">Desertos Vet (alvos)</div></div>
+                            <div class="kpi"><div class="value" x-text="fmt(territorio.panorama.criadores_corte)"></div><div class="label">Criadores de corte</div></div>
+                            <div class="kpi"><div class="value" x-text="fmt(territorio.panorama.criadores_leite)"></div><div class="label">Criadores de leite</div></div>
+                            <div class="kpi"><div class="value" x-text="fmt(territorio.panorama.com_contato)"></div><div class="label">Com contato (tel/email)</div></div>
+                        </div>
+
+                        <h2 style="font-size:17px;">🎯 Municípios prioritários — onde entrar primeiro</h2>
+                        <p class="subtitle">Desertos Vet por rebanho: maior gado, zero suporte técnico = maior potencial de consultoria e venda.</p>
+                        <div class="card" style="margin:10px 0 28px;">
+                            <table x-show="territorio.prioritarios.length">
+                                <thead><tr><th>#</th><th>Município</th><th>Rebanho</th><th>Estab. Vet</th></tr></thead>
+                                <tbody>
+                                    <template x-for="(m,i) in territorio.prioritarios" :key="i">
+                                        <tr>
+                                            <td data-label="#" x-text="i+1"></td>
+                                            <td data-label="Município" x-text="m.municipio"></td>
+                                            <td data-label="Rebanho" class="num" x-text="fmt(m.bovinos)"></td>
+                                            <td data-label="Estab. Vet" class="num"><span class="badge deserto" x-text="fmt(m.cnpj_vet)"></span></td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                            <div class="empty" x-show="!territorio.prioritarios.length">Sem Desertos Vet neste estado.</div>
+                        </div>
+
+                        <h2 style="font-size:17px;">🐋 Grandes grupos no estado</h2>
+                        <div class="card" style="margin-top:10px;">
+                            <table x-show="territorio.grandes_grupos.length">
+                                <thead><tr><th>Sócio</th><th>Fazendas</th></tr></thead>
+                                <tbody>
+                                    <template x-for="(g,i) in territorio.grandes_grupos" :key="i">
+                                        <tr>
+                                            <td data-label="Sócio" x-text="g.socio"></td>
+                                            <td data-label="Fazendas" class="num" x-text="g.fazendas"></td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                            <div class="empty" x-show="!territorio.grandes_grupos.length">Sem grupos para este estado.</div>
+                        </div>
+                    </div>
+                </template>
+            </section>
+
             <!-- ============ MAPA ============ -->
             <section x-show="section==='mapa'">
                 <h2>🗺️ Mapa — Rebanho & Cobertura Veterinária</h2>
@@ -866,7 +935,7 @@
                 ufFilter: '', racaFilter: '',
                 pageIdx: { whitespace: 0, arbitragem: 0 },
                 pageSize: 20,
-                loading: { whitespace: false, arbitragem: false, centrais: false, fazendas: false, matching: false, marketplace: false, mercado: false, demanda: false },
+                loading: { whitespace: false, arbitragem: false, centrais: false, fazendas: false, matching: false, marketplace: false, mercado: false, demanda: false, territorio: false },
                 loaded: {},
                 match: { finalidade: 'corte', prioridade: 'geral', uf: '', orcamento_max: null, raca_id: null, sexado: false },
                 matchResult: [], matchRan: false, boiArroba: null, leiteLitro: null,
@@ -874,6 +943,7 @@
                 racasTodas: [],
                 mkt: { segmento: 'corte', uf: '' }, marketplace: null, leads: [],
                 demUf: '', tendencia: [], lotacao: [], whales: [],
+                terUf: 'TO', territorio: null,
                 mapUf: '', mapMin: 100000, mapLayer: 'rebanho', _map: null, _mapLayer: null,
                 touroModal: false, touro: null, _radar: null,
                 mercado: null, _chLeite: null, _chRebanho: null, _chAbate: null,
@@ -893,6 +963,10 @@
                     if (s === 'rankings' && !this.loaded.rankings) { this.loadCentrais(); this.loadFazendas(); this.loaded.rankings = true; }
                     if (s === 'marketplace' && !this.loaded.marketplace) { this.loadMarketplace(); this.loaded.marketplace = true; }
                     if (s === 'demanda' && !this.loaded.demanda) { this.loadDemanda(); this.loaded.demanda = true; }
+                    if (s === 'territorio') {
+                        if (!this.loaded.territorio) { this.loadTerritorio(); this.loaded.territorio = true; }
+                        this.$nextTick(() => { if (this.$refs.terUfSel) this.$refs.terUfSel.value = this.terUf; });
+                    }
                     if (s === 'mapa') { this.$nextTick(() => this.loadMapa()); }
                     if (s === 'mercado' && !this.loaded.mercado) { this.loadMercado(); this.loaded.mercado = true; }
                 },
@@ -1018,6 +1092,22 @@
                     this.lotacao = Array.isArray(l) ? l : [];
                     this.whales = Array.isArray(w) ? w : [];
                     this.loading.demanda = false;
+                },
+
+                // ---- Território ----
+                async loadTerritorio() {
+                    this.loading.territorio = true;
+                    this.territorio = await fetch('/api/territorio?uf=' + this.terUf).then(r => r.json());
+                    this.loading.territorio = false;
+                },
+                terCrescimento() {
+                    const p = this.territorio?.panorama;
+                    if (!p || !p.rebanho_2020) return '—';
+                    const c = 100 * (p.rebanho_2024 - p.rebanho_2020) / p.rebanho_2020;
+                    return (c >= 0 ? '+' : '') + c.toFixed(0) + '%';
+                },
+                exportarTerritorioPDF() {
+                    window.location.href = '/api/territorio/pdf?uf=' + this.terUf;
                 },
 
                 // ---- Mapa (Leaflet) ----

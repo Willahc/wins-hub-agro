@@ -9,7 +9,7 @@ from typing import Optional
 from datetime import datetime
 from starlette.concurrency import run_in_threadpool
 from auth import authenticate_user, create_access_token, decode_token
-from pdf_generator import gerar_parecer_pdf
+from pdf_generator import gerar_parecer_pdf, gerar_relatorio_territorial
 import external_apis
 import psycopg2
 import psycopg2.extras
@@ -857,6 +857,80 @@ async def demanda_lotacao(uf: str = None, limit: int = 50,
             """,
             {"uf": uf, "limit": min(limit, 2000),
              "min_ha": min_ha, "min_cab": min_cab},
+        )
+    except Exception as e:
+        return _error(e)
+
+
+def _territorio_dados(uf):
+    """Agrega a inteligência comercial de um estado (panorama, municípios prioritários
+    = Desertos Vet por rebanho, e grandes grupos). Base do relatório territorial."""
+    panorama = query(
+        """
+        SELECT
+          (SELECT SUM(efetivo_cabecas) FROM prospeccao.ppm_municipio
+             WHERE uf=%(uf)s AND ano_referencia=2024 AND especie_codigo='BOV') AS rebanho_2024,
+          (SELECT SUM(efetivo_cabecas) FROM prospeccao.ppm_municipio
+             WHERE uf=%(uf)s AND ano_referencia=2020 AND especie_codigo='BOV') AS rebanho_2020,
+          (SELECT COUNT(*) FROM prospeccao.v_white_space_pecuaria WHERE uf=%(uf)s) AS municipios,
+          (SELECT COUNT(*) FROM prospeccao.v_white_space_pecuaria
+             WHERE uf=%(uf)s AND classificacao_vet='DESERTO VET') AS desertos_vet,
+          (SELECT COUNT(*) FROM cnpj.estabelecimento_rural
+             WHERE uf=%(uf)s AND situacao_cadastral='02' AND cnae_fiscal_principal='0151201') AS criadores_corte,
+          (SELECT COUNT(*) FROM cnpj.estabelecimento_rural
+             WHERE uf=%(uf)s AND situacao_cadastral='02' AND cnae_fiscal_principal='0151202') AS criadores_leite,
+          (SELECT COUNT(*) FROM cnpj.estabelecimento_rural
+             WHERE uf=%(uf)s AND situacao_cadastral='02'
+               AND cnae_fiscal_principal IN ('0151201','0151202')
+               AND (telefone_1 IS NOT NULL OR correio_eletronico IS NOT NULL)) AS com_contato
+        """,
+        {"uf": uf},
+    )[0]
+    prioritarios = query(
+        """
+        SELECT nome AS municipio, bovinos, cnpj_vet
+        FROM prospeccao.v_white_space_pecuaria
+        WHERE uf=%(uf)s AND classificacao_vet='DESERTO VET'
+        ORDER BY bovinos DESC LIMIT 15
+        """,
+        {"uf": uf},
+    )
+    grupos = query(
+        """
+        SELECT s.nome_socio AS socio, COUNT(DISTINCT s.cnpj_basico) AS fazendas
+        FROM cnpj.socio_rural s
+        JOIN cnpj.estabelecimento_rural e ON e.cnpj_basico = s.cnpj_basico
+        WHERE e.uf=%(uf)s AND s.nome_socio IS NOT NULL
+        GROUP BY s.nome_socio HAVING COUNT(DISTINCT s.cnpj_basico) >= 3
+        ORDER BY fazendas DESC LIMIT 10
+        """,
+        {"uf": uf},
+    )
+    return {"uf": uf, "panorama": panorama, "prioritarios": prioritarios,
+            "grandes_grupos": grupos}
+
+
+@app.get("/api/territorio")
+async def territorio(uf: str = "TO"):
+    """Relatório territorial de um estado para a prospecção (panorama + alvos)."""
+    try:
+        return _territorio_dados((uf or "TO").upper())
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/territorio/pdf")
+async def territorio_pdf(uf: str = "TO"):
+    """Relatório territorial executivo em PDF (para apresentação comercial)."""
+    try:
+        uf = (uf or "TO").upper()
+        dados = _territorio_dados(uf)
+        pdf_bytes = await run_in_threadpool(gerar_relatorio_territorial, uf, dados)
+        data_str = datetime.now().strftime("%Y%m%d")
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes), media_type="application/pdf",
+            headers={"Content-Disposition":
+                     f"attachment; filename=relatorio_territorial_{uf}_{data_str}.pdf"},
         )
     except Exception as e:
         return _error(e)
