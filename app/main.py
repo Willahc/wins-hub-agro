@@ -370,6 +370,66 @@ class MatchingRequest(BaseModel):
     sexado: bool = False
 
 
+def _scorar_matching(rows):
+    """Score 0..1 de adequação para COMPRA de sêmen, calculado em Python sobre o
+    conjunto de candidatos. Combina três eixos, deliberadamente NÃO comparando
+    DEPs crus entre raças (escalas incompatíveis):
+
+      • genética (0.45): mérito na DEP prioritária, normalizado POR RAÇA
+        (dep / melhor-da-raça). Responde "quão elite é dentro da própria raça".
+      • valor econômico (0.35): valor agregado em R$ por filho(a), normalizado
+        por FINALIDADE (corte=bezerro, leite=filha). R$ é comparável entre raças.
+      • disponibilidade comercial (0.20): touro com preço público acionável e
+        eficiente (menor R$/IQGg da raça) pontua mais; sem preço público recebe
+        baseline baixa — o matching premia o que dá pra de fato comprar.
+
+    Sem este blend o score saturava em 1.000 (o líder de cada raça empatava no
+    topo no modo raça=Todas) e touros com preço nunca emergiam.
+    """
+    if not rows:
+        return rows
+    max_dep = {}          # melhor DEP prioritária por raça
+    min_ppi = {}          # melhor (menor) R$/IQGg por raça
+    max_bezerro = 0.0     # melhor valor/bezerro global (finalidade corte)
+    max_filha = 0.0       # melhor valor/filha global (finalidade leite)
+    for t in rows:
+        r = t.get("raca")
+        dep = t.get("dep_prioritaria") or 0
+        if dep > max_dep.get(r, 0):
+            max_dep[r] = dep
+        ppi = t.get("preco_por_iqgg")
+        if ppi and (r not in min_ppi or ppi < min_ppi[r]):
+            min_ppi[r] = ppi
+        if t.get("valor_bezerro"):
+            max_bezerro = max(max_bezerro, t["valor_bezerro"])
+        if t.get("valor_filha"):
+            max_filha = max(max_filha, t["valor_filha"])
+
+    for t in rows:
+        r = t.get("raca")
+        dep = t.get("dep_prioritaria") or 0
+        g = dep / max_dep[r] if max_dep.get(r) else 0.0
+        # valor econômico (por finalidade; corte tem precedência se ambos)
+        if t.get("valor_bezerro") and max_bezerro > 0:
+            v = t["valor_bezerro"] / max_bezerro
+        elif t.get("valor_filha") and max_filha > 0:
+            v = t["valor_filha"] / max_filha
+        else:
+            v = 0.0
+        # disponibilidade comercial + eficiência de preço
+        ppi = t.get("preco_por_iqgg")
+        if ppi and min_ppi.get(r):
+            a = 0.5 + 0.5 * (min_ppi[r] / ppi)   # 0.5..1.0 (melhor preço -> 1.0)
+        elif t.get("preco_dose"):
+            a = 0.6
+        else:
+            a = 0.30                              # sem preço público (não acionável)
+        t["score"] = round(0.45 * g + 0.35 * v + 0.20 * a, 3)
+
+    rows.sort(key=lambda t: t["score"], reverse=True)
+    return rows
+
+
 @app.post("/api/matching")
 async def matching(req: MatchingRequest):
     try:
@@ -383,7 +443,13 @@ async def matching(req: MatchingRequest):
             "sexado": bool(req.sexado),
         }
         # DISTINCT ON (r.id) -> um único registro por touro (touro_central pode
-        # repetir o touro em várias centrais). Score independe da central.
+        # repetir o touro em várias centrais). O score é calculado em Python
+        # (ver _scorar_matching) sobre este conjunto de candidatos: aqui só
+        # trazemos os campos crus.
+        # IMPORTANTE: a seleção de candidatos é POR RAÇA (ROW_NUMBER particionado),
+        # pegando os top-60 de cada raça pela DEP prioritária. Um LIMIT global por
+        # DEP cru viesaria tudo p/ raças de escala alta (Girolando IQGg ~2000 vs
+        # Nelore ~50), engolindo as demais raças no modo raça=Todas.
         rows = query(
             """
             WITH deps AS (
@@ -402,43 +468,18 @@ async def matching(req: MatchingRequest):
                 FROM mercado.touro_oferta
                 GROUP BY reprodutor_id
             ),
-            maximos AS (
-                -- normalização POR RAÇA: escalas de índice diferem entre raças
-                -- (IQGg zebu ~40-70, PTA Leite girolando ~500-2300, marmoreio wagyu ~1-3)
-                SELECT rr.raca_id, MAX(d.iqgg) AS max_iqgg, MAX(d.dep_prioritaria) AS max_dep
-                FROM deps d JOIN mercado.reprodutor rr ON rr.id = d.reprodutor_id
-                GROUP BY rr.raca_id
-            )
-            SELECT * FROM (
+            cand AS (
                 SELECT DISTINCT ON (r.id)
-                    r.id, r.nome, r.registro, ra.nome AS raca, c.nome AS central,
+                    r.id, r.nome, r.registro, r.raca_id, ra.nome AS raca, c.nome AS central,
                     r.fazenda_origem,
                     (CASE WHEN %(sexado)s THEN o.preco_sexado ELSE o.preco_dose END) AS preco_dose,
-                    d.iqgg, d.dep_prioritaria, d.peso_dep, d.pta_leite,
-                    ROUND((
-                        (d.dep_prioritaria / NULLIF(m.max_dep, 0)) * 0.5 +
-                        (d.iqgg / NULLIF(m.max_iqgg, 0)) * 0.3 +
-                        CASE
-                            WHEN %(orcamento_max)s IS NOT NULL AND %(orcamento_max)s > 0
-                                 AND (CASE WHEN %(sexado)s THEN o.preco_sexado ELSE o.preco_dose END) > 0
-                            THEN (1 - LEAST(
-                                (CASE WHEN %(sexado)s THEN o.preco_sexado ELSE o.preco_dose END)
-                                / %(orcamento_max)s, 1)) * 0.2
-                            ELSE 0.2
-                        END
-                    )::numeric, 4) AS score,
-                    CASE
-                        WHEN d.iqgg > 0 AND (CASE WHEN %(sexado)s THEN o.preco_sexado ELSE o.preco_dose END) > 0
-                        THEN ROUND(((CASE WHEN %(sexado)s THEN o.preco_sexado ELSE o.preco_dose END) / d.iqgg)::numeric, 2)
-                        ELSE NULL
-                    END AS preco_por_iqgg
+                    d.iqgg, d.dep_prioritaria, d.peso_dep, d.pta_leite
                 FROM mercado.reprodutor r
                 JOIN catalogo.raca ra ON ra.id = r.raca_id
                 JOIN deps d ON d.reprodutor_id = r.id
                 LEFT JOIN mercado.touro_central tc ON tc.reprodutor_id = r.id
                 LEFT JOIN catalogo.central c ON c.id = tc.central_id
                 LEFT JOIN ofertas o ON o.reprodutor_id = r.id
-                JOIN maximos m ON m.raca_id = r.raca_id
                 WHERE d.iqgg IS NOT NULL
                   AND d.dep_prioritaria IS NOT NULL
                   AND (%(raca_id)s IS NULL OR r.raca_id = %(raca_id)s)
@@ -448,9 +489,18 @@ async def matching(req: MatchingRequest):
                   AND (%(orcamento_max)s IS NULL OR %(orcamento_max)s = 0
                        OR (CASE WHEN %(sexado)s THEN o.preco_sexado ELSE o.preco_dose END) <= %(orcamento_max)s)
                 ORDER BY r.id, c.nome NULLS LAST
-            ) sub
-            ORDER BY score DESC NULLS LAST
-            LIMIT 30
+            ),
+            ranked AS (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY raca_id ORDER BY dep_prioritaria DESC NULLS LAST
+                ) AS rn
+                FROM cand
+            )
+            -- top-60 genéticos por raça + TODOS os touros com preço público
+            -- (comercialmente acionáveis): estes têm genética menor que a elite de
+            -- registro e ficariam de fora do corte por DEP, mas são justamente os
+            -- que o comprador pode adquirir — precisam entrar no score.
+            SELECT * FROM ranked WHERE rn <= 60 OR preco_dose IS NOT NULL
             """,
             params,
         )
@@ -474,6 +524,14 @@ async def matching(req: MatchingRequest):
                 round(pta * litro, 2)
                 if (pta is not None and pta > 0 and litro) else None
             )
+            # R$ por ponto de IQGg (eficiência de compra), só quando há preço
+            iq = t.get("iqgg")
+            pr = t.get("preco_dose")
+            t["preco_por_iqgg"] = (
+                round(pr / iq, 2) if (pr and iq and iq > 0) else None
+            )
+
+        rows = _scorar_matching(rows)[:30]
         return {
             "total": len(rows),
             "prioridade": req.prioridade,

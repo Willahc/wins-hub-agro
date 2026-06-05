@@ -36,8 +36,13 @@
             color: #555; border-left: 4px solid transparent; transition: all .15s;
         }
         .nav-item:hover { background: #f0f5f0; }
-        .nav-item.active { background: #eaf5ea; color: #1a3a1a; border-left-color: #4a9e4a; }
+        .nav-item.active { background: #e8f5e9; color: #1a3a1a; border-left-color: #4a9e4a; }
         .nav-item .ico { font-size: 18px; }
+        .nav-group {
+            font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+            color: #b0b8b0; padding: 20px 24px 7px;
+        }
+        .nav-group:first-child { padding-top: 4px; }
 
         .content { flex: 1; padding: 32px; max-width: 100%; overflow-x: auto; }
         h2 { font-size: 22px; margin-bottom: 6px; color: #1a3a1a; }
@@ -52,9 +57,15 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.06); border-left: 4px solid #4a9e4a;
         }
         .kpi.alert { border-left-color: #c62828; }
-        .kpi .value { font-size: 32px; font-weight: 800; color: #1a3a1a; }
+        .kpi .value { font-size: 32px; font-weight: 800; color: #1a3a1a; line-height: 1.05; }
         .kpi.alert .value { color: #c62828; }
         .kpi .label { font-size: 13px; color: #666; margin-top: 4px; }
+        .kpi .ctx { font-size: 11px; color: #9aa39a; margin-top: 5px; font-weight: 600; }
+        /* variante com ícone à esquerda */
+        .kpi.k2 { display: flex; align-items: center; gap: 16px; }
+        .kpi .kico { flex: none; width: 42px; height: 42px; color: #4a9e4a; }
+        .kpi.alert .kico { color: #c62828; }
+        .kpi .kico svg { width: 100%; height: 100%; display: block; }
 
         .toolbar { display: flex; gap: 16px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }
         .toolbar label { font-size: 13px; font-weight: 600; color: #555; }
@@ -85,6 +96,31 @@
         .badge.score-high { background: #e8f5e9; color: #2e7d32; }
         .badge.score-mid  { background: #fff8e1; color: #b8860b; }
         .badge.score-low  { background: #eceff1; color: #607d8b; }
+
+        /* card de destaque do touro #1 no Matching */
+        .top-match {
+            display: flex; flex-wrap: wrap; gap: 24px; align-items: center;
+            background: linear-gradient(135deg, #1a3a1a 0%, #2d5a2d 100%);
+            color: #fff; border-radius: 14px; padding: 22px 26px; margin-bottom: 18px;
+            box-shadow: 0 8px 24px rgba(26,58,26,.25);
+        }
+        .top-match .tm-rank {
+            font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+            color: #a8e0a8;
+        }
+        .top-match .tm-name { font-size: 24px; font-weight: 800; margin-top: 2px; }
+        .top-match .tm-sub { font-size: 13px; color: #cfe6cf; margin-top: 3px; }
+        .top-match .tm-main { flex: 1 1 260px; min-width: 240px; }
+        .top-match .tm-bar-wrap { margin-top: 14px; }
+        .top-match .tm-bar-label { display: flex; justify-content: space-between; font-size: 12px; color: #cfe6cf; margin-bottom: 5px; }
+        .top-match .tm-bar { height: 9px; background: rgba(255,255,255,.18); border-radius: 6px; overflow: hidden; }
+        .top-match .tm-bar > i { display: block; height: 100%; background: #7ed47e; border-radius: 6px; }
+        .top-match .tm-value {
+            flex: none; text-align: center; background: rgba(255,255,255,.10);
+            border-radius: 12px; padding: 16px 22px; min-width: 150px;
+        }
+        .top-match .tm-value .v { font-size: 26px; font-weight: 800; color: #fff; }
+        .top-match .tm-value .l { font-size: 11px; color: #cfe6cf; margin-top: 4px; text-transform: uppercase; letter-spacing: .04em; }
 
         .modal-overlay {
             position: fixed; inset: 0; background: rgba(0,0,0,.55);
@@ -123,12 +159,13 @@
         }
         table { width: 100%; border-collapse: collapse; font-size: 14px; }
         th {
-            background: #f3f6f3; text-align: left; padding: 12px 16px;
+            background: #1a3a1a; text-align: left; padding: 12px 16px;
             font-size: 12px; text-transform: uppercase; letter-spacing: .03em;
-            color: #555; font-weight: 700; white-space: nowrap;
+            color: #fff; font-weight: 700; white-space: nowrap;
         }
-        td { padding: 12px 16px; border-top: 1px solid #eef2ee; }
-        tbody tr:hover { background: #fafcfa; }
+        td { padding: 10px 16px; border-top: 1px solid #eef2ee; }
+        tbody tr:nth-child(even) { background: #f5f7f5; }
+        tbody tr:hover { background: #e8f5e9; }
         td.num { text-align: right; font-variant-numeric: tabular-nums; }
         .best { background: #eaf7ea !important; }
         .best td:first-child::before { content: "★ "; color: #4a9e4a; }
@@ -234,11 +271,9 @@
     <div class="layout">
         <div class="nav-overlay" x-show="mobileNav" @click="mobileNav=false" style="display:none;"></div>
         <nav class="sidebar" :class="{open: mobileNav}">
+            <div class="nav-group">Genética</div>
             <div class="nav-item" :class="{active: section==='visao'}" @click="go('visao')">
                 <span class="ico">📊</span> Visão Geral
-            </div>
-            <div class="nav-item" :class="{active: section==='whitespace'}" @click="go('whitespace')">
-                <span class="ico">🗺️</span> White-Space
             </div>
             <div class="nav-item" :class="{active: section==='arbitragem'}" @click="go('arbitragem')">
                 <span class="ico">💰</span> Arbitragem
@@ -249,8 +284,16 @@
             <div class="nav-item" :class="{active: section==='matching'}" @click="go('matching')">
                 <span class="ico">🎯</span> Matching
             </div>
+            <div class="nav-group">Mercado</div>
             <div class="nav-item" :class="{active: section==='marketplace'}" @click="go('marketplace')">
                 <span class="ico">🛒</span> Marketplace
+            </div>
+            <div class="nav-item" :class="{active: section==='mercado'}" @click="go('mercado')">
+                <span class="ico">🌐</span> Mercado
+            </div>
+            <div class="nav-group">Território</div>
+            <div class="nav-item" :class="{active: section==='whitespace'}" @click="go('whitespace')">
+                <span class="ico">🗺️</span> White-Space
             </div>
             <div class="nav-item" :class="{active: section==='demanda'}" @click="go('demanda')">
                 <span class="ico">📈</span> Demanda
@@ -261,9 +304,6 @@
             <div class="nav-item" :class="{active: section==='mapa'}" @click="go('mapa')">
                 <span class="ico">🗺️</span> Mapa
             </div>
-            <div class="nav-item" :class="{active: section==='mercado'}" @click="go('mercado')">
-                <span class="ico">🌐</span> Mercado
-            </div>
         </nav>
 
         <main class="content">
@@ -272,12 +312,30 @@
                 <h2>Visão Geral</h2>
                 <p class="subtitle">Panorama da base de inteligência genética e prospecção.</p>
                 <div class="kpi-grid">
-                    <div class="kpi"><div class="value" x-text="fmt(stats.reprodutores)"></div><div class="label">Reprodutores cadastrados</div></div>
-                    <div class="kpi"><div class="value" x-text="fmt(stats.avaliacoes)"></div><div class="label">Avaliações DEP</div></div>
-                    <div class="kpi"><div class="value" x-text="fmt(stats.centrais)"></div><div class="label">Centrais de IA</div></div>
-                    <div class="kpi"><div class="value" x-text="fmt(stats.ofertas)"></div><div class="label">Ofertas comerciais</div></div>
-                    <div class="kpi"><div class="value" x-text="fmt(stats.municipios)"></div><div class="label">Municípios analisados</div></div>
-                    <div class="kpi alert"><div class="value" x-text="fmt(stats.desertos_vet)"></div><div class="label">Desertos Vet</div></div>
+                    <div class="kpi k2">
+                        <span class="kico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 3c0 6 14 6 14 12M19 3c0 6-14 6-14 12M5 21c0-1.5 14-1.5 14 0M5 3c0-.5 14-.5 14 0"/><path d="M7 7h10M8 11h8M8 14h8M7 18h10"/></svg></span>
+                        <div><div class="value" x-text="fmt(stats.reprodutores)"></div><div class="label">Reprodutores cadastrados</div><div class="ctx">21 raças · corte e leite</div></div>
+                    </div>
+                    <div class="kpi k2">
+                        <span class="kico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><rect x="4" y="11" width="3.5" height="8"/><rect x="10.25" y="6" width="3.5" height="13"/><rect x="16.5" y="9" width="3.5" height="10"/></svg></span>
+                        <div><div class="value" x-text="fmt(stats.avaliacoes)"></div><div class="label">Avaliações DEP</div><div class="ctx">Geneplus · Jan/2026</div></div>
+                    </div>
+                    <div class="kpi k2">
+                        <span class="kico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14"/><path d="M9 21v-5h6v5M9 9h2M13 9h2M9 12.5h2M13 12.5h2"/></svg></span>
+                        <div><div class="value" x-text="fmt(stats.centrais)"></div><div class="label">Centrais de IA</div><div class="ctx">ABS, CRV, Alta, Semex…</div></div>
+                    </div>
+                    <div class="kpi k2">
+                        <span class="kico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 13.5 13 21l-9-9V4h8l8.5 8.5z"/><circle cx="8" cy="8" r="1.6"/></svg></span>
+                        <div><div class="value" x-text="fmt(stats.ofertas)"></div><div class="label">Ofertas comerciais</div><div class="ctx">preço público de sêmen</div></div>
+                    </div>
+                    <div class="kpi k2">
+                        <span class="kico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.7 7-11a7 7 0 1 0-14 0c0 5.3 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/></svg></span>
+                        <div><div class="value" x-text="fmt(stats.municipios)"></div><div class="label">Municípios analisados</div><div class="ctx">cobertura nacional</div></div>
+                    </div>
+                    <div class="kpi k2 alert">
+                        <span class="kico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v5M12 17.5v.01"/></svg></span>
+                        <div><div class="value" x-text="fmt(stats.desertos_vet)"></div><div class="label">Desertos Vet</div><div class="ctx">rebanho alto · zero cobertura</div></div>
+                    </div>
                 </div>
             </section>
 
@@ -469,6 +527,31 @@
                         <span x-show="loading.matching">Processando…</span>
                     </button>
                 </div>
+
+                <template x-if="!loading.matching && matchResult.length">
+                    <div class="top-match">
+                        <div class="tm-main">
+                            <div class="tm-rank">★ Touro #1 · melhor adequação</div>
+                            <div class="tm-name" x-text="matchResult[0].nome"></div>
+                            <div class="tm-sub">
+                                <span x-text="matchResult[0].raca"></span>
+                                <template x-if="matchResult[0].central"><span> · <span x-text="matchResult[0].central"></span></span></template>
+                                <template x-if="matchResult[0].preco_dose"><span> · <span x-text="brl(matchResult[0].preco_dose)"></span>/dose</span></template>
+                            </div>
+                            <div class="tm-bar-wrap">
+                                <div class="tm-bar-label">
+                                    <span>Score de adequação</span>
+                                    <span x-text="Number(matchResult[0].score).toFixed(3)"></span>
+                                </div>
+                                <div class="tm-bar"><i :style="`width:${Math.round(matchResult[0].score*100)}%`"></i></div>
+                            </div>
+                        </div>
+                        <div class="tm-value">
+                            <div class="v" x-text="valorAgregado(matchResult[0])"></div>
+                            <div class="l">Valor agregado / filho(a)</div>
+                        </div>
+                    </div>
+                </template>
 
                 <div class="card" x-show="matchRan">
                     <div class="loading" x-show="loading.matching">Calculando scores…</div>
@@ -1118,9 +1201,13 @@
                         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                             maxZoom: 18, attribution: '© OpenStreetMap'
                         }).addTo(this._map);
-                    } else {
-                        this._map.invalidateSize();
                     }
+                    // O container só ganha tamanho real quando a seção fica visível
+                    // (x-show: display none -> block). Sem revalidar, o Leaflet mede
+                    // 0/parcial e renderiza só um pedaço dos tiles (mapa cinza).
+                    // Revalida sempre, com um tick extra de folga pós-layout.
+                    this._map.invalidateSize();
+                    setTimeout(() => { if (this._map) this._map.invalidateSize(); }, 250);
                     if (this._mapLayer) { this._map.removeLayer(this._mapLayer); }
                     const group = L.layerGroup();
                     let pts = [];
