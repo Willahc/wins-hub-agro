@@ -389,7 +389,8 @@ async def matching(req: MatchingRequest):
             WITH deps AS (
                 SELECT reprodutor_id,
                     MAX(CASE WHEN caracteristica_id = %(iqgg)s THEN valor END) AS iqgg,
-                    MAX(CASE WHEN caracteristica_id = %(dep_id)s THEN valor END) AS dep_prioritaria
+                    MAX(CASE WHEN caracteristica_id = %(dep_id)s THEN valor END) AS dep_prioritaria,
+                    MAX(CASE WHEN caracteristica_id = 5 THEN valor END) AS peso_dep
                 FROM mercado.avaliacao
                 GROUP BY reprodutor_id
             ),
@@ -412,7 +413,7 @@ async def matching(req: MatchingRequest):
                     r.id, r.nome, r.registro, ra.nome AS raca, c.nome AS central,
                     r.fazenda_origem,
                     (CASE WHEN %(sexado)s THEN o.preco_sexado ELSE o.preco_dose END) AS preco_dose,
-                    d.iqgg, d.dep_prioritaria,
+                    d.iqgg, d.dep_prioritaria, d.peso_dep,
                     ROUND((
                         (d.dep_prioritaria / NULLIF(m.max_dep, 0)) * 0.5 +
                         (d.iqgg / NULLIF(m.max_iqgg, 0)) * 0.3 +
@@ -452,10 +453,22 @@ async def matching(req: MatchingRequest):
             """,
             params,
         )
+        # Valor econômico estimado por bezerro: vantagem de PD (peso à desmama, kg,
+        # vs a média da raça) × cotação do boi. Carcaça ~50%, @ = 15 kg ->
+        # valor = peso_dep × 0,5 ÷ 15 × R$/@ = peso_dep × preço / 30. É ESTIMATIVA.
+        boi = await run_in_threadpool(external_apis.boi_gordo)
+        arroba = (boi or {}).get("valor")
+        for t in rows:
+            pd = t.get("peso_dep")
+            t["valor_bezerro"] = (
+                round(pd * arroba / 30, 2)
+                if (pd is not None and pd > 0 and arroba) else None
+            )
         return {
             "total": len(rows),
             "prioridade": req.prioridade,
             "dep_id": dep_id,
+            "boi_arroba": arroba,
             "touros": rows,
         }
     except Exception as e:
@@ -893,6 +906,15 @@ async def externo_indicadores():
     """Indicadores de mercado (dólar, Selic) via Banco Central."""
     try:
         return await run_in_threadpool(external_apis.indicadores)
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/externo/boi")
+async def externo_boi():
+    """Cotação do boi gordo (Indicador ESALQ/B3, R$/@)."""
+    try:
+        return await run_in_threadpool(external_apis.boi_gordo)
     except Exception as e:
         return _error(e)
 
