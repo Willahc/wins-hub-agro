@@ -4,7 +4,7 @@ import hmac
 import bcrypt
 import os
 
-SECRET_KEY = os.getenv("SECRET_KEY", "***SECRET-KEY-REMOVIDA(rotacionada-jun04)***")
+SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE-ME-set-SECRET_KEY-in-env")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8  # 8 horas
 

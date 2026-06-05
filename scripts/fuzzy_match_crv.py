@@ -10,7 +10,7 @@ DB = {
     "host": os.getenv("DB_HOST", "db"), "port": int(os.getenv("DB_PORT", 5432)),
     "dbname": os.getenv("POSTGRES_DB", "wins_agro"),
     "user": os.getenv("POSTGRES_USER", "postgres"),
-    "password": os.getenv("POSTGRES_PASSWORD", "***SENHA-PG-REMOVIDA(rotacionada-jun08)***"),
+    "password": os.getenv("POSTGRES_PASSWORD", ""),
 }
 FONTE = "CRV match fuzzy (nome)"
 STOP = {"FIV", "TE", "IA", "DA", "DO", "DE", "DOS", "DAS", "MS", "FB", "JR",
