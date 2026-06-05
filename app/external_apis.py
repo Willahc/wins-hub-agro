@@ -154,6 +154,48 @@ def valor_producao_municipios():
     return _cached("valor_mun", 86400, fetch)
 
 
+def _html(url, timeout=20):
+    r = httpx.get(url, timeout=timeout, follow_redirects=True, headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        "Accept-Language": "pt-BR",
+    })
+    r.raise_for_status()
+    return r.text
+
+
+def boi_gordo():
+    """Indicador do Boi Gordo CEPEA-ESALQ/B3 (R$/@). O CEPEA bloqueia acesso direto
+    (Cloudflare), então lemos o MESMO indicador republicado pela Notícias Agrícolas.
+    Ancora no par data(dd/mm/aaaa)->valor da tabela de cotações (robusto a outros
+    números na página)."""
+    import re
+
+    def extrair(html):
+        m = re.search(r"(\d{2}/\d{2}/\d{4})[^0-9]{0,200}?(\d{3},\d{2})", html)
+        if not m:
+            return None, None
+        v = _to_float(m.group(2).replace(".", "").replace(",", "."))
+        if v and 150 <= v <= 800:   # faixa plausível p/ arroba do boi
+            return v, m.group(1)
+        return None, None
+
+    def fetch():
+        try:
+            v, data = extrair(_html(
+                "https://www.noticiasagricolas.com.br/cotacoes/boi-gordo/"
+                "boi-gordo-indicador-esalq-bmf"))
+        except Exception:
+            v, data = None, None
+        if not v:
+            return None
+        return {
+            "valor": v, "data": data, "unidade": "R$/@",
+            "fonte": "Indicador ESALQ/B3 (Notícias Agrícolas)",
+        }
+    return _cached("boi_gordo", 6 * 3600, fetch)
+
+
 def indicadores():
     """Banco Central (SGS): dólar comercial (série 1) e Selic meta (série 432)."""
     def fetch():

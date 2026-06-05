@@ -475,6 +475,7 @@
                                 <thead><tr>
                                     <th>Score</th><th>Touro</th><th>Raça</th><th>Central</th>
                                     <th>Preço dose</th><th>IQGg</th><th>DEP prior.</th><th>R$/IQGg</th>
+                                    <th>Ganho/bezerro 🐂</th>
                                 </tr></thead>
                                 <tbody>
                                     <template x-for="row in matchResult" :key="row.id">
@@ -487,12 +488,17 @@
                                             <td data-label="IQGg" class="num" x-text="row.iqgg !== null ? Number(row.iqgg).toFixed(2) : '—'"></td>
                                             <td data-label="DEP prior." class="num" x-text="row.dep_prioritaria !== null ? Number(row.dep_prioritaria).toFixed(2) : '—'"></td>
                                             <td data-label="R$/IQGg" class="num" x-text="row.preco_por_iqgg !== null ? brl(row.preco_por_iqgg) : '—'"></td>
+                                            <td data-label="Ganho/bezerro" class="num" style="color:#2d5a2d;font-weight:700" x-text="(row.valor_bezerro !== null && row.valor_bezerro !== undefined) ? brl(row.valor_bezerro) : '—'"></td>
                                         </tr>
                                     </template>
                                 </tbody>
                             </table>
                             <div class="empty" x-show="!matchResult.length">Nenhum touro atende a esse perfil. Tente afrouxar o orçamento ou a raça.</div>
                             <div class="pager" x-show="matchResult.length"><span x-text="matchResult.length + ' touros rankeados'"></span></div>
+                            <p class="subtitle" x-show="matchResult.length && boiArroba" style="padding:10px 16px 14px;margin:0;">
+                                🐂 Boi gordo: <b x-text="brl(boiArroba)"></b>/@ (Indicador ESALQ/B3).
+                                <b>Ganho/bezerro</b> = vantagem de peso à desmama (PD) × cotação do boi — estimativa do valor extra por bezerro <i>vs. a média da raça</i> (carcaça 50%, @ = 15 kg).
+                            </p>
                         </div>
                     </template>
                 </div>
@@ -712,6 +718,7 @@
                     <div>
                         <div class="kpi-grid">
                             <div class="kpi"><div class="value" x-text="mercado.indicadores?.dolar ? ('R$ ' + Number(mercado.indicadores.dolar.valor).toFixed(2)) : '—'"></div><div class="label">Dólar comercial (BCB)</div></div>
+                            <div class="kpi"><div class="value" x-text="mercado.boi?.valor ? brl(mercado.boi.valor) : '—'"></div><div class="label">Boi gordo @ (ESALQ/B3)<span x-show="mercado.boi?.data" x-text="' · ' + (mercado.boi?.data||'')"></span></div></div>
                             <div class="kpi"><div class="value" x-text="fmt(leiteTotal())"></div><div class="label">Produção de leite BR (mil L/ano)</div></div>
                             <div class="kpi"><div class="value" x-text="fmt(rebanhoTotal())"></div><div class="label">Rebanho bovino BR (cabeças)</div></div>
                             <div class="kpi"><div class="value" x-text="mercado.leite?.[0]?.ano || '—'"></div><div class="label">Ano de referência IBGE</div></div>
@@ -850,7 +857,7 @@
                 loading: { whitespace: false, arbitragem: false, centrais: false, fazendas: false, matching: false, marketplace: false, mercado: false, demanda: false },
                 loaded: {},
                 match: { finalidade: 'corte', prioridade: 'geral', uf: '', orcamento_max: null, raca_id: null, sexado: false },
-                matchResult: [], matchRan: false,
+                matchResult: [], matchRan: false, boiArroba: null,
                 perfilAtual: null, exportando: false,
                 racasTodas: [],
                 mkt: { segmento: 'corte', uf: '' }, marketplace: null, leads: [],
@@ -924,6 +931,7 @@
                     });
                     const data = await res.json();
                     this.matchResult = data.touros || [];
+                    this.boiArroba = data.boi_arroba || null;
                     this.loading.matching = false;
                 },
                 async exportarPDF() {
@@ -1102,14 +1110,16 @@
                 // ---- Mercado & dados abertos ----
                 async loadMercado() {
                     this.loading.mercado = true;
-                    const [ind, leite, reb, abate] = await Promise.all([
+                    const [ind, leite, reb, abate, boi] = await Promise.all([
                         fetch('/api/externo/indicadores').then(r => r.json()),
                         fetch('/api/externo/leite').then(r => r.json()),
                         fetch('/api/externo/rebanho').then(r => r.json()),
                         fetch('/api/externo/abate').then(r => r.json()),
+                        fetch('/api/externo/boi').then(r => r.json()),
                     ]);
                     this.mercado = {
                         indicadores: ind,
+                        boi: boi,
                         leite: Array.isArray(leite) ? leite : [],
                         rebanho: Array.isArray(reb) ? reb : [],
                         abate: Array.isArray(abate) ? abate : [],
