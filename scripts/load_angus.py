@@ -1,5 +1,5 @@
 import os, json, psycopg2
-DB={"host":os.getenv("DB_HOST","db"),"port":int(os.getenv("DB_PORT",5432)),"dbname":os.getenv("POSTGRES_DB","wins_agro"),"user":os.getenv("POSTGRES_USER","postgres"),"password":os.getenv("POSTGRES_PASSWORD","WiNSAgro2026!")}
+DB={"host":os.getenv("DB_HOST","db"),"port":int(os.getenv("DB_PORT",5432)),"dbname":os.getenv("POSTGRES_DB","wins_agro"),"user":os.getenv("POSTGRES_USER","postgres"),"password":os.getenv("POSTGRES_PASSWORD","")}
 conn=psycopg2.connect(**DB); cur=conn.cursor()
 cur.execute("SELECT id FROM catalogo.caracteristica WHERE sigla='IDX_CARC_PROMEBO'"); CARC=cur.fetchone()[0]
 ALVO=[CARC,20]; nr=na=0

@@ -65,7 +65,7 @@ DB_CONFIG = {
     "port": int(os.getenv("DB_PORT", 5432)),
     "dbname": os.getenv("POSTGRES_DB", "wins_agro"),
     "user": os.getenv("POSTGRES_USER", "postgres"),
-    "password": os.getenv("POSTGRES_PASSWORD", "WiNSAgro2026!"),
+    "password": os.getenv("POSTGRES_PASSWORD", ""),
 }
 
 # IQGg = Índice de Qualificação Genética Genômica (Básico) — catalogo.caracteristica.id = 20
