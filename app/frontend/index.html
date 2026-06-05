@@ -674,6 +674,7 @@
                     <select x-model="mapLayer" @change="loadMapa()">
                         <option value="rebanho">Rebanho & cobertura vet</option>
                         <option value="tendencia">Crescimento do rebanho 2020→2024</option>
+                        <option value="lotacao">Pasto ocioso (lotação cab/ha)</option>
                         <option value="leite">Produção de leite (IBGE)</option>
                         <option value="valor">Valor da produção R$ (IBGE)</option>
                     </select>
@@ -702,6 +703,12 @@
                     <span style="font-size:13px;color:#777;" x-show="mapLayer==='tendencia'">
                         <span style="color:#1b7837;font-weight:700">●</span> rebanho subindo
                         <span style="color:#c62828;font-weight:700;margin-left:10px">●</span> caindo (2020→2024, tamanho ∝ rebanho)
+                    </span>
+                    <span style="font-size:13px;color:#777;" x-show="mapLayer==='lotacao'">
+                        <span style="color:#1b7837;font-weight:700">●</span> muito pasto ocioso (&lt;0,5)
+                        <span style="color:#7fbf7b;font-weight:700;margin-left:8px">●</span> ocioso
+                        <span style="color:#d9a441;font-weight:700;margin-left:8px">●</span> equilibrado
+                        <span style="color:#9e9e9e;font-weight:700;margin-left:8px">●</span> lotado (cab/ha · tamanho ∝ pastagem)
                     </span>
                 </div>
                 <div class="card" style="padding:0;">
@@ -1064,6 +1071,22 @@
                             }).bindPopup(
                                 `<b>${p.municipio} (${p.uf})</b><br>Rebanho 2023: ${Number(p.rebanho).toLocaleString('pt-BR')}<br>`
                                 + `<b style="color:${color}">${g >= 0 ? '+' : ''}${g}%</b> vs 2020`
+                            ).addTo(group);
+                        });
+                    } else if (this.mapLayer === 'lotacao') {
+                        const qs = (this.mapUf ? `?uf=${this.mapUf}&` : '?') + `min_ha=10000&min_cab=10000&limit=2000`;
+                        pts = await (await fetch('/api/demanda/lotacao' + qs)).json();
+                        (Array.isArray(pts) ? pts : []).forEach(p => {
+                            if (p.lat == null || p.lng == null) return;
+                            const l = Number(p.lotacao);
+                            const color = l < 0.5 ? '#1b7837' : l < 1.5 ? '#7fbf7b' : l < 3 ? '#d9a441' : '#9e9e9e';
+                            const r = Math.max(4, Math.min(20, Math.sqrt(p.pastagem_ha) / 30));
+                            L.circleMarker([p.lat, p.lng], {
+                                radius: r, color, fillColor: color, fillOpacity: 0.6, weight: 1
+                            }).bindPopup(
+                                `<b>${p.municipio} (${p.uf})</b><br>Lotação: <b>${l.toFixed(2)}</b> cab/ha<br>`
+                                + `Rebanho: ${Number(p.rebanho).toLocaleString('pt-BR')}<br>`
+                                + `Pastagem: ${Number(p.pastagem_ha).toLocaleString('pt-BR')} ha`
                             ).addTo(group);
                         });
                     } else {
