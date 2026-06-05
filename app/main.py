@@ -776,18 +776,18 @@ async def demanda_tendencia(uf: str = None, limit: int = 200, min_reb: int = 300
             WITH t AS (
                 SELECT codigo_ibge_mun,
                     MAX(efetivo_cabecas) FILTER (WHERE ano_referencia = 2020) AS c20,
-                    MAX(efetivo_cabecas) FILTER (WHERE ano_referencia = 2023) AS c23
+                    MAX(efetivo_cabecas) FILTER (WHERE ano_referencia = 2024) AS c24
                 FROM prospeccao.ppm_municipio
                 WHERE especie_codigo = 'BOV'
                 GROUP BY codigo_ibge_mun
             )
             SELECT m.nome AS municipio, m.uf,
                    m.latitude AS lat, m.longitude AS lng,
-                   t.c23 AS rebanho, t.c20 AS rebanho_2020,
-                   ROUND(100.0 * (t.c23 - t.c20) / NULLIF(t.c20, 0), 1) AS crescimento_pct
+                   t.c24 AS rebanho, t.c20 AS rebanho_2020,
+                   ROUND(100.0 * (t.c24 - t.c20) / NULLIF(t.c20, 0), 1) AS crescimento_pct
             FROM t
             JOIN referencia.municipio m ON m.codigo_ibge = t.codigo_ibge_mun::int
-            WHERE t.c20 > 0 AND t.c23 >= %(min_reb)s
+            WHERE t.c20 > 0 AND t.c24 >= %(min_reb)s
               AND (%(uf)s IS NULL OR m.uf = %(uf)s)
             ORDER BY crescimento_pct DESC
             LIMIT %(limit)s
@@ -817,7 +817,7 @@ async def demanda_lotacao(uf: str = None, limit: int = 50):
                        MAX(p.efetivo_cabecas) AS cab
                 FROM prospeccao.ppm_municipio p
                 JOIN referencia.municipio m ON m.codigo_ibge = p.codigo_ibge_mun::int
-                WHERE p.especie_codigo = 'BOV' AND p.ano_referencia = 2023
+                WHERE p.especie_codigo = 'BOV' AND p.ano_referencia = 2024
                 GROUP BY 1, 2, 3, 4, 5
             )
             SELECT h.nome AS municipio, h.uf, h.lat, h.lng,

@@ -588,7 +588,7 @@
             <!-- ============ DEMANDA & EXPANSÃO ============ -->
             <section x-show="section==='demanda'">
                 <h2>📈 Demanda & Expansão</h2>
-                <p class="subtitle">Onde está e para onde vai a demanda — de dados antes ociosos: rebanho IBGE/PPM (2020–2023), pastagem MapBiomas e sócios da base CNPJ.</p>
+                <p class="subtitle">Onde está e para onde vai a demanda — de dados antes ociosos: rebanho IBGE/PPM (2020–2024), pastagem MapBiomas e sócios da base CNPJ.</p>
                 <div class="toolbar">
                     <label>UF:</label>
                     <select x-model="demUf" @change="loadDemanda()">
@@ -597,18 +597,18 @@
                     </select>
                 </div>
 
-                <h2 style="font-size:17px;">🐂 Rebanho em expansão (2020 → 2023)</h2>
+                <h2 style="font-size:17px;">🐂 Rebanho em expansão (2020 → 2024)</h2>
                 <p class="subtitle">Municípios cujo rebanho bovino mais cresceu — a fronteira da demanda por genética.</p>
                 <div class="card" style="margin:10px 0 28px;">
                     <div class="loading" x-show="loading.demanda">Carregando…</div>
                     <table x-show="!loading.demanda && tendencia.length">
-                        <thead><tr><th>Município</th><th>UF</th><th>Rebanho 2023</th><th>Crescimento</th></tr></thead>
+                        <thead><tr><th>Município</th><th>UF</th><th>Rebanho 2024</th><th>Crescimento</th></tr></thead>
                         <tbody>
                             <template x-for="(r,i) in tendencia.slice(0,15)" :key="'t'+i">
                                 <tr>
                                     <td data-label="Município" x-text="r.municipio"></td>
                                     <td data-label="UF" x-text="r.uf"></td>
-                                    <td data-label="Rebanho 2023" class="num" x-text="fmt(r.rebanho)"></td>
+                                    <td data-label="Rebanho 2024" class="num" x-text="fmt(r.rebanho)"></td>
                                     <td data-label="Crescimento" class="num"><span class="badge normal" x-text="'+'+Number(r.crescimento_pct).toFixed(0)+'%'"></span></td>
                                 </tr>
                             </template>
@@ -666,7 +666,7 @@
                     <label>Camada:</label>
                     <select x-model="mapLayer" @change="loadMapa()">
                         <option value="rebanho">Rebanho & cobertura vet</option>
-                        <option value="tendencia">Crescimento do rebanho 2020→2023</option>
+                        <option value="tendencia">Crescimento do rebanho 2020→2024</option>
                         <option value="leite">Produção de leite (IBGE)</option>
                         <option value="valor">Valor da produção R$ (IBGE)</option>
                     </select>
@@ -694,7 +694,7 @@
                     </span>
                     <span style="font-size:13px;color:#777;" x-show="mapLayer==='tendencia'">
                         <span style="color:#1b7837;font-weight:700">●</span> rebanho subindo
-                        <span style="color:#c62828;font-weight:700;margin-left:10px">●</span> caindo (2020→2023, tamanho ∝ rebanho)
+                        <span style="color:#c62828;font-weight:700;margin-left:10px">●</span> caindo (2020→2024, tamanho ∝ rebanho)
                     </span>
                 </div>
                 <div class="card" style="padding:0;">
