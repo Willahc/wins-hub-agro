@@ -823,7 +823,8 @@ async def demanda_tendencia(uf: str = None, limit: int = 200, min_reb: int = 300
 
 
 @app.get("/api/demanda/lotacao")
-async def demanda_lotacao(uf: str = None, limit: int = 50):
+async def demanda_lotacao(uf: str = None, limit: int = 50,
+                          min_ha: int = 20000, min_cab: int = 20000):
     """Taxa de lotação (cabeças/ha) cruzando rebanho (PPM) x pastagem (MapBiomas).
     Menor lotação + muita pastagem = pasto ocioso -> potencial de expansão do rebanho."""
     try:
@@ -849,12 +850,13 @@ async def demanda_lotacao(uf: str = None, limit: int = 50):
                    ROUND(h.cab / NULLIF(pa.ha, 0), 2) AS lotacao
             FROM herd h
             JOIN past pa ON pa.m = h.nm AND pa.uf = h.uf
-            WHERE pa.ha > 20000 AND h.cab > 20000
+            WHERE pa.ha > %(min_ha)s AND h.cab > %(min_cab)s
               AND (%(uf)s IS NULL OR h.uf = %(uf)s)
             ORDER BY lotacao ASC
             LIMIT %(limit)s
             """,
-            {"uf": uf, "limit": min(limit, 200)},
+            {"uf": uf, "limit": min(limit, 2000),
+             "min_ha": min_ha, "min_cab": min_cab},
         )
     except Exception as e:
         return _error(e)
