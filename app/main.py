@@ -222,6 +222,44 @@ async def stats():
         return _error(e)
 
 
+@app.get("/api/overview/racas")
+async def overview_racas():
+    """Top 8 raças por volume de reprodutores (barras da Visão Geral)."""
+    try:
+        return query(
+            """
+            SELECT ra.nome, COUNT(*) AS total
+            FROM mercado.reprodutor r
+            JOIN catalogo.raca ra ON ra.id = r.raca_id
+            GROUP BY ra.nome
+            ORDER BY total DESC
+            LIMIT 8
+            """
+        )
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/overview/regioes")
+async def overview_regioes():
+    """Top 6 UFs por rebanho com nº de Desertos Vet (genética × território)."""
+    try:
+        return query(
+            """
+            SELECT uf,
+                   SUM(bovinos) AS rebanho,
+                   COUNT(*) FILTER (WHERE classificacao_vet = 'DESERTO VET') AS desertos
+            FROM prospeccao.v_white_space_pecuaria
+            WHERE uf IS NOT NULL
+            GROUP BY uf
+            ORDER BY rebanho DESC
+            LIMIT 6
+            """
+        )
+    except Exception as e:
+        return _error(e)
+
+
 @app.get("/api/ufs")
 async def ufs():
     try:
