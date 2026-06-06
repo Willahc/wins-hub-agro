@@ -249,16 +249,24 @@ def graos():
 
 
 def indicadores():
-    """Banco Central (SGS): dólar comercial (série 1) e Selic meta (série 432)."""
+    """Câmbio USD/BRL e Selic. O BCB SGS (api.bcb.gov.br) bloqueia/erra as
+    requisições deste servidor (WAF -> HTML 'inválido' / 500), então o dólar vem
+    da referência do BCE via Frankfurter: confiável, sem chave e já retorna o
+    ÚLTIMO DIA ÚTIL no fim de semana (com a data), resolvendo o '—' de sáb/dom."""
     def fetch():
         out = {}
         try:
-            d = _get_json(f"{BCB}/bcdata.sgs.1/dados/ultimos/1?formato=json", timeout=15)
-            out["dolar"] = {"valor": _to_float(d[-1]["valor"]), "data": d[-1]["data"]}
+            d = _get_json("https://api.frankfurter.app/latest?from=USD&to=BRL", timeout=15)
+            brl = (d.get("rates") or {}).get("BRL")
+            iso = d.get("date") or ""                       # YYYY-MM-DD
+            data_br = "/".join(reversed(iso.split("-"))) if iso else None
+            out["dolar"] = ({"valor": _to_float(brl), "data": data_br,
+                             "fonte": "USD/BRL ref. (BCE/Frankfurter)"} if brl else None)
         except Exception:
             out["dolar"] = None
+        # Selic (BCB SGS) — best-effort; hoje não é exibida no painel.
         try:
-            s = _get_json(f"{BCB}/bcdata.sgs.432/dados/ultimos/1?formato=json", timeout=15)
+            s = _get_json(f"{BCB}/bcdata.sgs.432/dados/ultimos/1?formato=json", timeout=10)
             out["selic"] = {"valor": _to_float(s[-1]["valor"]), "data": s[-1]["data"]}
         except Exception:
             out["selic"] = None

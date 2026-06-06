@@ -1114,7 +1114,7 @@
                 <template x-if="!loading.mercado && mercado">
                     <div>
                         <div class="kpi-grid">
-                            <div class="kpi"><div class="value" x-text="mercado.indicadores?.dolar ? ('R$ ' + Number(mercado.indicadores.dolar.valor).toFixed(2)) : '—'"></div><div class="label">Dólar comercial (BCB)</div></div>
+                            <div class="kpi"><div class="value" x-text="mercado.indicadores?.dolar ? ('R$ ' + Number(mercado.indicadores.dolar.valor).toFixed(2)) : '—'"></div><div class="label">Dólar · USD/BRL<span x-show="mercado.indicadores?.dolar?.data" x-text="' · ' + (mercado.indicadores?.dolar?.data||'')"></span></div></div>
                             <div class="kpi"><div class="value" x-text="mercado.boi?.valor ? brl(mercado.boi.valor) : '—'"></div><div class="label">Boi gordo @ (ESALQ/B3)<span x-show="mercado.boi?.data" x-text="' · ' + (mercado.boi?.data||'')"></span></div></div>
                             <div class="kpi"><div class="value" x-text="mercado.leitePreco?.valor ? brl(mercado.leitePreco.valor) : '—'"></div><div class="label">Leite ao produtor (R$/L · CEPEA)</div></div>
                             <div class="kpi"><div class="value" x-text="mercado.graos?.milho?.valor ? brl(mercado.graos.milho.valor) : '—'"></div><div class="label">Milho (R$/saca)</div></div>
