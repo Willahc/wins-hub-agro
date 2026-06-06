@@ -204,6 +204,12 @@
         th.num { text-align: right; }   /* cabeçalho de coluna numérica casa com a célula */
         .best { background: #eaf7ea !important; }
         .best td:first-child::before { content: "★ "; color: #4a9e4a; }
+        /* Desktop: cards de tabela com largura natural pelo conteúdo (não esticam
+           até a borda criando vazios entre colunas). Mobile (≤768px) intacto:
+           lá a tabela vira cartões empilhados e o card ocupa 100%. */
+        @media (min-width: 769px) {
+            .card:has(table:not(.mini)) { width: fit-content; max-width: 100%; overflow-x: auto; }
+        }
 
         .badge {
             display: inline-block; padding: 4px 10px; border-radius: 20px;

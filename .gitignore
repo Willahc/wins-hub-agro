@@ -12,3 +12,4 @@ smoke_shots/
 ov_test.py
 nav_test.py
 align_test.py
+width_test.py
