@@ -9,3 +9,4 @@ certbot/conf/renewal/
 
 # Artefatos do smoke test (screenshots)
 smoke_shots/
+ov_test.py
