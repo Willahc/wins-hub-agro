@@ -6,3 +6,6 @@ certbot/conf/archive/
 certbot/conf/live/
 certbot/conf/accounts/
 certbot/conf/renewal/
+
+# Artefatos do smoke test (screenshots)
+smoke_shots/

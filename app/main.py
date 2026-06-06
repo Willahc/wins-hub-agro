@@ -511,6 +511,7 @@ async def matching(req: MatchingRequest):
         arroba = (boi or {}).get("valor")
         leite = await run_in_threadpool(external_apis.leite_preco)
         litro = (leite or {}).get("valor")
+        fin = (req.finalidade or "corte").lower()
         for t in rows:
             pd = t.get("peso_dep")
             # corte: vantagem de PD (kg) x cotação do boi / 30 (R$/bezerro vs média)
@@ -524,6 +525,13 @@ async def matching(req: MatchingRequest):
                 round(pta * litro, 2)
                 if (pta is not None and pta > 0 and litro) else None
             )
+            # finalidade dirige a métrica de valor agregado: corte só mostra/pontua
+            # R$/bezerro, leite só R$/lactação; "dupla" mantém ambos. Sem o gate, um
+            # touro de corte sem PD mas com PTA Leite vazava "/lact" no topo do rank.
+            if fin == "corte":
+                t["valor_filha"] = None
+            elif fin == "leite":
+                t["valor_bezerro"] = None
             # R$ por ponto de IQGg (eficiência de compra), só quando há preço
             iq = t.get("iqgg")
             pr = t.get("preco_dose")
