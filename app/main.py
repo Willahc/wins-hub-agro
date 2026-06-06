@@ -774,11 +774,24 @@ async def grupos():
 SEGMENTO_CNAE = {"corte": "0151201", "leite": "0151202"}
 
 
-def _leads_rows(uf, segmento, limit, offset=0):
+# colunas ordenáveis da lista de leads -> nome real (whitelist: nunca interpola
+# string crua do cliente no SQL).
+LEADS_SORT = {"empresa": "nome", "municipio": "municipio", "uf": "uf", "porte": "porte"}
+
+
+def _leads_rows(uf, segmento, limit, offset=0, sort=None, order="asc"):
     """Linhas de leads (uma por empresa, ordenadas por contactabilidade) com
     paginação por LIMIT/OFFSET. Tiebreaker por cnpj garante ordem ESTÁVEL entre
-    páginas (sem repetir/pular linha no OFFSET)."""
+    páginas (sem repetir/pular linha no OFFSET). `sort` (whitelist) reordena a
+    lista; o tiebreaker cnpj é mantido sempre."""
     cnae = SEGMENTO_CNAE.get(segmento, "0151201")
+    col = LEADS_SORT.get(sort)
+    if col:
+        dir_sql = "DESC" if str(order).lower() == "desc" else "ASC"
+        order_sql = f"ORDER BY {col} {dir_sql} NULLS LAST, cnpj ASC"
+    else:
+        order_sql = ("ORDER BY (email IS NOT NULL) DESC, (telefone_1 IS NOT NULL) DESC, "
+                     "capital_social DESC NULLS LAST, cnpj ASC")
     # DISTINCT ON (cnpj_basico): uma linha por empresa (JBJ etc. têm dezenas de filiais),
     # mantendo o estabelecimento mais "contactável".
     return query(
@@ -801,8 +814,7 @@ def _leads_rows(uf, segmento, limit, offset=0):
                      (e.correio_eletronico IS NOT NULL) DESC,
                      (e.telefone_1 IS NOT NULL) DESC
         ) sub
-        ORDER BY (email IS NOT NULL) DESC, (telefone_1 IS NOT NULL) DESC,
-                 capital_social DESC NULLS LAST, cnpj ASC
+        """ + order_sql + """
         LIMIT %(limit)s OFFSET %(offset)s
         """,
         {"cnae": cnae, "uf": uf, "limit": limit, "offset": offset},
@@ -829,14 +841,16 @@ def _leads_total(uf, segmento):
 
 
 @app.get("/api/leads")
-async def leads(uf: str = None, segmento: str = "corte", page: int = 1, page_size: int = 100):
+async def leads(uf: str = None, segmento: str = "corte", page: int = 1,
+                page_size: int = 100, sort: str = None, order: str = "asc"):
     """Compradores potenciais paginados (CNAE corte/leite) com contato.
-    Paginação NO SERVIDOR (LIMIT/OFFSET) — a base tem ~180 mil criadores."""
+    Paginação NO SERVIDOR (LIMIT/OFFSET) — a base tem ~180 mil criadores.
+    Ordenação opcional por coluna whitelisted (sort/order)."""
     try:
         page = max(1, page)
         page_size = min(max(page_size, 1), 200)
         offset = (page - 1) * page_size
-        rows = _leads_rows(uf, segmento, page_size, offset)
+        rows = _leads_rows(uf, segmento, page_size, offset, sort, order)
         total = _leads_total(uf, segmento)
         total_pages = max(1, (total + page_size - 1) // page_size)
         return {

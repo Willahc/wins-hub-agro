@@ -202,6 +202,9 @@
         td { padding: 13px 16px; border-top: 1px solid #eef2ee; }
         /* texto longo de células quebra dentro da coluna (table-layout fixed) */
         table:not(.mini) td { overflow-wrap: anywhere; }
+        /* cabeçalho clicável para ordenar */
+        th.sortable { cursor: pointer; user-select: none; transition: background .12s ease; }
+        th.sortable:hover { background: #245024; }
         tbody tr:nth-child(even) { background: #f5f7f5; }
         tbody tr:hover { background: #e8f5e9; }
         td.num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -455,11 +458,13 @@
                             <table x-show="whitespace.length">
                                 <colgroup><col style="width:30%"><col style="width:10%"><col style="width:19%"><col style="width:19%"><col style="width:22%"></colgroup>
                                 <thead><tr>
-                                    <th>Município</th><th>UF</th><th class="num">Bovinos</th>
-                                    <th class="num">Estab. Vet</th><th>Classificação</th>
+                                    <th class="sortable" @click="setSort('ws','municipio_nome','txt')">Município<span x-text="sortArrow('ws','municipio_nome')"></span></th>
+                                    <th class="sortable" @click="setSort('ws','uf','txt')">UF<span x-text="sortArrow('ws','uf')"></span></th>
+                                    <th class="num sortable" @click="setSort('ws','total_bovinos','num')">Bovinos<span x-text="sortArrow('ws','total_bovinos')"></span></th>
+                                    <th class="num sortable" @click="setSort('ws','cnpj_vet','num')">Estab. Vet<span x-text="sortArrow('ws','cnpj_vet')"></span></th><th>Classificação</th>
                                 </tr></thead>
                                 <tbody>
-                                    <template x-for="row in page(whitespace, 'whitespace')" :key="row.municipio_nome + row.uf">
+                                    <template x-for="row in page(sorted(whitespace, 'ws'), 'whitespace')" :key="row.municipio_nome + row.uf">
                                         <tr>
                                             <td data-label="Município" x-text="row.municipio_nome"></td>
                                             <td data-label="UF" x-text="row.uf"></td>
@@ -499,11 +504,15 @@
                             <table x-show="arbitragem.length">
                                 <colgroup><col style="width:28%"><col style="width:14%"><col style="width:14%"><col style="width:15%"><col style="width:14%"><col style="width:15%"></colgroup>
                                 <thead><tr>
-                                    <th>Touro</th><th>Raça</th><th>Central</th>
-                                    <th class="num">Preço dose</th><th class="num">IQGg</th><th class="num">R$/IQGg</th>
+                                    <th class="sortable" @click="setSort('arb','nome_touro','txt')">Touro<span x-text="sortArrow('arb','nome_touro')"></span></th>
+                                    <th class="sortable" @click="setSort('arb','raca','txt')">Raça<span x-text="sortArrow('arb','raca')"></span></th>
+                                    <th class="sortable" @click="setSort('arb','central','txt')">Central<span x-text="sortArrow('arb','central')"></span></th>
+                                    <th class="num sortable" @click="setSort('arb','preco_convencional','num')">Preço dose<span x-text="sortArrow('arb','preco_convencional')"></span></th>
+                                    <th class="num sortable" @click="setSort('arb','iqgg','num')">IQGg<span x-text="sortArrow('arb','iqgg')"></span></th>
+                                    <th class="num sortable" @click="setSort('arb','preco_por_iqgg','num')">R$/IQGg<span x-text="sortArrow('arb','preco_por_iqgg')"></span></th>
                                 </tr></thead>
                                 <tbody>
-                                    <template x-for="(row, i) in page(arbitragem, 'arbitragem')" :key="row.registro + row.central + i">
+                                    <template x-for="(row, i) in page(sorted(arbitragem, 'arb'), 'arbitragem')" :key="row.registro + row.central + i">
                                         <tr :class="{best: row.preco_por_iqgg !== null && pageIdx.arbitragem===0 && i<3}">
                                             <td data-label="Touro" x-text="row.nome_touro"></td>
                                             <td data-label="Raça" x-text="row.raca"></td>
@@ -536,9 +545,14 @@
                     <div class="loading" x-show="loading.centrais">Carregando…</div>
                     <table x-show="!loading.centrais && centrais.length">
                         <colgroup><col style="width:34%"><col style="width:22%"><col style="width:22%"><col style="width:22%"></colgroup>
-                        <thead><tr><th>Central</th><th class="num">Touros</th><th class="num">Ofertas</th><th class="num">Preço médio dose</th></tr></thead>
+                        <thead><tr>
+                            <th class="sortable" @click="setSort('cen','central','txt')">Central<span x-text="sortArrow('cen','central')"></span></th>
+                            <th class="num sortable" @click="setSort('cen','total_touros','num')">Touros<span x-text="sortArrow('cen','total_touros')"></span></th>
+                            <th class="num sortable" @click="setSort('cen','total_ofertas','num')">Ofertas<span x-text="sortArrow('cen','total_ofertas')"></span></th>
+                            <th class="num sortable" @click="setSort('cen','preco_medio','num')">Preço médio dose<span x-text="sortArrow('cen','preco_medio')"></span></th>
+                        </tr></thead>
                         <tbody>
-                            <template x-for="row in centrais" :key="row.central">
+                            <template x-for="row in sorted(centrais, 'cen')" :key="row.central">
                                 <tr>
                                     <td data-label="Central" x-text="row.central"></td>
                                     <td data-label="Touros" class="num" x-text="fmt(row.total_touros)"></td>
@@ -555,9 +569,13 @@
                     <div class="loading" x-show="loading.fazendas">Carregando…</div>
                     <table x-show="!loading.fazendas && fazendas.length">
                         <colgroup><col style="width:44%"><col style="width:28%"><col style="width:28%"></colgroup>
-                        <thead><tr><th>Fazenda</th><th class="num">Reprodutores</th><th class="num">IQGg médio</th></tr></thead>
+                        <thead><tr>
+                            <th class="sortable" @click="setSort('faz','fazenda_origem','txt')">Fazenda<span x-text="sortArrow('faz','fazenda_origem')"></span></th>
+                            <th class="num sortable" @click="setSort('faz','total_reprodutores','num')">Reprodutores<span x-text="sortArrow('faz','total_reprodutores')"></span></th>
+                            <th class="num sortable" @click="setSort('faz','iqgg_medio','num')">IQGg médio<span x-text="sortArrow('faz','iqgg_medio')"></span></th>
+                        </tr></thead>
                         <tbody>
-                            <template x-for="row in fazendas" :key="row.fazenda_origem">
+                            <template x-for="row in sorted(fazendas, 'faz')" :key="row.fazenda_origem">
                                 <tr>
                                     <td data-label="Fazenda" x-text="row.fazenda_origem"></td>
                                     <td data-label="Reprodutores" class="num" x-text="fmt(row.total_reprodutores)"></td>
@@ -662,12 +680,18 @@
                             <table x-show="matchResult.length">
                                 <colgroup><col style="width:8%"><col style="width:19%"><col style="width:11%"><col style="width:13%"><col style="width:10%"><col style="width:9%"><col style="width:10%"><col style="width:9%"><col style="width:11%"></colgroup>
                                 <thead><tr>
-                                    <th class="num">Score</th><th>Touro</th><th>Raça</th><th>Central</th>
-                                    <th class="num">Preço dose</th><th class="num">IQGg</th><th class="num">DEP prior.</th><th class="num">R$/IQGg</th>
-                                    <th class="num">Valor agregado 💰</th>
+                                    <th class="num sortable" @click="setSort('match','score','num')">Score<span x-text="sortArrow('match','score')"></span></th>
+                                    <th class="sortable" @click="setSort('match','nome','txt')">Touro<span x-text="sortArrow('match','nome')"></span></th>
+                                    <th class="sortable" @click="setSort('match','raca','txt')">Raça<span x-text="sortArrow('match','raca')"></span></th>
+                                    <th class="sortable" @click="setSort('match','central','txt')">Central<span x-text="sortArrow('match','central')"></span></th>
+                                    <th class="num sortable" @click="setSort('match','preco_dose','num')">Preço dose<span x-text="sortArrow('match','preco_dose')"></span></th>
+                                    <th class="num sortable" @click="setSort('match','iqgg','num')">IQGg<span x-text="sortArrow('match','iqgg')"></span></th>
+                                    <th class="num sortable" @click="setSort('match','dep_prioritaria','num')">DEP prior.<span x-text="sortArrow('match','dep_prioritaria')"></span></th>
+                                    <th class="num sortable" @click="setSort('match','preco_por_iqgg','num')">R$/IQGg<span x-text="sortArrow('match','preco_por_iqgg')"></span></th>
+                                    <th class="num sortable" @click="setSort('match','valor_agregado','num')">Valor agregado 💰<span x-text="sortArrow('match','valor_agregado')"></span></th>
                                 </tr></thead>
                                 <tbody>
-                                    <template x-for="row in matchResult" :key="row.id">
+                                    <template x-for="row in sorted(matchResult, 'match')" :key="row.id">
                                         <tr style="cursor:pointer" @click="abrirTouro(row.id)" title="Ver ficha completa">
                                             <td data-label="Score" class="num"><span class="badge" :class="scoreClass(row.score)" x-text="Number(row.score).toFixed(3)"></span></td>
                                             <td data-label="Touro" x-text="row.nome"></td>
@@ -732,9 +756,14 @@
                         <div class="card" style="margin:12px 0 28px;">
                             <table x-show="marketplace.oferta_top.length">
                                 <colgroup><col style="width:24%"><col style="width:18%"><col style="width:25%"><col style="width:12%"><col style="width:13%"><col style="width:8%"></colgroup>
-                                <thead><tr><th>Touro</th><th>Central</th><th>Fazenda origem</th><th class="num">IQGg</th><th class="num">Preço dose</th><th></th></tr></thead>
+                                <thead><tr>
+                                    <th class="sortable" @click="setSort('mkt','nome','txt')">Touro<span x-text="sortArrow('mkt','nome')"></span></th>
+                                    <th class="sortable" @click="setSort('mkt','central','txt')">Central<span x-text="sortArrow('mkt','central')"></span></th>
+                                    <th class="sortable" @click="setSort('mkt','fazenda_origem','txt')">Fazenda origem<span x-text="sortArrow('mkt','fazenda_origem')"></span></th>
+                                    <th class="num sortable" @click="setSort('mkt','iqgg','num')">IQGg<span x-text="sortArrow('mkt','iqgg')"></span></th>
+                                    <th class="num sortable" @click="setSort('mkt','preco_dose','num')">Preço dose<span x-text="sortArrow('mkt','preco_dose')"></span></th><th></th></tr></thead>
                                 <tbody>
-                                    <template x-for="t in marketplace.oferta_top" :key="t.id">
+                                    <template x-for="t in sorted(marketplace.oferta_top, 'mkt')" :key="t.id">
                                         <tr style="cursor:pointer" @click="abrirTouro(t.id)">
                                             <td data-label="Touro" x-text="t.nome"></td>
                                             <td data-label="Central" x-text="t.central"></td>
@@ -758,7 +787,12 @@
                             <div class="loading" x-show="leadsLoading" style="position:absolute;inset:0;background:rgba(255,255,255,.6);z-index:2;">Carregando…</div>
                             <table x-show="leads.length">
                                 <colgroup><col style="width:22%"><col style="width:13%"><col style="width:6%"><col style="width:14%"><col style="width:23%"><col style="width:14%"><col style="width:8%"></colgroup>
-                                <thead><tr><th>Empresa / Produtor</th><th>Município</th><th>UF</th><th>Telefone</th><th>E-mail</th><th>Porte</th><th></th></tr></thead>
+                                <thead><tr>
+                                    <th class="sortable" @click="setLeadsSort('empresa')">Empresa / Produtor<span x-text="leadsArrow('empresa')"></span></th>
+                                    <th class="sortable" @click="setLeadsSort('municipio')">Município<span x-text="leadsArrow('municipio')"></span></th>
+                                    <th class="sortable" @click="setLeadsSort('uf')">UF<span x-text="leadsArrow('uf')"></span></th>
+                                    <th>Telefone</th><th>E-mail</th>
+                                    <th class="sortable" @click="setLeadsSort('porte')">Porte<span x-text="leadsArrow('porte')"></span></th><th></th></tr></thead>
                                 <tbody>
                                     <template x-for="(l, i) in leads" :key="i">
                                         <tr>
@@ -811,9 +845,14 @@
                     <div class="loading" x-show="loading.demanda">Carregando…</div>
                     <table x-show="!loading.demanda && tendencia.length">
                         <colgroup><col style="width:40%"><col style="width:12%"><col style="width:24%"><col style="width:24%"></colgroup>
-                        <thead><tr><th>Município</th><th>UF</th><th class="num">Rebanho 2024</th><th class="num">Crescimento</th></tr></thead>
+                        <thead><tr>
+                            <th class="sortable" @click="setSort('tend','municipio','txt')">Município<span x-text="sortArrow('tend','municipio')"></span></th>
+                            <th class="sortable" @click="setSort('tend','uf','txt')">UF<span x-text="sortArrow('tend','uf')"></span></th>
+                            <th class="num sortable" @click="setSort('tend','rebanho','num')">Rebanho 2024<span x-text="sortArrow('tend','rebanho')"></span></th>
+                            <th class="num sortable" @click="setSort('tend','crescimento_pct','num')">Crescimento<span x-text="sortArrow('tend','crescimento_pct')"></span></th>
+                        </tr></thead>
                         <tbody>
-                            <template x-for="(r,i) in tendencia.slice(0,15)" :key="'t'+i">
+                            <template x-for="(r,i) in sorted(tendencia, 'tend').slice(0,15)" :key="'t'+i">
                                 <tr>
                                     <td data-label="Município" x-text="r.municipio"></td>
                                     <td data-label="UF" x-text="r.uf"></td>
@@ -832,9 +871,15 @@
                     <div class="loading" x-show="loading.demanda">Carregando…</div>
                     <table x-show="!loading.demanda && lotacao.length">
                         <colgroup><col style="width:30%"><col style="width:10%"><col style="width:20%"><col style="width:20%"><col style="width:20%"></colgroup>
-                        <thead><tr><th>Município</th><th>UF</th><th class="num">Rebanho</th><th class="num">Pastagem (ha)</th><th class="num">Lotação (cab/ha)</th></tr></thead>
+                        <thead><tr>
+                            <th class="sortable" @click="setSort('lot','municipio','txt')">Município<span x-text="sortArrow('lot','municipio')"></span></th>
+                            <th class="sortable" @click="setSort('lot','uf','txt')">UF<span x-text="sortArrow('lot','uf')"></span></th>
+                            <th class="num sortable" @click="setSort('lot','rebanho','num')">Rebanho<span x-text="sortArrow('lot','rebanho')"></span></th>
+                            <th class="num sortable" @click="setSort('lot','pastagem_ha','num')">Pastagem (ha)<span x-text="sortArrow('lot','pastagem_ha')"></span></th>
+                            <th class="num sortable" @click="setSort('lot','lotacao','num')">Lotação (cab/ha)<span x-text="sortArrow('lot','lotacao')"></span></th>
+                        </tr></thead>
                         <tbody>
-                            <template x-for="(r,i) in lotacao.slice(0,15)" :key="'l'+i">
+                            <template x-for="(r,i) in sorted(lotacao, 'lot').slice(0,15)" :key="'l'+i">
                                 <tr>
                                     <td data-label="Município" x-text="r.municipio"></td>
                                     <td data-label="UF" x-text="r.uf"></td>
@@ -854,9 +899,13 @@
                     <div class="loading" x-show="loading.demanda">Carregando…</div>
                     <table x-show="!loading.demanda && whales.length">
                         <colgroup><col style="width:50%"><col style="width:25%"><col style="width:25%"></colgroup>
-                        <thead><tr><th>Sócio</th><th class="num">Fazendas</th><th>UFs</th></tr></thead>
+                        <thead><tr>
+                            <th class="sortable" @click="setSort('whales','socio','txt')">Sócio<span x-text="sortArrow('whales','socio')"></span></th>
+                            <th class="num sortable" @click="setSort('whales','fazendas','num')">Fazendas<span x-text="sortArrow('whales','fazendas')"></span></th>
+                            <th class="sortable" @click="setSort('whales','ufs','txt')">UFs<span x-text="sortArrow('whales','ufs')"></span></th>
+                        </tr></thead>
                         <tbody>
-                            <template x-for="(r,i) in whales.slice(0,20)" :key="'w'+i">
+                            <template x-for="(r,i) in sorted(whales, 'whales').slice(0,20)" :key="'w'+i">
                                 <tr>
                                     <td data-label="Sócio" x-text="r.socio"></td>
                                     <td data-label="Fazendas" class="num" x-text="r.fazendas"></td>
@@ -902,9 +951,12 @@
                         <div class="card" style="margin:10px 0 28px;">
                             <table x-show="territorio.prioritarios.length">
                                 <colgroup><col style="width:8%"><col style="width:44%"><col style="width:24%"><col style="width:24%"></colgroup>
-                                <thead><tr><th>#</th><th>Município</th><th class="num">Rebanho</th><th class="num">Estab. Vet</th></tr></thead>
+                                <thead><tr><th>#</th>
+                                    <th class="sortable" @click="setSort('terp','municipio','txt')">Município<span x-text="sortArrow('terp','municipio')"></span></th>
+                                    <th class="num sortable" @click="setSort('terp','bovinos','num')">Rebanho<span x-text="sortArrow('terp','bovinos')"></span></th>
+                                    <th class="num sortable" @click="setSort('terp','cnpj_vet','num')">Estab. Vet<span x-text="sortArrow('terp','cnpj_vet')"></span></th></tr></thead>
                                 <tbody>
-                                    <template x-for="(m,i) in territorio.prioritarios" :key="i">
+                                    <template x-for="(m,i) in sorted(territorio.prioritarios, 'terp')" :key="i">
                                         <tr>
                                             <td data-label="#" x-text="i+1"></td>
                                             <td data-label="Município" x-text="m.municipio"></td>
@@ -921,9 +973,11 @@
                         <div class="card" style="margin-top:10px;">
                             <table x-show="territorio.grandes_grupos.length">
                                 <colgroup><col style="width:70%"><col style="width:30%"></colgroup>
-                                <thead><tr><th>Sócio</th><th class="num">Fazendas</th></tr></thead>
+                                <thead><tr>
+                                    <th class="sortable" @click="setSort('terg','socio','txt')">Sócio<span x-text="sortArrow('terg','socio')"></span></th>
+                                    <th class="num sortable" @click="setSort('terg','fazendas','num')">Fazendas<span x-text="sortArrow('terg','fazendas')"></span></th></tr></thead>
                                 <tbody>
-                                    <template x-for="(g,i) in territorio.grandes_grupos" :key="i">
+                                    <template x-for="(g,i) in sorted(territorio.grandes_grupos, 'terg')" :key="i">
                                         <tr>
                                             <td data-label="Sócio" x-text="g.socio"></td>
                                             <td data-label="Fazendas" class="num" x-text="g.fazendas"></td>
@@ -1300,7 +1354,8 @@
                 async loadLeads() {
                     this.leadsLoading = true;
                     const qs = `?segmento=${this.mkt.segmento}` + (this.mkt.uf ? `&uf=${this.mkt.uf}` : '')
-                             + `&page=${this.leadsPage}&page_size=100`;
+                             + `&page=${this.leadsPage}&page_size=100`
+                             + (this.leadsSort ? `&sort=${this.leadsSort}&order=${this.leadsOrder}` : '');
                     const d = await fetch('/api/leads' + qs).then(r => r.json());
                     this.leads = d.leads || [];
                     this.leadsTotal = d.total || 0;
@@ -1313,6 +1368,59 @@
                     this.leadsPage = nova;
                     this.loadLeads();
                     this.$nextTick(() => { if (this.$refs.leadsTop) this.$refs.leadsTop.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+                },
+                // --- ordenação CLIENT-SIDE (tabelas pequenas já carregadas) ---
+                sortState: {},
+                setSort(id, col, type) {
+                    const s = this.sortState[id];
+                    if (s && s.col === col) {
+                        s.dir = s.dir === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        // texto começa A→Z; número começa maior→menor
+                        this.sortState[id] = { col, type, dir: type === 'num' ? 'desc' : 'asc' };
+                    }
+                },
+                sortArrow(id, col) {
+                    const s = this.sortState[id];
+                    if (!s || s.col !== col) return '';
+                    return s.dir === 'asc' ? ' ▲' : ' ▼';
+                },
+                _sortVal(row, col) {
+                    if (col === 'valor_agregado') return row.valor_bezerro != null ? row.valor_bezerro : row.valor_filha;
+                    return row[col];
+                },
+                sorted(rows, id) {
+                    const s = this.sortState[id];
+                    if (!s || !Array.isArray(rows)) return rows;
+                    const { col, type, dir } = s;
+                    const mul = dir === 'asc' ? 1 : -1;
+                    const isNull = v => v === null || v === undefined || v === '' || v === '—';
+                    return [...rows].sort((a, b) => {
+                        const va = this._sortVal(a, col), vb = this._sortVal(b, col);
+                        const na = isNull(va), nb = isNull(vb);
+                        if (na && nb) return 0;
+                        if (na) return 1;            // nulos/"—" sempre no fim
+                        if (nb) return -1;
+                        let r;
+                        if (type === 'num') r = Number(va) - Number(vb);
+                        else r = String(va).localeCompare(String(vb), 'pt-BR');
+                        return r * mul;
+                    });
+                },
+                // --- ordenação SERVER-SIDE (lista de leads paginada) ---
+                leadsSort: '', leadsOrder: 'asc',
+                setLeadsSort(col) {
+                    if (this.leadsSort === col) {
+                        this.leadsOrder = this.leadsOrder === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        this.leadsSort = col; this.leadsOrder = 'asc';
+                    }
+                    this.leadsPage = 1;   // nova ordenação volta p/ página 1
+                    this.loadLeads();
+                },
+                leadsArrow(col) {
+                    if (this.leadsSort !== col) return '';
+                    return this.leadsOrder === 'asc' ? ' ▲' : ' ▼';
                 },
                 mktSum(field) {
                     if (!this.marketplace) return 0;
