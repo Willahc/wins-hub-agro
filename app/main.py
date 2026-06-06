@@ -281,6 +281,19 @@ def _aptidao(raca_id):
     return RACA_APTIDAO.get(raca_id, "corte")
 
 
+def _racas_por_finalidade(fin):
+    """IDs de raça elegíveis p/ a finalidade do matching: corte=corte+dupla,
+    leite=leite+dupla, dupla=só dupla. Exclui equino/bubalino."""
+    fin = (fin or "corte").lower()
+    if fin == "leite":
+        alvo = {"leite", "dupla"}
+    elif fin == "dupla":
+        alvo = {"dupla"}
+    else:
+        alvo = {"corte", "dupla"}
+    return tuple(rid for rid, ap in RACA_APTIDAO.items() if ap in alvo)
+
+
 @app.get("/api/overview/racas")
 async def overview_racas():
     """Top 8 raças por volume de reprodutores (barras da Visão Geral), com aptidão."""
@@ -580,6 +593,7 @@ async def matching(req: MatchingRequest):
             "uf": req.uf,
             "orcamento_max": req.orcamento_max,
             "sexado": bool(req.sexado),
+            "racas_apt": _racas_por_finalidade(req.finalidade),
         }
         # DISTINCT ON (r.id) -> um único registro por touro (touro_central pode
         # repetir o touro em várias centrais). O score é calculado em Python
@@ -622,6 +636,10 @@ async def matching(req: MatchingRequest):
                 WHERE d.iqgg IS NOT NULL
                   AND d.dep_prioritaria IS NOT NULL
                   AND (%(raca_id)s IS NULL OR r.raca_id = %(raca_id)s)
+                  -- filtro por aptidão: corte traz raças de corte+dupla, leite traz
+                  -- leite+dupla, dupla só dupla. Se o usuário escolheu uma raça
+                  -- específica (raca_id), respeita a escolha dele e ignora o filtro.
+                  AND (%(raca_id)s IS NOT NULL OR r.raca_id IN %(racas_apt)s)
                   -- preço é opcional: sem orçamento, raças sem oferta entram pelo mérito
                   -- genético. COM orçamento definido (modo comercial), só passam os que
                   -- têm preço dentro do teto.
