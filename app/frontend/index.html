@@ -1052,7 +1052,7 @@
                 <p class="subtitle">Municípios com maior rebanho. Cor = classificação vet. Clique num ponto para detalhes.</p>
                 <div class="toolbar">
                     <label>Camada:</label>
-                    <select x-model="mapLayer" @change="loadMapa()">
+                    <select x-model="mapLayer" @change="mapMunicipio=''; loadMapa()">
                         <option value="rebanho">Rebanho & cobertura vet</option>
                         <option value="tendencia">Crescimento do rebanho 2020→2024</option>
                         <option value="lotacao">Pasto ocioso (lotação cab/ha)</option>
@@ -1060,12 +1060,20 @@
                         <option value="valor">Valor da produção R$ (IBGE)</option>
                     </select>
                     <label>UF:</label>
-                    <select x-model="mapUf" @change="loadMapa()">
+                    <select x-model="mapUf" @change="mapMunicipio=''; loadMapa()">
                         <option value="">Brasil</option>
                         <template x-for="u in ufs" :key="u"><option :value="u" x-text="u"></option></template>
                     </select>
+                    <label>Município:</label>
+                    <input list="munList" x-model="mapMunicipio" @change="buscarMunicipio()"
+                           placeholder="buscar cidade…" style="padding:6px 10px;min-width:170px;border:1px solid #cfd8cf;border-radius:6px;"
+                           :disabled="!mapMunicipios.length">
+                    <datalist id="munList">
+                        <template x-for="m in mapMunicipios" :key="m"><option :value="m"></option></template>
+                    </datalist>
+                    <button class="lookup-btn" x-show="mapMunicipio" @click="limparMunicipio()">✕ limpar</button>
                     <label x-show="mapLayer==='rebanho'">Rebanho mínimo:</label>
-                    <select x-show="mapLayer==='rebanho'" x-model.number="mapMin" @change="loadMapa()">
+                    <select x-show="mapLayer==='rebanho'" x-model.number="mapMin" @change="mapMunicipio=''; loadMapa()">
                         <option :value="100000">100 mil+</option>
                         <option :value="50000">50 mil+</option>
                         <option :value="20000">20 mil+</option>
@@ -1259,6 +1267,7 @@
                 demUf: '', tendencia: [], lotacao: [], whales: [],
                 terUf: 'TO', territorio: null,
                 mapUf: '', mapMin: 100000, mapLayer: 'rebanho', _map: null, _mapLayer: null,
+                mapMunicipio: '', mapMunicipios: [], _mapPts: [],
                 touroModal: false, touro: null, _radar: null,
                 mercado: null, _chLeite: null, _chRebanho: null, _chAbate: null,
                 cnpjModal: false, cnpjData: null, cnpjLoading: false,
@@ -1626,6 +1635,44 @@
                     group.addTo(this._map);
                     this._mapLayer = group;
                     const arr = Array.isArray(pts) ? pts : [];
+                    // pontos válidos p/ busca por município (autocomplete já respeita a UF:
+                    // os pts vêm filtrados por mapUf no fetch de cada camada).
+                    this._mapPts = arr.filter(p => p.lat != null && p.lng != null)
+                                      .map(p => ({ municipio: p.municipio, uf: p.uf, lat: p.lat, lng: p.lng }));
+                    this.mapMunicipios = [...new Set(this._mapPts.map(p => p.municipio).filter(Boolean))]
+                                            .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+                    const target = this.mapUf && arr.length ? [arr[0].lat, arr[0].lng] : [-15.0, -55.0];
+                    this._map.setView(target, this.mapUf ? 6 : 4);
+                },
+                buscarMunicipio() {
+                    const nome = (this.mapMunicipio || '').trim();
+                    if (!nome || !this._map || !this._mapLayer) return;
+                    const p = this._mapPts.find(x => x.municipio === nome)
+                           || this._mapPts.find(x => (x.municipio || '').toLowerCase() === nome.toLowerCase());
+                    if (!p) return;
+                    this._map.setView([p.lat, p.lng], 9);
+                    this._map.invalidateSize();
+                    // acha o marker do ponto, abre o popup e dá um destaque temporário
+                    this._mapLayer.eachLayer(m => {
+                        if (!m.getLatLng) return;
+                        const ll = m.getLatLng();
+                        if (Math.abs(ll.lat - p.lat) < 1e-6 && Math.abs(ll.lng - p.lng) < 1e-6) {
+                            m.openPopup();
+                            const oc = m.options.color, ow = m.options.weight, orr = m.options.radius;
+                            m.setStyle({ color: '#111', weight: 3 });
+                            if (m.setRadius) m.setRadius(Math.max(orr || 6, 12));
+                            setTimeout(() => {
+                                if (!m._map) return;
+                                m.setStyle({ color: oc, weight: ow });
+                                if (m.setRadius) m.setRadius(orr);
+                            }, 4000);
+                        }
+                    });
+                },
+                limparMunicipio() {
+                    this.mapMunicipio = '';
+                    if (!this._map) return;
+                    const arr = this._mapPts || [];
                     const target = this.mapUf && arr.length ? [arr[0].lat, arr[0].lng] : [-15.0, -55.0];
                     this._map.setView(target, this.mapUf ? 6 : 4);
                 },
