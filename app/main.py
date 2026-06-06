@@ -198,6 +198,18 @@ async def stats():
             """
             SELECT
               (SELECT COUNT(*) FROM mercado.reprodutor)            AS reprodutores,
+              -- reprodutores de leite = têm avaliação em grupo de produção/conformação leiteira
+              -- (PTA Leite/Gordura/Proteína/Sólidos, STA Úbere). Hoje: Gir Leiteiro + Girolando.
+              (SELECT COUNT(DISTINCT a.reprodutor_id)
+                 FROM mercado.avaliacao a
+                 JOIN catalogo.caracteristica c ON c.id = a.caracteristica_id
+                 WHERE c.grupo IN ('producao_leite', 'conformacao_leite')) AS leite,
+              -- corte = reprodutores avaliados que NÃO são de leite (split exclusivo)
+              ((SELECT COUNT(DISTINCT reprodutor_id) FROM mercado.avaliacao)
+                - (SELECT COUNT(DISTINCT a.reprodutor_id)
+                     FROM mercado.avaliacao a
+                     JOIN catalogo.caracteristica c ON c.id = a.caracteristica_id
+                     WHERE c.grupo IN ('producao_leite', 'conformacao_leite'))) AS corte,
               (SELECT COUNT(*) FROM mercado.avaliacao)             AS avaliacoes,
               (SELECT COUNT(*) FROM catalogo.central)              AS centrais,
               (SELECT COUNT(*) FROM mercado.touro_oferta)          AS ofertas,
