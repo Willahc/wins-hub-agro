@@ -388,7 +388,7 @@
                     </div>
                     <div class="kpi k2 clickable" @click="go('rankings')">
                         <span class="kico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14"/><path d="M9 21v-5h6v5M9 9h2M13 9h2M9 12.5h2M13 12.5h2"/></svg></span>
-                        <div><div class="value" x-text="fmt(stats.centrais)"></div><div class="label">Centrais de IA</div><div class="ctx">ABS, CRV, Alta, Semex…</div><div class="more">ver rankings →</div></div>
+                        <div><div class="value" x-text="fmt(stats.centrais)"></div><div class="label">Centrais de Inseminação Artificial</div><div class="ctx">ABS, CRV, Alta, Semex…</div><div class="more">ver rankings →</div></div>
                     </div>
                     <div class="kpi k2 clickable" @click="go('arbitragem')">
                         <span class="kico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 13.5 13 21l-9-9V4h8l8.5 8.5z"/><circle cx="8" cy="8" r="1.6"/></svg></span>
@@ -590,9 +590,9 @@
             <!-- ============ RANKINGS ============ -->
             <section x-show="section==='rankings'">
                 <h2>Rankings</h2>
-                <p class="subtitle">Centrais de IA por volume de touros e fazendas de origem por número de reprodutores.</p>
+                <p class="subtitle">Centrais de Inseminação Artificial por volume de touros e fazendas de origem por número de reprodutores.</p>
 
-                <h2 style="font-size:17px;margin-top:8px;">🏢 Top Centrais de IA</h2>
+                <h2 style="font-size:17px;margin-top:8px;">🏢 Top Centrais de Inseminação Artificial</h2>
                 <div class="card" style="margin:12px 0 32px;">
                     <div class="loading" x-show="loading.centrais">Carregando…</div>
                     <table x-show="!loading.centrais && centrais.length">
@@ -609,7 +609,10 @@
                                     <td data-label="Central" x-text="row.central"></td>
                                     <td data-label="Touros" class="num" x-text="fmt(row.total_touros)"></td>
                                     <td data-label="Ofertas" class="num" x-text="fmt(row.total_ofertas)"></td>
-                                    <td data-label="Preço médio" class="num" x-text="row.preco_medio !== null ? brl(row.preco_medio) : '—'"></td>
+                                    <td data-label="Preço médio" class="num">
+                                        <span x-show="row.preco_medio !== null" x-text="brl(row.preco_medio)"></span>
+                                        <span x-show="row.preco_medio === null" style="color:#aab0aa;font-size:12px;font-style:italic;">catálogo não integrado</span>
+                                    </td>
                                 </tr>
                             </template>
                         </tbody>
