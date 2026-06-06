@@ -453,14 +453,16 @@ async def centrais():
     try:
         return query(
             """
-            SELECT c.nome AS central,
+            -- CRV Brasil (id 23) e CRV Lagoa (id 9) são a MESMA central, cadastradas
+            -- em 2 registros -> consolida na linha "CRV" (nome canônico).
+            SELECT CASE WHEN c.nome ILIKE 'CRV%%' THEN 'CRV' ELSE c.nome END AS central,
                    COUNT(DISTINCT tc.reprodutor_id) AS total_touros,
                    COUNT(DISTINCT o.id) AS total_ofertas,
                    ROUND(AVG(o.preco_dose_brl)::numeric, 2) AS preco_medio
             FROM catalogo.central c
             LEFT JOIN mercado.touro_central tc ON tc.central_id = c.id
             LEFT JOIN mercado.touro_oferta o ON o.central_id = c.id
-            GROUP BY c.id, c.nome
+            GROUP BY CASE WHEN c.nome ILIKE 'CRV%%' THEN 'CRV' ELSE c.nome END
             ORDER BY total_touros DESC
             """
         )
@@ -473,7 +475,11 @@ async def fazendas():
     try:
         return query(
             """
-            SELECT r.fazenda_origem,
+            -- agrupa por nome normalizado (UPPER+TRIM+unaccent) p/ consolidar
+            -- variações de caixa (ex.: "Genealogia"/"GENEALOGIA"); exibe um nome
+            -- representativo. Exclui "GENEALOGIA" = placeholder de origem não
+            -- informada (não é fazenda real; puxava IQGg médio negativo p/ o topo).
+            SELECT initcap(MIN(r.fazenda_origem)) AS fazenda_origem,
                    COUNT(*) AS total_reprodutores,
                    ROUND(AVG(iq.valor)::numeric, 2) AS iqgg_medio
             FROM mercado.reprodutor r
@@ -484,7 +490,8 @@ async def fazendas():
                 GROUP BY reprodutor_id
             ) iq ON iq.reprodutor_id = r.id
             WHERE r.fazenda_origem IS NOT NULL
-            GROUP BY r.fazenda_origem
+              AND upper(unaccent(trim(r.fazenda_origem))) <> 'GENEALOGIA'
+            GROUP BY upper(unaccent(trim(r.fazenda_origem)))
             HAVING COUNT(*) >= 3
             ORDER BY total_reprodutores DESC
             LIMIT 20
