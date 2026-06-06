@@ -855,17 +855,28 @@ async def marketplace(uf: str = None, segmento: str = "corte"):
     """Painel oferta×demanda por UF: criadores (demanda), rebanho/desertos e melhores touros (oferta)."""
     try:
         cnae = SEGMENTO_CNAE.get(segmento, "0151201")
+        # criadores = EMPRESAS únicas ativas (1 linha por cnpj_basico), MESMA régua da
+        # lista paginada (_leads_rows/_leads_total): dedup por cnpj_basico + join município.
+        # Com UF selecionada, "criadores" bate exatamente com o total da lista.
         demanda = query(
             """
-            SELECT e.uf,
+            SELECT uf,
                    COUNT(*) AS criadores,
-                   COUNT(e.correio_eletronico) AS com_email,
-                   COUNT(e.telefone_1) AS com_telefone
-            FROM cnpj.estabelecimento_rural e
-            WHERE e.cnae_fiscal_principal = %(cnae)s
-              AND e.situacao_cadastral = '02'
-              AND (%(uf)s IS NULL OR e.uf = %(uf)s)
-            GROUP BY e.uf
+                   COUNT(*) FILTER (WHERE email IS NOT NULL) AS com_email,
+                   COUNT(*) FILTER (WHERE telefone_1 IS NOT NULL) AS com_telefone
+            FROM (
+                SELECT DISTINCT ON (e.cnpj_basico)
+                       e.uf, e.correio_eletronico AS email, e.telefone_1
+                FROM cnpj.estabelecimento_rural e
+                JOIN referencia.municipio m ON m.codigo_tom = e.municipio::int
+                WHERE e.cnae_fiscal_principal = %(cnae)s
+                  AND e.situacao_cadastral = '02'
+                  AND (%(uf)s IS NULL OR e.uf = %(uf)s)
+                ORDER BY e.cnpj_basico,
+                         (e.correio_eletronico IS NOT NULL) DESC,
+                         (e.telefone_1 IS NOT NULL) DESC
+            ) sub
+            GROUP BY uf
             ORDER BY criadores DESC
             """,
             {"cnae": cnae, "uf": uf},
