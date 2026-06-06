@@ -201,6 +201,7 @@
         tbody tr:nth-child(even) { background: #f5f7f5; }
         tbody tr:hover { background: #e8f5e9; }
         td.num { text-align: right; font-variant-numeric: tabular-nums; }
+        th.num { text-align: right; }   /* cabeçalho de coluna numérica casa com a célula */
         .best { background: #eaf7ea !important; }
         .best td:first-child::before { content: "★ "; color: #4a9e4a; }
 
@@ -449,8 +450,8 @@
                         <div>
                             <table x-show="whitespace.length">
                                 <thead><tr>
-                                    <th>Município</th><th>UF</th><th>Bovinos</th>
-                                    <th>Estab. Vet</th><th>Classificação</th>
+                                    <th>Município</th><th>UF</th><th class="num">Bovinos</th>
+                                    <th class="num">Estab. Vet</th><th>Classificação</th>
                                 </tr></thead>
                                 <tbody>
                                     <template x-for="row in page(whitespace, 'whitespace')" :key="row.municipio_nome + row.uf">
@@ -493,7 +494,7 @@
                             <table x-show="arbitragem.length">
                                 <thead><tr>
                                     <th>Touro</th><th>Raça</th><th>Central</th>
-                                    <th>Preço dose</th><th>IQGg</th><th>R$/IQGg</th>
+                                    <th class="num">Preço dose</th><th class="num">IQGg</th><th class="num">R$/IQGg</th>
                                 </tr></thead>
                                 <tbody>
                                     <template x-for="(row, i) in page(arbitragem, 'arbitragem')" :key="row.registro + row.central + i">
@@ -528,7 +529,7 @@
                 <div class="card" style="margin:12px 0 32px;">
                     <div class="loading" x-show="loading.centrais">Carregando…</div>
                     <table x-show="!loading.centrais && centrais.length">
-                        <thead><tr><th>Central</th><th>Touros</th><th>Ofertas</th><th>Preço médio dose</th></tr></thead>
+                        <thead><tr><th>Central</th><th class="num">Touros</th><th class="num">Ofertas</th><th class="num">Preço médio dose</th></tr></thead>
                         <tbody>
                             <template x-for="row in centrais" :key="row.central">
                                 <tr>
@@ -546,7 +547,7 @@
                 <div class="card" style="margin-top:12px;">
                     <div class="loading" x-show="loading.fazendas">Carregando…</div>
                     <table x-show="!loading.fazendas && fazendas.length">
-                        <thead><tr><th>Fazenda</th><th>Reprodutores</th><th>IQGg médio</th></tr></thead>
+                        <thead><tr><th>Fazenda</th><th class="num">Reprodutores</th><th class="num">IQGg médio</th></tr></thead>
                         <tbody>
                             <template x-for="row in fazendas" :key="row.fazenda_origem">
                                 <tr>
@@ -652,14 +653,14 @@
                         <div>
                             <table x-show="matchResult.length">
                                 <thead><tr>
-                                    <th>Score</th><th>Touro</th><th>Raça</th><th>Central</th>
-                                    <th>Preço dose</th><th>IQGg</th><th>DEP prior.</th><th>R$/IQGg</th>
-                                    <th>Valor agregado 💰</th>
+                                    <th class="num">Score</th><th>Touro</th><th>Raça</th><th>Central</th>
+                                    <th class="num">Preço dose</th><th class="num">IQGg</th><th class="num">DEP prior.</th><th class="num">R$/IQGg</th>
+                                    <th class="num">Valor agregado 💰</th>
                                 </tr></thead>
                                 <tbody>
                                     <template x-for="row in matchResult" :key="row.id">
                                         <tr style="cursor:pointer" @click="abrirTouro(row.id)" title="Ver ficha completa">
-                                            <td data-label="Score"><span class="badge" :class="scoreClass(row.score)" x-text="Number(row.score).toFixed(3)"></span></td>
+                                            <td data-label="Score" class="num"><span class="badge" :class="scoreClass(row.score)" x-text="Number(row.score).toFixed(3)"></span></td>
                                             <td data-label="Touro" x-text="row.nome"></td>
                                             <td data-label="Raça" x-text="row.raca"></td>
                                             <td data-label="Central" x-text="row.central"></td>
@@ -721,7 +722,7 @@
                         <h2 style="font-size:17px;">🐂 Melhores touros para ofertar</h2>
                         <div class="card" style="margin:12px 0 28px;">
                             <table x-show="marketplace.oferta_top.length">
-                                <thead><tr><th>Touro</th><th>Central</th><th>Fazenda origem</th><th>IQGg</th><th>Preço dose</th><th></th></tr></thead>
+                                <thead><tr><th>Touro</th><th>Central</th><th>Fazenda origem</th><th class="num">IQGg</th><th class="num">Preço dose</th><th></th></tr></thead>
                                 <tbody>
                                     <template x-for="t in marketplace.oferta_top" :key="t.id">
                                         <tr style="cursor:pointer" @click="abrirTouro(t.id)">
@@ -788,7 +789,7 @@
                 <div class="card" style="margin:10px 0 28px;">
                     <div class="loading" x-show="loading.demanda">Carregando…</div>
                     <table x-show="!loading.demanda && tendencia.length">
-                        <thead><tr><th>Município</th><th>UF</th><th>Rebanho 2024</th><th>Crescimento</th></tr></thead>
+                        <thead><tr><th>Município</th><th>UF</th><th class="num">Rebanho 2024</th><th class="num">Crescimento</th></tr></thead>
                         <tbody>
                             <template x-for="(r,i) in tendencia.slice(0,15)" :key="'t'+i">
                                 <tr>
@@ -808,7 +809,7 @@
                 <div class="card" style="margin:10px 0 28px;">
                     <div class="loading" x-show="loading.demanda">Carregando…</div>
                     <table x-show="!loading.demanda && lotacao.length">
-                        <thead><tr><th>Município</th><th>UF</th><th>Rebanho</th><th>Pastagem (ha)</th><th>Lotação (cab/ha)</th></tr></thead>
+                        <thead><tr><th>Município</th><th>UF</th><th class="num">Rebanho</th><th class="num">Pastagem (ha)</th><th class="num">Lotação (cab/ha)</th></tr></thead>
                         <tbody>
                             <template x-for="(r,i) in lotacao.slice(0,15)" :key="'l'+i">
                                 <tr>
@@ -829,7 +830,7 @@
                 <div class="card" style="margin-top:10px;">
                     <div class="loading" x-show="loading.demanda">Carregando…</div>
                     <table x-show="!loading.demanda && whales.length">
-                        <thead><tr><th>Sócio</th><th>Fazendas</th><th>UFs</th></tr></thead>
+                        <thead><tr><th>Sócio</th><th class="num">Fazendas</th><th>UFs</th></tr></thead>
                         <tbody>
                             <template x-for="(r,i) in whales.slice(0,20)" :key="'w'+i">
                                 <tr>
@@ -876,7 +877,7 @@
                         <p class="subtitle">Desertos Vet por rebanho: maior gado, zero suporte técnico = maior potencial de consultoria e venda.</p>
                         <div class="card" style="margin:10px 0 28px;">
                             <table x-show="territorio.prioritarios.length">
-                                <thead><tr><th>#</th><th>Município</th><th>Rebanho</th><th>Estab. Vet</th></tr></thead>
+                                <thead><tr><th>#</th><th>Município</th><th class="num">Rebanho</th><th class="num">Estab. Vet</th></tr></thead>
                                 <tbody>
                                     <template x-for="(m,i) in territorio.prioritarios" :key="i">
                                         <tr>
@@ -894,7 +895,7 @@
                         <h2 style="font-size:17px;">🐋 Grandes grupos no estado</h2>
                         <div class="card" style="margin-top:10px;">
                             <table x-show="territorio.grandes_grupos.length">
-                                <thead><tr><th>Sócio</th><th>Fazendas</th></tr></thead>
+                                <thead><tr><th>Sócio</th><th class="num">Fazendas</th></tr></thead>
                                 <tbody>
                                     <template x-for="(g,i) in territorio.grandes_grupos" :key="i">
                                         <tr>
