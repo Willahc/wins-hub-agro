@@ -222,20 +222,109 @@ async def stats():
         return _error(e)
 
 
+# Aptidão zootécnica por raça (id da catalogo.raca). Classificação baseada em
+# fontes do setor (ABCZ, Embrapa, associações de raça): corte / leite / dupla
+# aptidão. Equinos (especie EQU) = esporte/trabalho; búfalo (BUF) = bubalino.
+# Mantido em código (não no banco) — é referência estável e reversível.
+RACA_APTIDAO = {
+    # CORTE (carne)
+    1: "corte",   # Nelore
+    2: "corte",   # Brahman
+    7: "corte",   # Tabapuã
+    8: "corte",   # Senepol
+    9: "corte",   # Aberdeen Angus
+    10: "corte",  # Hereford
+    11: "corte",  # Braford
+    12: "corte",  # Charolês
+    13: "corte",  # Limousin
+    14: "corte",  # Canchim
+    16: "corte",  # Curraleiro Pé-Duro
+    17: "corte",  # Brangus
+    18: "corte",  # Ultrablack
+    19: "corte",  # Santa Gertrudis
+    20: "corte",  # Montana
+    36: "corte",  # Red Brangus
+    37: "corte",  # Red Angus
+    41: "corte",  # Bonsmara
+    44: "corte",  # Wagyu
+    47: "corte",  # Texas Longhorn
+    48: "corte",  # Speckle Park
+    # LEITE
+    21: "leite",  # Holandês
+    22: "leite",  # Gir Leiteiro
+    23: "leite",  # Jersey
+    24: "leite",  # Pardo Suíço
+    35: "leite",  # Simental Leiteiro
+    38: "leite",  # Girolando
+    39: "leite",  # Guzerá Leiteiro
+    40: "leite",  # Sindi Leiteiro
+    # DUPLA APTIDÃO (corte + leite)
+    3: "dupla",   # Gir
+    4: "dupla",   # Guzerá
+    5: "dupla",   # Indubrasil
+    6: "dupla",   # Sindi
+    15: "dupla",  # Caracu
+    34: "dupla",  # Simental
+    42: "dupla",  # Braunvieh
+    43: "dupla",  # Devon
+    45: "dupla",  # Gelbvieh
+    46: "dupla",  # Shorthorn
+    # EQUINOS (esporte/trabalho)
+    26: "esporte", 27: "esporte", 28: "esporte", 29: "esporte",
+    30: "esporte", 31: "esporte", 32: "esporte", 33: "esporte",
+    # BUBALINO
+    25: "bubalino",  # Búfalo
+}
+
+
+def _aptidao(raca_id):
+    return RACA_APTIDAO.get(raca_id, "corte")
+
+
 @app.get("/api/overview/racas")
 async def overview_racas():
-    """Top 8 raças por volume de reprodutores (barras da Visão Geral)."""
+    """Top 8 raças por volume de reprodutores (barras da Visão Geral), com aptidão."""
     try:
-        return query(
+        rows = query(
             """
-            SELECT ra.nome, COUNT(*) AS total
+            SELECT ra.id, ra.nome, COUNT(*) AS total
             FROM mercado.reprodutor r
             JOIN catalogo.raca ra ON ra.id = r.raca_id
-            GROUP BY ra.nome
+            GROUP BY ra.id, ra.nome
             ORDER BY total DESC
             LIMIT 8
             """
         )
+        for r in rows:
+            r["aptidao"] = _aptidao(r["id"])
+        return rows
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/racas/aptidao")
+async def racas_aptidao():
+    """Catálogo de raças agrupado por aptidão (corte/leite/dupla) + equinos/búfalo,
+    com nº de reprodutores de cada. Alimenta a seção 'Raças por aptidão' no front."""
+    try:
+        rows = query(
+            """
+            SELECT ra.id, ra.nome, ra.sigla, ra.especie_codigo AS especie,
+                   COUNT(r.id) AS reprodutores
+            FROM catalogo.raca ra
+            LEFT JOIN mercado.reprodutor r ON r.raca_id = ra.id
+            GROUP BY ra.id, ra.nome, ra.sigla, ra.especie_codigo
+            ORDER BY COUNT(r.id) DESC, ra.nome
+            """
+        )
+        grupos = {"corte": [], "leite": [], "dupla": [], "esporte": [], "bubalino": []}
+        for r in rows:
+            ap = _aptidao(r["id"])
+            grupos.setdefault(ap, []).append({
+                "nome": r["nome"], "sigla": r["sigla"],
+                "especie": r["especie"], "reprodutores": r["reprodutores"],
+            })
+        return grupos
     except Exception as e:
         return _error(e)
 
