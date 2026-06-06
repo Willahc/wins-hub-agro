@@ -184,10 +184,16 @@
             display: flex; justify-content: space-between; align-items: flex-start;
             padding: 20px 24px; border-bottom: 1px solid #eee; background: #f8faf8;
             border-radius: 14px 14px 0 0;
+            /* fica fixo no topo do modal -> título nunca some no scroll interno */
+            position: sticky; top: 0; z-index: 2;
         }
         .modal-close { cursor: pointer; font-size: 20px; color: #999; line-height: 1; }
         .modal-close:hover { color: #1a3a1a; }
         .modal-body { padding: 24px; }
+        /* container de altura fixa p/ o radar: o canvas Chart.js preenche este box
+           (com maintainAspectRatio:false) em vez de crescer com a largura/zoom. */
+        .radar-wrap { position: relative; width: 100%; height: 280px; }
+        .radar-wrap canvas { max-width: 100%; }
         .modal-cols { display: grid; grid-template-columns: 1.1fr 1fr; gap: 28px; align-items: start; }
         @media (max-width: 680px) { .modal-cols { grid-template-columns: 1fr; } }
         table.mini { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -1201,7 +1207,7 @@
                     <div class="modal-body">
                         <div class="modal-cols">
                             <div>
-                                <canvas id="radarTouro" height="260"></canvas>
+                                <div class="radar-wrap"><canvas id="radarTouro"></canvas></div>
                             </div>
                             <div>
                                 <table class="mini">
@@ -1683,7 +1689,10 @@
                     const data = await (await fetch('/api/touro/' + id)).json();
                     if (data.error) { this.touroModal = false; alert('Touro não encontrado.'); return; }
                     this.touro = data;
-                    this.$nextTick(() => this.renderRadar());
+                    this.$nextTick(() => {
+                        this.renderRadar();
+                        document.querySelectorAll('.modal').forEach(b => { b.scrollTop = 0; });  // abre no topo
+                    });
                 },
                 fecharTouro() {
                     this.touroModal = false;
@@ -1700,7 +1709,8 @@
                         type: 'radar',
                         data: { labels, datasets: [{ label: t.nome, data: vals,
                             backgroundColor: 'rgba(74,158,74,0.25)', borderColor: '#2d5a2d', borderWidth: 2, pointBackgroundColor: '#2d5a2d' }] },
-                        options: { responsive: true, plugins: { legend: { display: false } },
+                        options: { responsive: true, maintainAspectRatio: false,
+                            plugins: { legend: { display: false } },
                             scales: { r: { ticks: { display: false } } } }
                     });
                 },
