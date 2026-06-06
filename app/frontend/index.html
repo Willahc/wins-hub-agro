@@ -294,7 +294,7 @@
     <header>
         <div style="display:flex;align-items:center;gap:14px;">
             <button class="hamburger" @click="mobileNav = !mobileNav" aria-label="Abrir menu">☰</button>
-            <h1>WiNS Hub <span class="brand">Agro</span></h1>
+            <h1 @click="go('visao')" style="cursor:pointer" title="Início">WiNS Hub <span class="brand">Agro</span></h1>
         </div>
         <div class="user-info">
             <span>Olá, {{ user.name }}</span>
@@ -1132,12 +1132,33 @@
                     this.loadUfs();
                     this.loadRacas();
                     this.loadRacasTodas();
+                    // hash routing: abre a seção do hash inicial (ex: /#matching)
+                    const inicial = this._secValida(location.hash.replace('#', ''));
+                    this._activate(inicial);
+                    history.replaceState({ section: inicial }, '', '#' + inicial);
+                    // botão voltar/avançar do navegador
+                    window.addEventListener('popstate', (e) => {
+                        const sec = this._secValida((e.state && e.state.section) || location.hash.replace('#', ''));
+                        this._activate(sec);
+                    });
+                },
+                _secValida(s) {
+                    const ok = ['visao', 'whitespace', 'arbitragem', 'rankings', 'matching',
+                                'marketplace', 'demanda', 'territorio', 'mapa', 'mercado'];
+                    return ok.includes(s) ? s : 'visao';
                 },
                 async loadOverview() {
                     this.ovRacas = await (await fetch('/api/overview/racas')).json();
                     this.ovRegioes = await (await fetch('/api/overview/regioes')).json();
                 },
                 go(s) {
+                    this._activate(s);
+                    // URL real por seção (ex: /#matching) + entrada no histórico do navegador
+                    if (location.hash !== '#' + s) {
+                        history.pushState({ section: s }, '', '#' + s);
+                    }
+                },
+                _activate(s) {
                     this.section = s;
                     this.mobileNav = false;
                     if (s === 'whitespace' && !this.loaded.whitespace) this.loadWhitespace();
