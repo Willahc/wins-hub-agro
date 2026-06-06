@@ -536,6 +536,13 @@
                 <h2>Arbitragem Genética</h2>
                 <p class="subtitle">Touros ordenados por melhor custo-benefício (menor R$/IQGg). ★ = melhores deals.</p>
                 <div class="toolbar">
+                    <label>Aptidão:</label>
+                    <select x-model="arbSegmento" @change="loadArbitragem()">
+                        <option value="">Todas</option>
+                        <option value="corte">Corte</option>
+                        <option value="leite">Leite</option>
+                        <option value="dupla">Dupla aptidão</option>
+                    </select>
                     <label>Raça:</label>
                     <select x-model="racaFilter" @change="loadArbitragem()">
                         <option value="">Todas</option>
@@ -1235,7 +1242,7 @@
                 ovRacas: [], ovRegioes: [], ovAptidao: {},
                 ufs: [], racas: [],
                 whitespace: [], arbitragem: [], centrais: [], fazendas: [],
-                ufFilter: '', racaFilter: '',
+                ufFilter: '', racaFilter: '', arbSegmento: '',
                 pageIdx: { whitespace: 0, arbitragem: 0 },
                 pageSize: 20,
                 loading: { whitespace: false, arbitragem: false, centrais: false, fazendas: false, matching: false, marketplace: false, mercado: false, demanda: false, territorio: false },
@@ -1319,7 +1326,10 @@
                 },
                 async loadArbitragem() {
                     this.loading.arbitragem = true; this.pageIdx.arbitragem = 0;
-                    const q = this.racaFilter ? ('?raca=' + this.racaFilter) : '';
+                    const p = [];
+                    if (this.racaFilter) p.push('raca=' + this.racaFilter);
+                    if (this.arbSegmento) p.push('segmento=' + this.arbSegmento);
+                    const q = p.length ? ('?' + p.join('&')) : '';
                     this.arbitragem = await (await fetch('/api/arbitragem' + q)).json();
                     this.loaded.arbitragem = true; this.loading.arbitragem = false;
                 },

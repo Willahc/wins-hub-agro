@@ -411,8 +411,10 @@ async def whitespace(uf: str = None):
 
 
 @app.get("/api/arbitragem")
-async def arbitragem(raca: int = None):
+async def arbitragem(raca: int = None, segmento: str = None):
     try:
+        use_apt = segmento in ("corte", "leite", "dupla")
+        racas_apt = _racas_por_finalidade(segmento) if use_apt else (0,)
         return query(
             """
             SELECT r.nome AS nome_touro, r.registro,
@@ -435,10 +437,12 @@ async def arbitragem(raca: int = None):
             ) iq ON iq.reprodutor_id = r.id
             WHERE o.preco_dose_brl IS NOT NULL AND o.preco_dose_brl > 0
               AND (%(raca)s IS NULL OR ra.id = %(raca)s)
+              -- filtro por aptidão (corte/leite/dupla); raça específica tem prioridade
+              AND (%(raca)s IS NOT NULL OR NOT %(use_apt)s OR ra.id IN %(racas_apt)s)
             ORDER BY preco_por_iqgg ASC NULLS LAST
             LIMIT 50
             """,
-            {"iqgg": IQGG_ID, "raca": raca},
+            {"iqgg": IQGG_ID, "raca": raca, "use_apt": use_apt, "racas_apt": racas_apt},
         )
     except Exception as e:
         return _error(e)
@@ -1030,12 +1034,13 @@ async def marketplace(uf: str = None, segmento: str = "corte"):
                     GROUP BY reprodutor_id
                 ) iq ON iq.reprodutor_id = r.id
                 WHERE o.preco_dose_brl > 0
+                  AND r.raca_id IN %(racas_apt)s   -- só touros coerentes com o segmento
                 ORDER BY r.id, o.preco_dose_brl ASC
             ) sub
             ORDER BY iqgg DESC NULLS LAST
             LIMIT 10
             """,
-            {"iqgg": IQGG_ID},
+            {"iqgg": IQGG_ID, "racas_apt": _racas_por_finalidade(segmento)},
         )
         return {
             "segmento": segmento,
