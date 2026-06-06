@@ -748,11 +748,14 @@
                             </table>
                         </div>
 
-                        <div style="display:flex;justify-content:space-between;align-items:center;">
-                            <h2 style="font-size:17px;">📞 Leads — criadores para prospectar</h2>
+                        <div style="display:flex;justify-content:space-between;align-items:center;" x-ref="leadsTop">
+                            <h2 style="font-size:17px;">📞 Leads — criadores para prospectar
+                                <span style="font-size:13px;font-weight:500;color:#9aa39a;" x-show="leadsTotal" x-text="'· ' + fmt(leadsTotal) + ' criadores'"></span>
+                            </h2>
                             <button class="run-btn" style="padding:9px 18px;font-size:13px;" @click="exportarLeadsCSV()">⬇️ Exportar CSV (CRM)</button>
                         </div>
-                        <div class="card" style="margin-top:12px;">
+                        <div class="card" style="margin-top:12px;position:relative;">
+                            <div class="loading" x-show="leadsLoading" style="position:absolute;inset:0;background:rgba(255,255,255,.6);z-index:2;">Carregando…</div>
                             <table x-show="leads.length">
                                 <colgroup><col style="width:22%"><col style="width:13%"><col style="width:6%"><col style="width:14%"><col style="width:23%"><col style="width:14%"><col style="width:8%"></colgroup>
                                 <thead><tr><th>Empresa / Produtor</th><th>Município</th><th>UF</th><th>Telefone</th><th>E-mail</th><th>Porte</th><th></th></tr></thead>
@@ -776,8 +779,15 @@
                                     </template>
                                 </tbody>
                             </table>
-                            <div class="empty" x-show="!leads.length">Sem leads para este filtro.</div>
-                            <div class="pager" x-show="leads.length"><span x-text="leads.length + ' criadores (top por contactabilidade)'"></span></div>
+                            <div class="empty" x-show="!leads.length && !leadsLoading">Sem leads para este filtro.</div>
+                            <div class="pager" x-show="leads.length" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                                <span style="color:#666;">Ordenados por contactabilidade (telefone + e-mail primeiro)</span>
+                                <span style="display:flex;align-items:center;gap:12px;">
+                                    <button class="lookup-btn" @click="irLeads(-1)" :disabled="leadsPage<=1" :style="leadsPage<=1 ? 'opacity:.4;cursor:default' : ''">← Anterior</button>
+                                    <span style="font-weight:700;color:#1a3a1a;">Página <span x-text="leadsPage"></span> de <span x-text="fmt(leadsPages)"></span></span>
+                                    <button class="lookup-btn" @click="irLeads(1)" :disabled="leadsPage>=leadsPages" :style="leadsPage>=leadsPages ? 'opacity:.4;cursor:default' : ''">Próxima →</button>
+                                </span>
+                            </div>
                         </div>
                     </div>
                 </template>
@@ -1136,6 +1146,7 @@
                 perfilAtual: null, exportando: false,
                 racasTodas: [],
                 mkt: { segmento: 'corte', uf: '' }, marketplace: null, leads: [],
+                leadsPage: 1, leadsTotal: 0, leadsPages: 1, leadsLoading: false,
                 demUf: '', tendencia: [], lotacao: [], whales: [],
                 terUf: 'TO', territorio: null,
                 mapUf: '', mapMin: 100000, mapLayer: 'rebanho', _map: null, _mapLayer: null,
@@ -1282,10 +1293,26 @@
                     const mk = await fetch('/api/marketplace' + qs).then(r => r.json());
                     this.marketplace = mk;
                     this.loading.marketplace = false;
-                    // leads com enriquecimento automático dos top 5 (BrasilAPI) — pode demorar, carrega depois
-                    this.leads = [];
-                    const lds = await fetch('/api/leads/enriquecido' + qs + '&top=5').then(r => r.json());
-                    this.leads = Array.isArray(lds) ? lds : [];
+                    // troca de filtro (segmento/UF) reseta a paginação dos leads p/ a página 1
+                    this.leadsPage = 1;
+                    this.loadLeads();
+                },
+                async loadLeads() {
+                    this.leadsLoading = true;
+                    const qs = `?segmento=${this.mkt.segmento}` + (this.mkt.uf ? `&uf=${this.mkt.uf}` : '')
+                             + `&page=${this.leadsPage}&page_size=100`;
+                    const d = await fetch('/api/leads' + qs).then(r => r.json());
+                    this.leads = d.leads || [];
+                    this.leadsTotal = d.total || 0;
+                    this.leadsPages = d.total_pages || 1;
+                    this.leadsLoading = false;
+                },
+                irLeads(delta) {
+                    const nova = this.leadsPage + delta;
+                    if (nova < 1 || nova > this.leadsPages) return;
+                    this.leadsPage = nova;
+                    this.loadLeads();
+                    this.$nextTick(() => { if (this.$refs.leadsTop) this.$refs.leadsTop.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
                 },
                 mktSum(field) {
                     if (!this.marketplace) return 0;
@@ -1521,7 +1548,8 @@
                     this.cnpjLoading = false;
                 },
                 exportarLeadsCSV() {
-                    const qs = `?segmento=${this.mkt.segmento}` + (this.mkt.uf ? `&uf=${this.mkt.uf}` : '') + '&limit=1000';
+                    // exporta o CONJUNTO FILTRADO completo (não só a página atual)
+                    const qs = `?segmento=${this.mkt.segmento}` + (this.mkt.uf ? `&uf=${this.mkt.uf}` : '');
                     window.location.href = '/api/leads/csv' + qs;
                 },
 

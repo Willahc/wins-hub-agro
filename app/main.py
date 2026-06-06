@@ -774,39 +774,78 @@ async def grupos():
 SEGMENTO_CNAE = {"corte": "0151201", "leite": "0151202"}
 
 
+def _leads_rows(uf, segmento, limit, offset=0):
+    """Linhas de leads (uma por empresa, ordenadas por contactabilidade) com
+    paginação por LIMIT/OFFSET. Tiebreaker por cnpj garante ordem ESTÁVEL entre
+    páginas (sem repetir/pular linha no OFFSET)."""
+    cnae = SEGMENTO_CNAE.get(segmento, "0151201")
+    # DISTINCT ON (cnpj_basico): uma linha por empresa (JBJ etc. têm dezenas de filiais),
+    # mantendo o estabelecimento mais "contactável".
+    return query(
+        """
+        SELECT * FROM (
+            SELECT DISTINCT ON (e.cnpj_basico)
+                   COALESCE(NULLIF(em.razao_social, ''), e.nome_fantasia, '(produtor rural)') AS nome,
+                   e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj,
+                   m.nome AS municipio, e.uf,
+                   e.ddd_1, e.telefone_1, e.correio_eletronico AS email,
+                   NULLIF(TRIM(CONCAT_WS(', ', NULLIF(e.logradouro,''), NULLIF(e.bairro,''))), '') AS endereco,
+                   em.porte, em.capital_social
+            FROM cnpj.estabelecimento_rural e
+            JOIN referencia.municipio m ON m.codigo_tom = e.municipio::int
+            LEFT JOIN cnpj.empresa_rural em ON em.cnpj_basico = e.cnpj_basico
+            WHERE e.cnae_fiscal_principal = %(cnae)s
+              AND e.situacao_cadastral = '02'
+              AND (%(uf)s IS NULL OR e.uf = %(uf)s)
+            ORDER BY e.cnpj_basico,
+                     (e.correio_eletronico IS NOT NULL) DESC,
+                     (e.telefone_1 IS NOT NULL) DESC
+        ) sub
+        ORDER BY (email IS NOT NULL) DESC, (telefone_1 IS NOT NULL) DESC,
+                 capital_social DESC NULLS LAST, cnpj ASC
+        LIMIT %(limit)s OFFSET %(offset)s
+        """,
+        {"cnae": cnae, "uf": uf, "limit": limit, "offset": offset},
+    )
+
+
+def _leads_total(uf, segmento):
+    """Total de empresas distintas no conjunto filtrado (espelha o FROM/WHERE da lista)."""
+    cnae = SEGMENTO_CNAE.get(segmento, "0151201")
+    rows = query(
+        """
+        SELECT COUNT(*) AS total FROM (
+            SELECT DISTINCT e.cnpj_basico
+            FROM cnpj.estabelecimento_rural e
+            JOIN referencia.municipio m ON m.codigo_tom = e.municipio::int
+            WHERE e.cnae_fiscal_principal = %(cnae)s
+              AND e.situacao_cadastral = '02'
+              AND (%(uf)s IS NULL OR e.uf = %(uf)s)
+        ) x
+        """,
+        {"cnae": cnae, "uf": uf},
+    )
+    return rows[0]["total"] if rows else 0
+
+
 @app.get("/api/leads")
-async def leads(uf: str = None, segmento: str = "corte", limit: int = 50):
-    """Compradores potenciais: estabelecimentos rurais (CNAE corte/leite) com contato."""
+async def leads(uf: str = None, segmento: str = "corte", page: int = 1, page_size: int = 100):
+    """Compradores potenciais paginados (CNAE corte/leite) com contato.
+    Paginação NO SERVIDOR (LIMIT/OFFSET) — a base tem ~180 mil criadores."""
     try:
-        cnae = SEGMENTO_CNAE.get(segmento, "0151201")
-        # DISTINCT ON (cnpj_basico): uma linha por empresa (JBJ etc. têm dezenas de filiais),
-        # mantendo o estabelecimento mais "contactável".
-        return query(
-            """
-            SELECT * FROM (
-                SELECT DISTINCT ON (e.cnpj_basico)
-                       COALESCE(NULLIF(em.razao_social, ''), e.nome_fantasia, '(produtor rural)') AS nome,
-                       e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj,
-                       m.nome AS municipio, e.uf,
-                       e.ddd_1, e.telefone_1, e.correio_eletronico AS email,
-                       NULLIF(TRIM(CONCAT_WS(', ', NULLIF(e.logradouro,''), NULLIF(e.bairro,''))), '') AS endereco,
-                       em.porte, em.capital_social
-                FROM cnpj.estabelecimento_rural e
-                JOIN referencia.municipio m ON m.codigo_tom = e.municipio::int
-                LEFT JOIN cnpj.empresa_rural em ON em.cnpj_basico = e.cnpj_basico
-                WHERE e.cnae_fiscal_principal = %(cnae)s
-                  AND e.situacao_cadastral = '02'
-                  AND (%(uf)s IS NULL OR e.uf = %(uf)s)
-                ORDER BY e.cnpj_basico,
-                         (e.correio_eletronico IS NOT NULL) DESC,
-                         (e.telefone_1 IS NOT NULL) DESC
-            ) sub
-            ORDER BY (email IS NOT NULL) DESC, (telefone_1 IS NOT NULL) DESC,
-                     capital_social DESC NULLS LAST
-            LIMIT %(limit)s
-            """,
-            {"cnae": cnae, "uf": uf, "limit": min(limit, 2000)},
-        )
+        page = max(1, page)
+        page_size = min(max(page_size, 1), 200)
+        offset = (page - 1) * page_size
+        rows = _leads_rows(uf, segmento, page_size, offset)
+        total = _leads_total(uf, segmento)
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        return {
+            "leads": rows,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+        }
     except Exception as e:
         return _error(e)
 
@@ -1224,9 +1263,10 @@ async def externo_valor_mapa(uf: str = None, min_valor: int = 10000):
 
 
 @app.get("/api/leads/csv")
-async def leads_csv(uf: str = None, segmento: str = "corte", limit: int = 1000):
-    """Exporta leads (criadores) em CSV para CRM."""
-    base = await leads(uf=uf, segmento=segmento, limit=min(limit, 2000))
+async def leads_csv(uf: str = None, segmento: str = "corte", limit: int = 10000):
+    """Exporta o CONJUNTO FILTRADO de leads (não só a página) em CSV para CRM.
+    Cap de 10 mil linhas p/ não estourar memória (corte nacional tem ~180 mil)."""
+    base = _leads_rows(uf, segmento, min(limit, 10000), 0)
     if isinstance(base, dict):  # erro
         return base
     import csv as _csv
@@ -1254,7 +1294,7 @@ async def leads_csv(uf: str = None, segmento: str = "corte", limit: int = 1000):
 async def leads_enriquecido(uf: str = None, segmento: str = "corte", top: int = 5):
     """Leads + enriquecimento automático (BrasilAPI) dos `top` mais contactáveis."""
     try:
-        base = await leads(uf=uf, segmento=segmento, limit=50)
+        base = _leads_rows(uf, segmento, 50, 0)
         if isinstance(base, dict):  # erro
             return base
         for lead in base[: min(top, 10)]:
