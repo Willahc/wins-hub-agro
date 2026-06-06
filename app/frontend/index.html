@@ -461,7 +461,8 @@
                                     <th class="sortable" @click="setSort('ws','municipio_nome','txt')">Município<span x-text="sortArrow('ws','municipio_nome')"></span></th>
                                     <th class="sortable" @click="setSort('ws','uf','txt')">UF<span x-text="sortArrow('ws','uf')"></span></th>
                                     <th class="num sortable" @click="setSort('ws','total_bovinos','num')">Bovinos<span x-text="sortArrow('ws','total_bovinos')"></span></th>
-                                    <th class="num sortable" @click="setSort('ws','cnpj_vet','num')">Estab. Vet<span x-text="sortArrow('ws','cnpj_vet')"></span></th><th>Classificação</th>
+                                    <th class="num sortable" @click="setSort('ws','cnpj_vet','num')">Estab. Vet<span x-text="sortArrow('ws','cnpj_vet')"></span></th>
+                                    <th class="sortable" @click="setSort('ws','classificacao_vet','rank')">Classificação<span x-text="sortArrow('ws','classificacao_vet')"></span></th>
                                 </tr></thead>
                                 <tbody>
                                     <template x-for="row in page(sorted(whitespace, 'ws'), 'whitespace')" :key="row.municipio_nome + row.uf">
@@ -1387,6 +1388,12 @@
                 },
                 _sortVal(row, col) {
                     if (col === 'valor_agregado') return row.valor_bezerro != null ? row.valor_bezerro : row.valor_filha;
+                    // coluna categórica: ordena por severidade (não alfabética)
+                    if (col === 'classificacao_vet') {
+                        const RANK = { 'DESERTO VET': 0, 'BAIXA COBERTURA': 1, 'NORMAL': 2 };
+                        const v = RANK[row[col]];
+                        return v === undefined ? 99 : v;
+                    }
                     return row[col];
                 },
                 sorted(rows, id) {
@@ -1402,7 +1409,7 @@
                         if (na) return 1;            // nulos/"—" sempre no fim
                         if (nb) return -1;
                         let r;
-                        if (type === 'num') r = Number(va) - Number(vb);
+                        if (type === 'num' || type === 'rank') r = Number(va) - Number(vb);
                         else r = String(va).localeCompare(String(vb), 'pt-BR');
                         return r * mul;
                     });
