@@ -191,25 +191,23 @@
             background: white; border-radius: 12px; padding: 0;
             box-shadow: 0 2px 8px rgba(0,0,0,0.06); overflow: hidden;
         }
-        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        table { width: 100%; border-collapse: collapse; font-size: 15px; }
+        /* larguras proporcionais (colgroup) preenchem 100% sem vazios internos */
+        table:not(.mini) { table-layout: fixed; }
         th {
-            background: #1a3a1a; text-align: left; padding: 12px 16px;
-            font-size: 12px; text-transform: uppercase; letter-spacing: .03em;
+            background: #1a3a1a; text-align: left; padding: 14px 16px;
+            font-size: 13px; text-transform: uppercase; letter-spacing: .03em;
             color: #fff; font-weight: 700; white-space: nowrap;
         }
-        td { padding: 10px 16px; border-top: 1px solid #eef2ee; }
+        td { padding: 13px 16px; border-top: 1px solid #eef2ee; }
+        /* texto longo de células quebra dentro da coluna (table-layout fixed) */
+        table:not(.mini) td { overflow-wrap: anywhere; }
         tbody tr:nth-child(even) { background: #f5f7f5; }
         tbody tr:hover { background: #e8f5e9; }
         td.num { text-align: right; font-variant-numeric: tabular-nums; }
         th.num { text-align: right; }   /* cabeçalho de coluna numérica casa com a célula */
         .best { background: #eaf7ea !important; }
         .best td:first-child::before { content: "★ "; color: #4a9e4a; }
-        /* Desktop: cards de tabela com largura natural pelo conteúdo (não esticam
-           até a borda criando vazios entre colunas). Mobile (≤768px) intacto:
-           lá a tabela vira cartões empilhados e o card ocupa 100%. */
-        @media (min-width: 769px) {
-            .card:has(table:not(.mini)) { width: fit-content; max-width: 100%; overflow-x: auto; }
-        }
 
         .badge {
             display: inline-block; padding: 4px 10px; border-radius: 20px;
@@ -455,6 +453,7 @@
                     <template x-if="!loading.whitespace">
                         <div>
                             <table x-show="whitespace.length">
+                                <colgroup><col style="width:30%"><col style="width:10%"><col style="width:19%"><col style="width:19%"><col style="width:22%"></colgroup>
                                 <thead><tr>
                                     <th>Município</th><th>UF</th><th class="num">Bovinos</th>
                                     <th class="num">Estab. Vet</th><th>Classificação</th>
@@ -498,6 +497,7 @@
                     <template x-if="!loading.arbitragem">
                         <div>
                             <table x-show="arbitragem.length">
+                                <colgroup><col style="width:28%"><col style="width:14%"><col style="width:14%"><col style="width:15%"><col style="width:14%"><col style="width:15%"></colgroup>
                                 <thead><tr>
                                     <th>Touro</th><th>Raça</th><th>Central</th>
                                     <th class="num">Preço dose</th><th class="num">IQGg</th><th class="num">R$/IQGg</th>
@@ -535,6 +535,7 @@
                 <div class="card" style="margin:12px 0 32px;">
                     <div class="loading" x-show="loading.centrais">Carregando…</div>
                     <table x-show="!loading.centrais && centrais.length">
+                        <colgroup><col style="width:34%"><col style="width:22%"><col style="width:22%"><col style="width:22%"></colgroup>
                         <thead><tr><th>Central</th><th class="num">Touros</th><th class="num">Ofertas</th><th class="num">Preço médio dose</th></tr></thead>
                         <tbody>
                             <template x-for="row in centrais" :key="row.central">
@@ -553,6 +554,7 @@
                 <div class="card" style="margin-top:12px;">
                     <div class="loading" x-show="loading.fazendas">Carregando…</div>
                     <table x-show="!loading.fazendas && fazendas.length">
+                        <colgroup><col style="width:44%"><col style="width:28%"><col style="width:28%"></colgroup>
                         <thead><tr><th>Fazenda</th><th class="num">Reprodutores</th><th class="num">IQGg médio</th></tr></thead>
                         <tbody>
                             <template x-for="row in fazendas" :key="row.fazenda_origem">
@@ -658,6 +660,7 @@
                     <template x-if="!loading.matching">
                         <div>
                             <table x-show="matchResult.length">
+                                <colgroup><col style="width:8%"><col style="width:19%"><col style="width:11%"><col style="width:13%"><col style="width:10%"><col style="width:9%"><col style="width:10%"><col style="width:9%"><col style="width:11%"></colgroup>
                                 <thead><tr>
                                     <th class="num">Score</th><th>Touro</th><th>Raça</th><th>Central</th>
                                     <th class="num">Preço dose</th><th class="num">IQGg</th><th class="num">DEP prior.</th><th class="num">R$/IQGg</th>
@@ -728,6 +731,7 @@
                         <h2 style="font-size:17px;">🐂 Melhores touros para ofertar</h2>
                         <div class="card" style="margin:12px 0 28px;">
                             <table x-show="marketplace.oferta_top.length">
+                                <colgroup><col style="width:24%"><col style="width:18%"><col style="width:25%"><col style="width:12%"><col style="width:13%"><col style="width:8%"></colgroup>
                                 <thead><tr><th>Touro</th><th>Central</th><th>Fazenda origem</th><th class="num">IQGg</th><th class="num">Preço dose</th><th></th></tr></thead>
                                 <tbody>
                                     <template x-for="t in marketplace.oferta_top" :key="t.id">
@@ -750,6 +754,7 @@
                         </div>
                         <div class="card" style="margin-top:12px;">
                             <table x-show="leads.length">
+                                <colgroup><col style="width:22%"><col style="width:13%"><col style="width:6%"><col style="width:14%"><col style="width:23%"><col style="width:14%"><col style="width:8%"></colgroup>
                                 <thead><tr><th>Empresa / Produtor</th><th>Município</th><th>UF</th><th>Telefone</th><th>E-mail</th><th>Porte</th><th></th></tr></thead>
                                 <tbody>
                                     <template x-for="(l, i) in leads" :key="i">
@@ -795,6 +800,7 @@
                 <div class="card" style="margin:10px 0 28px;">
                     <div class="loading" x-show="loading.demanda">Carregando…</div>
                     <table x-show="!loading.demanda && tendencia.length">
+                        <colgroup><col style="width:40%"><col style="width:12%"><col style="width:24%"><col style="width:24%"></colgroup>
                         <thead><tr><th>Município</th><th>UF</th><th class="num">Rebanho 2024</th><th class="num">Crescimento</th></tr></thead>
                         <tbody>
                             <template x-for="(r,i) in tendencia.slice(0,15)" :key="'t'+i">
@@ -815,6 +821,7 @@
                 <div class="card" style="margin:10px 0 28px;">
                     <div class="loading" x-show="loading.demanda">Carregando…</div>
                     <table x-show="!loading.demanda && lotacao.length">
+                        <colgroup><col style="width:30%"><col style="width:10%"><col style="width:20%"><col style="width:20%"><col style="width:20%"></colgroup>
                         <thead><tr><th>Município</th><th>UF</th><th class="num">Rebanho</th><th class="num">Pastagem (ha)</th><th class="num">Lotação (cab/ha)</th></tr></thead>
                         <tbody>
                             <template x-for="(r,i) in lotacao.slice(0,15)" :key="'l'+i">
@@ -836,6 +843,7 @@
                 <div class="card" style="margin-top:10px;">
                     <div class="loading" x-show="loading.demanda">Carregando…</div>
                     <table x-show="!loading.demanda && whales.length">
+                        <colgroup><col style="width:50%"><col style="width:25%"><col style="width:25%"></colgroup>
                         <thead><tr><th>Sócio</th><th class="num">Fazendas</th><th>UFs</th></tr></thead>
                         <tbody>
                             <template x-for="(r,i) in whales.slice(0,20)" :key="'w'+i">
@@ -883,6 +891,7 @@
                         <p class="subtitle">Desertos Vet por rebanho: maior gado, zero suporte técnico = maior potencial de consultoria e venda.</p>
                         <div class="card" style="margin:10px 0 28px;">
                             <table x-show="territorio.prioritarios.length">
+                                <colgroup><col style="width:8%"><col style="width:44%"><col style="width:24%"><col style="width:24%"></colgroup>
                                 <thead><tr><th>#</th><th>Município</th><th class="num">Rebanho</th><th class="num">Estab. Vet</th></tr></thead>
                                 <tbody>
                                     <template x-for="(m,i) in territorio.prioritarios" :key="i">
@@ -901,6 +910,7 @@
                         <h2 style="font-size:17px;">🐋 Grandes grupos no estado</h2>
                         <div class="card" style="margin-top:10px;">
                             <table x-show="territorio.grandes_grupos.length">
+                                <colgroup><col style="width:70%"><col style="width:30%"></colgroup>
                                 <thead><tr><th>Sócio</th><th class="num">Fazendas</th></tr></thead>
                                 <tbody>
                                     <template x-for="(g,i) in territorio.grandes_grupos" :key="i">
