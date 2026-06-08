@@ -276,8 +276,24 @@
           <button :class="{on:novo.sexo==='M'}" @click="novo.sexo='M'">♂ Macho</button>
         </div>
         <div class="row">
-          <div><label>Brinco visual</label><input x-model="novo.brinco" inputmode="text" placeholder="247"></div>
+          <div>
+            <label>Brinco visual</label>
+            <div style="display:flex; gap:6px">
+              <input x-model="novo.brinco" inputmode="text" placeholder="247" style="flex:1">
+              <button class="mini" style="flex:0 0 auto; padding:0 13px; font-size:17px" @click="$refs.fotoBrinco.click()" title="Foto do brinco">📷</button>
+            </div>
+          </div>
           <div><label>EID / RFID</label><input x-model="novo.eid" inputmode="numeric" placeholder="bastão…"></div>
+        </div>
+        <input type="file" accept="image/*" capture="environment" x-ref="fotoBrinco" style="display:none" @change="ocrBrinco($event)">
+        <div x-show="ocr.loading" class="muted" style="margin-top:4px">📷 Lendo o número do brinco…</div>
+        <div x-show="ocr.cands.length" style="margin-top:6px">
+          <div class="muted" style="font-size:11px; margin-bottom:4px">Toque no número certo (ou digite acima):</div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap">
+            <template x-for="c in ocr.cands" :key="c">
+              <button class="mini p" @click="novo.brinco=c; ocr.cands=[]" x-text="c"></button>
+            </template>
+          </div>
         </div>
         <label>Nome / identificação</label>
         <input x-model="novo.nome" placeholder="opcional">
@@ -589,6 +605,7 @@ function campo() {
     novo:{sexo:'F', brinco:'', eid:'', sisbov:'', nome:'', registro:'', raca_id:null, categoria:'', peso_kg:null, escore_corporal:null, iqgg:null, gpd:null, aol:null, catalogo_id:null, pai_catalogo_id:null},
     cat:{q:'', results:[], loading:false, vinculado:null},
     pai:{q:'', results:[], loading:false, vinculado:null},
+    ocr:{loading:false, cands:[]},
     outbox:[],
     cruza:{dam:null, prioridade:'geral', recs:[], loading:false},
     psheet:{open:false, animal:null, nome:'', peso_kg:null, escore_corporal:null, altura_cm:null, obs:''},
@@ -712,6 +729,7 @@ function campo() {
       this.novo = this.animalVazio();
       this.cat = {q:'', results:[], loading:false, vinculado:null};
       this.pai = {q:'', results:[], loading:false, vinculado:null};
+      this.ocr = {loading:false, cands:[]};
     },
     // ---------- ponte: busca no catálogo da plataforma ----------
     async buscarCatalogo(){
@@ -748,6 +766,22 @@ function campo() {
       if(!this.novo.raca_id && r.raca_id) this.novo.raca_id = r.raca_id;  // herda a raça do pai (necessária p/ o acasalamento)
       this.flash('Pai vinculado: '+(r.nome||r.registro||'touro')); },
     limparPai(){ this.novo.pai_catalogo_id = null; this.pai.vinculado = null; this.pai.q=''; this.pai.results=[]; },
+    // ---------- OCR do brinco por foto (Fase 2) ----------
+    async ocrBrinco(ev){
+      const f = ev.target.files && ev.target.files[0];
+      ev.target.value = '';  // permite tirar outra foto do mesmo brinco
+      if(!f) return;
+      this.ocr.loading=true; this.ocr.cands=[];
+      try{
+        const fd = new FormData(); fd.append('foto', f);
+        const res = await fetch('/api/campo/ocr/brinco', {method:'POST', body:fd, credentials:'same-origin'});
+        if(res.status===401){ location.href='/login'; return; }
+        const j = await res.json();
+        this.ocr.cands = (j && j.candidatos) || [];
+        this.flash(this.ocr.cands.length ? 'Toque no número certo' : 'Não consegui ler — digite o brinco');
+      }catch(e){ this.flash('Erro ao ler a foto (precisa de conexão)'); }
+      this.ocr.loading=false;
+    },
     async carregaAnimais(){ if(!this.cliente) return; try{ this.animais = await this.api('GET','/api/campo/animais?cliente_id='+this.cliente); }catch(e){} },
     animaisFiltrados(){
       const f = this.rebFiltro;
