@@ -2568,7 +2568,7 @@ async def campo_cotacao_pdf(matriz_id: int, prioridade: str = "geral",
         fname = f"cotacao_semen_{slug}_{datetime.now().strftime('%Y%m%d')}.pdf"
         return StreamingResponse(
             io.BytesIO(pdf_bytes), media_type="application/pdf",
-            headers={"Content-Disposition": f"inline; filename={fname}"})
+            headers={"Content-Disposition": f"attachment; filename={fname}"})
     except Exception as e:
         return _error(e)
 
@@ -2712,7 +2712,7 @@ async def campo_briefing_pdf(movimentacao_id: int):
         fname = f"briefing_chegada_{movimentacao_id}_{datetime.now().strftime('%Y%m%d')}.pdf"
         return StreamingResponse(
             io.BytesIO(pdf_bytes), media_type="application/pdf",
-            headers={"Content-Disposition": f"inline; filename={fname}"})
+            headers={"Content-Disposition": f"attachment; filename={fname}"})
     except Exception as e:
         return _error(e)
 
