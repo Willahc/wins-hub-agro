@@ -10,7 +10,8 @@ from datetime import datetime
 from starlette.concurrency import run_in_threadpool
 from auth import authenticate_user, create_access_token, decode_token
 from pdf_generator import gerar_relatorio_territorial
-from pdf_html import gerar_parecer_cruzamento, gerar_parecer_matching, gerar_cotacao_acasalamento  # HTML/CSS -> WeasyPrint
+from pdf_html import (gerar_parecer_cruzamento, gerar_parecer_matching,  # HTML/CSS -> WeasyPrint
+                      gerar_cotacao_acasalamento, gerar_briefing_chegada)
 import external_apis
 import psycopg2
 import psycopg2.extras
@@ -2116,6 +2117,14 @@ class ConcluirLembreteIn(BaseModel):
     id: int
 
 
+class AnimalStatusIn(BaseModel):
+    animal_id: int
+    status: str | None = None              # ativo | descarte | vendido | morto
+    eh_doadora: bool | None = None
+    motivo_descarte: str | None = None
+    data_saida: str | None = None
+
+
 class MovimentacaoIn(BaseModel):
     uuid: str
     cliente_id: int
@@ -2133,6 +2142,7 @@ class MovimentacaoIn(BaseModel):
 _TIPO_SANITARIO_OK = {"vacina", "vermífugo", "vermifugo", "medicamento", "exame", "suplemento", "outro"}
 _TIPO_MOV_OK = {"entrada", "saida", "saída", "transferencia", "transferência",
                 "nascimento", "morte", "abate"}
+_STATUS_ANIMAL_OK = {"ativo", "descarte", "vendido", "morto"}
 
 
 def _cap(s, n=200):
@@ -2257,10 +2267,44 @@ async def campo_animais(cliente_id: int):
         return query(
             """SELECT a.id, a.nome, a.brinco, a.eid, a.sexo, a.peso_atual_kg, a.escore_corporal,
                       ra.sigla AS raca, a.reprodutor_espelho_id,
+                      COALESCE(a.status, 'ativo') AS status, a.eh_doadora, a.motivo_descarte,
                       (SELECT max(data_medicao) FROM fazenda.medicao m WHERE m.animal_id = a.id) AS ultima_medicao
                FROM fazenda.animal a LEFT JOIN catalogo.raca ra ON ra.id = a.raca_id
-               WHERE a.cliente_id = %(c)s ORDER BY a.coletado_em DESC LIMIT 500""",
+               WHERE a.cliente_id = %(c)s
+               ORDER BY (COALESCE(a.status,'ativo') <> 'ativo'), a.coletado_em DESC LIMIT 500""",
             {"c": cliente_id})
+    except Exception as e:
+        return _error(e)
+
+
+@app.post("/api/campo/animal/status")
+async def campo_animal_status(req: AnimalStatusIn):
+    """Marca descarte/venda/morte (ciclo de vida) e/ou doadora de uma fêmea.
+    Reativar (status=ativo) limpa motivo/data de saída."""
+    try:
+        sets, params = [], {"a": req.animal_id}
+        if req.status is not None:
+            st = req.status.lower()
+            if st not in _STATUS_ANIMAL_OK:
+                return {"error": "status inválido"}
+            sets.append("status = %(st)s"); params["st"] = st
+            if st == "ativo":
+                sets.append("data_saida = NULL")
+                sets.append("motivo_descarte = NULL")
+            else:
+                sets.append("data_saida = COALESCE(%(ds)s::date, current_date)")
+                params["ds"] = req.data_saida or None
+                sets.append("motivo_descarte = %(mt)s")
+                params["mt"] = _cap(req.motivo_descarte, 120)
+        if req.eh_doadora is not None:
+            sets.append("eh_doadora = %(dd)s"); params["dd"] = bool(req.eh_doadora)
+        if not sets:
+            return {"error": "nada a atualizar"}
+        with _tx() as conn:
+            cur = _cur(conn)
+            cur.execute(f"UPDATE fazenda.animal SET {', '.join(sets)} WHERE id = %(a)s RETURNING id", params)
+            row = cur.fetchone()
+            return {"id": row["id"], "ok": True} if row else {"error": "animal não encontrado"}
     except Exception as e:
         return _error(e)
 
@@ -2646,6 +2690,29 @@ async def campo_movimentacao(req: MovimentacaoIn):
                  "fin": _cap(req.finalidade, 60), "q": req.quantidade, "obs": _cap(req.obs, 500),
                  "u": req.uuid})
             return {"id": cur.fetchone()["id"], "novo": True}
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/campo/briefing/pdf")
+async def campo_briefing_pdf(movimentacao_id: int):
+    """Briefing de chegada (PDF) de um lote recebido — detalhes da entrada + protocolo de recepção."""
+    try:
+        rows = query(
+            """SELECT m.id, m.cliente_id, m.tipo, m.data_evento, m.gta_numero, m.origem,
+                      m.destino, m.finalidade, m.quantidade, m.obs,
+                      c.razao_social, c.uf, c.municipio
+                 FROM fazenda.movimentacao m JOIN fazenda.cliente c ON c.id = m.cliente_id
+                WHERE m.id = %(id)s""", {"id": movimentacao_id})
+        if not rows:
+            return JSONResponse({"error": "movimentação não encontrada"}, status_code=404)
+        m = rows[0]
+        cliente = {"razao_social": m.get("razao_social"), "uf": m.get("uf"), "municipio": m.get("municipio")}
+        pdf_bytes = await run_in_threadpool(gerar_briefing_chegada, m, cliente)
+        fname = f"briefing_chegada_{movimentacao_id}_{datetime.now().strftime('%Y%m%d')}.pdf"
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes), media_type="application/pdf",
+            headers={"Content-Disposition": f"inline; filename={fname}"})
     except Exception as e:
         return _error(e)
 
