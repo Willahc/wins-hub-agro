@@ -47,10 +47,15 @@
     .mini.p { background:var(--verde2); color:#fff; border-color:var(--verde2); }
     .empty { text-align:center; color:#9aa89a; padding:22px 0; font-size:13px; }
     .rec { border:1px solid var(--linha); border-radius:11px; padding:11px; margin-bottom:9px; }
+    .rec.pickable { cursor:pointer; transition:border-color .12s, background .12s; -webkit-tap-highlight-color:transparent; }
+    .rec.pickable:active { background:#f4f8f4; }
+    .rec.pickable.sel { border-color:var(--verde); background:#eef7ee; box-shadow:0 0 0 1px var(--verde) inset; }
     .rec .h { display:flex; align-items:baseline; gap:8px; } .rec .rk { font-weight:800; color:var(--verde2); }
     .rec .nm { font-weight:700; font-size:15px; } .rec .rg { font-size:11px; color:#7a857a; margin-left:auto; }
     .rec .kv { display:flex; gap:14px; margin-top:7px; font-size:12px; }
     .rec .kv b { color:var(--verde); } .warn { color:#b8860b; font-size:11px; margin-top:5px; }
+    .rec .pick { font-size:11px; font-weight:700; margin-top:7px; color:#7a857a; }
+    .rec.pickable.sel .pick { color:var(--verde); }
     .toast { position:fixed; bottom:78px; left:14px; right:14px; background:var(--verde); color:#fff; padding:12px 15px; border-radius:11px; font-size:14px; z-index:40; box-shadow:0 6px 20px rgba(0,0,0,.2); }
     .badge-off { background:#fff7e8; border:1px solid #e8c97a; color:#8a6516; font-size:12px; padding:8px 11px; border-radius:9px; margin-bottom:11px; }
     .muted { color:#7a857a; font-size:12px; }
@@ -406,7 +411,8 @@
       <div class="card" x-show="cruza.recs.length">
         <h3 x-text="'Touros recomendados ('+cruza.recs.length+')'"></h3>
         <template x-for="(r,i) in cruza.recs" :key="r.id">
-          <div class="rec">
+          <div class="rec pickable" :class="{sel: cruza.chosen && cruza.chosen.id===r.id}"
+               role="button" tabindex="0" @click="escolherTouro(r)" @keydown.enter="escolherTouro(r)">
             <div class="h">
               <span class="rk" x-text="'#'+(i+1)"></span>
               <span class="nm" x-text="r.nome"></span>
@@ -418,12 +424,14 @@
               <span>Score <b x-text="r.score"></b></span>
             </div>
             <div class="warn" x-show="r.parente" x-text="r.nota"></div>
+            <div class="pick" x-text="(cruza.chosen && cruza.chosen.id===r.id) ? '✓ Touro escolhido' : 'Tocar p/ escolher este touro'"></div>
           </div>
         </template>
       </div>
       <div class="card" x-show="cruza.recs.length">
         <h3>Cotação de sêmen</h3>
-        <p class="muted" style="margin:0 0 6px">Gera um PDF com a matriz e o ranking de touros (preço da dose) p/ enviar ao produtor.</p>
+        <p class="muted" style="margin:0 0 6px" x-show="!cruza.chosen">Gera um PDF com a matriz e o ranking de touros (preço da dose) p/ enviar ao produtor.</p>
+        <p class="muted" style="margin:0 0 6px" x-show="cruza.chosen">PDF liderado pelo touro escolhido — <b x-text="cruza.chosen && cruza.chosen.nome"></b> — com os demais como alternativas.</p>
         <button class="btn" :disabled="cota.busy" @click="enviarWhatsapp()"
                 x-text="cota.busy ? 'Gerando…' : '📲 Enviar cotação no WhatsApp'"></button>
         <button class="btn sec" :disabled="cota.busy" @click="baixarCotacao()">📄 Baixar PDF</button>
@@ -607,7 +615,7 @@ function campo() {
     pai:{q:'', results:[], loading:false, vinculado:null},
     ocr:{loading:false, cands:[]},
     outbox:[],
-    cruza:{dam:null, prioridade:'geral', recs:[], loading:false},
+    cruza:{dam:null, prioridade:'geral', recs:[], loading:false, chosen:null},
     psheet:{open:false, animal:null, nome:'', peso_kg:null, escore_corporal:null, altura_cm:null, obs:''},
     ssheet:{open:false, animal:null, nome:'', tipo:'vacina', produto:'', dose:'', via:'', proxima_dose:'', responsavel:'', obs:'', origem_lembrete_id:null},
     agenda:{itens:[], resumo:{}, dias:30, loading:false},
@@ -950,21 +958,27 @@ function campo() {
     async acasalar(a){
       if(!a.reprodutor_espelho_id){ this.flash('Sincronize a fêmea primeiro'); return; }
       this.tab='cruzar';
-      this.cruza={dam:null, prioridade:'geral', recs:[], loading:true, rid:a.reprodutor_espelho_id};
+      this.cruza={dam:null, prioridade:'geral', recs:[], loading:true, chosen:null, rid:a.reprodutor_espelho_id};
       await this.acasalarRun();
     },
     async acasalarRun(){
       if(!this.cruza.rid) return;
-      this.cruza.loading=true; this.cruza.recs=[];
+      this.cruza.loading=true; this.cruza.recs=[]; this.cruza.chosen=null;
       try{
         const r = await this.api('GET','/api/acasalamento/'+this.cruza.rid+'?prioridade='+this.cruza.prioridade+'&top=8');
         this.cruza.dam = r.matriz; this.cruza.recs = r.recomendacoes||[];
       }catch(e){ this.flash('Erro: acasalamento exige conexão'); }
       this.cruza.loading=false;
     },
+    escolherTouro(r){
+      if(!r) return;
+      this.cruza.chosen = (this.cruza.chosen && this.cruza.chosen.id===r.id) ? null : r;
+      if(this.cruza.chosen) this.flash('Touro escolhido: '+(r.nome||'—'));
+    },
     cotacaoUrl(){
       return '/api/campo/cotacao/pdf?matriz_id='+this.cruza.rid+'&prioridade='+this.cruza.prioridade
-             +'&top=8'+(this.cliente?'&cliente_id='+this.cliente:'');
+             +'&top=8'+(this.cliente?'&cliente_id='+this.cliente:'')
+             +(this.cruza.chosen?'&touro_id='+this.cruza.chosen.id:'');
     },
     async _gerarCotacaoBlob(){
       const res = await fetch(this.cotacaoUrl(), {credentials:'same-origin'});

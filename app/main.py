@@ -2671,13 +2671,19 @@ _PRIORIDADE_LABEL = {
 @app.get("/api/campo/cotacao/pdf")
 async def campo_cotacao_pdf(matriz_id: int, prioridade: str = "geral",
                             cliente_id: int | None = None, top: int = 8,
-                            n_doses: int | None = None):
+                            n_doses: int | None = None, touro_id: int | None = None):
     """Cotação de sêmen em PDF a partir do acasalamento ao vivo da matriz (tela Cruzar).
-    Reusa a lógica de /api/acasalamento e renderiza um documento comercial p/ o produtor."""
+    Reusa a lógica de /api/acasalamento e renderiza um documento comercial p/ o produtor.
+    Se `touro_id` (touro escolhido na tela), a cotação lidera por ele e mantém os demais como alternativas."""
     try:
         res = await acasalamento(matriz_id, prioridade=prioridade, top=top)
         if not res or res.get("error"):
             return JSONResponse({"error": (res or {}).get("error", "matriz não encontrada")}, status_code=404)
+        if touro_id:
+            recs = res.get("recomendacoes") or []
+            escolhido = [r for r in recs if r.get("id") == touro_id]
+            if escolhido:
+                res["recomendacoes"] = escolhido + [r for r in recs if r.get("id") != touro_id]
         cliente = None
         if cliente_id:
             rows = query("SELECT razao_social, uf, municipio FROM fazenda.cliente WHERE id = %(id)s",
