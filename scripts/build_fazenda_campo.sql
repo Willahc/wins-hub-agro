@@ -44,6 +44,10 @@ ALTER TABLE fazenda.animal ADD COLUMN IF NOT EXISTS grupo_id integer REFERENCES 
 ALTER TABLE fazenda.animal ADD COLUMN IF NOT EXISTS uuid     uuid;                 -- idempotência do outbox de campo
 ALTER TABLE fazenda.animal ADD COLUMN IF NOT EXISTS reprodutor_espelho_id integer  -- espelho no catálogo (acasalamento)
   REFERENCES mercado.reprodutor(id);
+-- ciclo de vida do animal: descarte (cull) e marcação de doadora (FIV/TE)
+ALTER TABLE fazenda.animal ADD COLUMN IF NOT EXISTS eh_doadora      boolean DEFAULT false;
+ALTER TABLE fazenda.animal ADD COLUMN IF NOT EXISTS motivo_descarte varchar(120);
+ALTER TABLE fazenda.animal ADD COLUMN IF NOT EXISTS data_saida      date;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_animal_eid
   ON fazenda.animal (cliente_id, eid) WHERE eid IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_animal_uuid

@@ -688,3 +688,68 @@ def gerar_cotacao_acasalamento(matriz: dict, recomendacoes: list, cliente: dict 
     return _render("Cotação de sêmen", "Cotação de Sêmen",
                    f"{vaca_nome} · {faz} · Gerado em {datetime.now().strftime('%d/%m/%Y')}",
                    body)
+
+
+# ---------------------------------------------------------------------------
+# Briefing de chegada — protocolo de recepção de um lote (entrada/compra).
+# Gerado de uma movimentação tipo "entrada"; entrega à equipe de campo o que
+# fazer quando o gado desembarca (quarentena, sanitário, pesagem, adaptação).
+# ---------------------------------------------------------------------------
+_PROTOCOLO_CHEGADA = [
+    ("Descarregamento e descanso", "Água limpa à vontade + feno; 12–24 h de descanso antes de qualquer manejo."),
+    ("Quarentena", "Lote isolado em piquete/curral separado por 21–30 dias antes de juntar ao rebanho."),
+    ("Identificação", "Conferir/instalar brinco visual e SISBOV; bater contra a GTA e a nota de compra."),
+    ("Pesagem de entrada", "Peso de chegada de cada animal — base do ganho e da conversão no período."),
+    ("Vermifugação", "Endectocida/endoparasiticida de amplo espectro no embarque na propriedade."),
+    ("Vacinação de chegada", "Clostridioses e respiratórias conforme o calendário; agendar reforços."),
+    ("Exames sanitários", "Brucelose/tuberculose quando exigido p/ trânsito/SISBOV ou origem desconhecida."),
+    ("Adaptação alimentar", "Transição gradual de dieta por 7–10 dias para evitar distúrbio digestivo."),
+    ("Observação clínica", "Vistoria diária na quarentena: diarreia, sinal respiratório, claudicação, apetite."),
+]
+
+
+def gerar_briefing_chegada(mov: dict, cliente: dict = None) -> bytes:
+    cliente = cliente or {}
+    faz = cliente.get("razao_social") or "—"
+    local = " · ".join([x for x in [cliente.get("municipio"), cliente.get("uf")] if x]) or "—"
+    data = mov.get("data_evento")
+    data = data.strftime("%d/%m/%Y") if hasattr(data, "strftime") else (str(data) if data else "—")
+    qtd = mov.get("quantidade")
+
+    dados = [
+        ("Nº da GTA", mov.get("gta_numero") or "—"),
+        ("Origem", mov.get("origem") or "—"),
+        ("Finalidade", mov.get("finalidade") or "—"),
+        ("Quantidade", f"{qtd} cabeça(s)" if qtd else "—"),
+        ("Data de chegada", data),
+    ]
+    kv = "".join(f"<tr><td class='k'>{k}</td><td class='v'>{v}</td></tr>" for k, v in dados)
+
+    passos = "".join(
+        f"<tr><td style='width:26px; text-align:center; font-size:13pt; color:#2d5a2d'>&#9744;</td>"
+        f"<td><b>{t}</b><div style='font-size:9pt; color:#5a6b5a; margin-top:1px'>{d}</div></td></tr>"
+        for t, d in _PROTOCOLO_CHEGADA
+    )
+
+    obs_html = ""
+    if mov.get("obs"):
+        obs_html = f"<div class='banner bn-warn'><b>Observação do lote:</b> {mov.get('obs')}</div>"
+
+    body = f"""
+    <h2>Lote recebido</h2><div class="rule"></div>
+    <div class="banner bn-ok"><b>{faz}</b> &nbsp;·&nbsp; {local}</div>
+    <table class="kv" style="margin-top:10px">{kv}</table>
+    {obs_html}
+
+    <h2>Protocolo de chegada</h2><div class="rule"></div>
+    <table class="kv" style="font-size:10pt">{passos}</table>
+    <div class="legend">Marque cada etapa à medida que executa. Protocolo de referência —
+      ajuste ao calendário sanitário e às exigências de defesa agropecuária da sua região.</div>
+
+    <div class="note">Briefing gerado pela plataforma <b>WiNS Hub Agro</b> para o lote da movimentação
+      registrada em {data}. Documento operacional de recepção — não substitui o atestado sanitário
+      nem a GTA oficial.</div>
+    """
+    return _render("Briefing de chegada", "Briefing de Chegada",
+                   f"{faz} · {qtd or '—'} cab. · Chegada {data}",
+                   body)

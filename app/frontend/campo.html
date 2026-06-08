@@ -227,6 +227,8 @@
                 <span x-show="m.quantidade" x-text="m.quantidade+' cab.'"></span>
                 <span x-show="m.finalidade" x-text="m.finalidade"></span>
               </div>
+              <button class="mini" style="margin-top:8px" x-show="m.tipo==='entrada'"
+                      @click="briefingChegada(m)">📋 Briefing de chegada</button>
             </div>
           </template>
         </div>
@@ -281,19 +283,31 @@
     <!-- ====================== REBANHO ====================== -->
     <div x-show="tab==='rebanho'">
       <div class="card" x-show="cliente">
-        <h3 x-text="'Rebanho ('+animais.length+')'"></h3>
-        <div class="empty" x-show="animais.length===0">Nenhum animal ainda. Capture no curral.</div>
-        <template x-for="a in animais" :key="a.id">
+        <h3 x-text="'Rebanho ('+animaisFiltrados().length+')'"></h3>
+        <div class="seg" style="margin-bottom:10px">
+          <button :class="{on:rebFiltro==='ativos'}" @click="rebFiltro='ativos'">Ativos</button>
+          <button :class="{on:rebFiltro==='doadoras'}" @click="rebFiltro='doadoras'">★ Doadoras</button>
+          <button :class="{on:rebFiltro==='descarte'}" @click="rebFiltro='descarte'">Descarte</button>
+          <button :class="{on:rebFiltro==='todos'}" @click="rebFiltro='todos'">Todos</button>
+        </div>
+        <div class="empty" x-show="animaisFiltrados().length===0">Nenhum animal neste filtro.</div>
+        <template x-for="a in animaisFiltrados()" :key="a.id">
           <div class="an">
             <div class="sx" :class="a.sexo" x-text="a.sexo"></div>
             <div>
-              <div class="nm" x-text="a.nome || a.brinco || ('#'+a.id)"></div>
+              <div class="nm">
+                <span x-text="a.nome || a.brinco || ('#'+a.id)"></span>
+                <span x-show="a.eh_doadora" title="doadora" style="color:#b8860b">★</span>
+                <span x-show="a.status && a.status!=='ativo'" x-text="a.status"
+                      style="font-size:10px; font-weight:700; text-transform:uppercase; color:#c0392b; background:#fbe9e9; padding:1px 6px; border-radius:8px; margin-left:4px"></span>
+              </div>
               <div class="meta" x-text="(a.raca||'—')+' · '+(a.peso_atual_kg? a.peso_atual_kg+' kg':'sem peso')"></div>
             </div>
             <div class="go">
               <button class="mini" @click="pesar(a)">⚖ Pesar</button>
               <button class="mini" @click="sanitar(a)">💉</button>
               <button class="mini p" x-show="a.sexo==='F' && a.reprodutor_espelho_id" @click="acasalar(a)">♥ Cruzar</button>
+              <button class="mini" @click="abrirStatus(a)">⋯</button>
             </div>
           </div>
         </template>
@@ -464,6 +478,37 @@
     </div>
   </div>
 
+  <!-- ====================== SHEET: STATUS / DESCARTE / DOADORA ====================== -->
+  <div class="sheet-bg" x-show="stsheet.open" x-transition.opacity @click.self="stsheet.open=false" style="display:none">
+    <div class="sheet" x-show="stsheet.open" x-transition>
+      <div class="sh-h">
+        <div>
+          <div class="sh-t">⋯ Manejo do animal</div>
+          <div class="sh-s" x-text="stsheet.nome"></div>
+        </div>
+        <button class="x" @click="stsheet.open=false">×</button>
+      </div>
+      <label>Doadora (FIV / TE)</label>
+      <div class="seg">
+        <button :class="{on:!stsheet.eh_doadora}" @click="stsheet.eh_doadora=false">Não</button>
+        <button :class="{on:stsheet.eh_doadora}" @click="stsheet.eh_doadora=true">★ Sim</button>
+      </div>
+      <label style="margin-top:12px">Situação</label>
+      <div class="seg wrap3">
+        <template x-for="s in ['ativo','descarte','vendido','morto']" :key="s">
+          <button :class="{on:stsheet.status===s}" @click="stsheet.status=s" x-text="s"></button>
+        </template>
+      </div>
+      <div x-show="stsheet.status!=='ativo'">
+        <label>Motivo</label>
+        <input x-model="stsheet.motivo_descarte" placeholder="ex.: baixo índice, idade, vazia">
+        <label>Data de saída</label>
+        <input type="date" x-model="stsheet.data_saida">
+      </div>
+      <button class="btn" @click="salvarStatus()">Salvar</button>
+    </div>
+  </div>
+
   <!-- toast -->
   <div class="toast" x-show="toast" x-transition x-text="toast" @click="toast=''"></div>
 
@@ -496,6 +541,8 @@ function campo() {
     cota:{busy:false},
     audit:{loaded:false, loading:false, data:{resumo:{}, iqgg:{}, ranking:[], a_genotipar:[]}},
     mov:{tipo:'entrada', data_evento:'', gta_numero:'', origem:'', destino:'', finalidade:'', quantidade:null, obs:'', lista:[]},
+    rebFiltro:'ativos',
+    stsheet:{open:false, animal:null, nome:'', status:'ativo', eh_doadora:false, motivo_descarte:'', data_saida:''},
 
     animalVazio(){ return {sexo:'F', brinco:'', eid:'', sisbov:'', nome:'', raca_id:null, categoria:'', peso_kg:null, escore_corporal:null, iqgg:null, gpd:null, aol:null}; },
 
@@ -595,6 +642,31 @@ function campo() {
       this.novo = this.animalVazio();
     },
     async carregaAnimais(){ if(!this.cliente) return; try{ this.animais = await this.api('GET','/api/campo/animais?cliente_id='+this.cliente); }catch(e){} },
+    animaisFiltrados(){
+      const f = this.rebFiltro;
+      return this.animais.filter(a=>{
+        const st = a.status || 'ativo';
+        if(f==='ativos')   return st==='ativo';
+        if(f==='doadoras') return !!a.eh_doadora;
+        if(f==='descarte') return st!=='ativo';
+        return true; // todos
+      });
+    },
+    abrirStatus(a){
+      this.stsheet = {open:true, animal:a, nome:this.animalLabel(a), status:a.status||'ativo',
+        eh_doadora:!!a.eh_doadora, motivo_descarte:a.motivo_descarte||'', data_saida:''};
+    },
+    async salvarStatus(){
+      const s=this.stsheet, a=s.animal;
+      const payload = {animal_id:a.id, status:s.status, eh_doadora:s.eh_doadora,
+        motivo_descarte:s.motivo_descarte||null, data_saida:s.data_saida||null};
+      try{
+        await this.api('POST','/api/campo/animal/status', payload);
+        a.status=s.status; a.eh_doadora=s.eh_doadora; a.motivo_descarte=s.motivo_descarte||null;
+        s.open=false;
+        this.flash('Atualizado: '+s.nome);
+      }catch(e){ this.flash('Erro — manejo de status exige conexão'); }
+    },
 
     // ---------- rebanho: pesagem / sanitário ----------
     animalLabel(a){ return a.nome || a.brinco || ('#'+a.id); },
@@ -664,6 +736,25 @@ function campo() {
     async carregaMovimentacoes(){
       if(!this.cliente) return;
       try{ this.mov.lista = await this.api('GET','/api/campo/movimentacoes?cliente_id='+this.cliente); }catch(e){}
+    },
+    async briefingChegada(m){
+      this.flash('Gerando briefing…');
+      try{
+        const res = await fetch('/api/campo/briefing/pdf?movimentacao_id='+m.id, {credentials:'same-origin'});
+        if(res.status===401){ location.href='/login'; return; }
+        if(!res.ok) throw new Error('falha');
+        const blob = await res.blob();
+        const file = new File([blob], 'briefing_chegada_'+m.id+'.pdf', {type:'application/pdf'});
+        if(navigator.canShare && navigator.canShare({files:[file]})){
+          await navigator.share({files:[file], title:'Briefing de chegada', text:'Protocolo de chegada do lote'});
+        } else {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a'); a.href=url; a.download=file.name;
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(()=>URL.revokeObjectURL(url), 5000);
+        }
+        this.flash('Briefing pronto');
+      }catch(e){ this.flash('Erro ao gerar briefing (precisa de conexão)'); }
     },
     salvarMov(){
       if(!this.cliente){ this.flash('Selecione a fazenda'); return; }
