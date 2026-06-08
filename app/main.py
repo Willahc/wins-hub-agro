@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Response, Form
+from fastapi import FastAPI, Request, Response, Form, UploadFile, File
 from fastapi.responses import (
     HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse, FileResponse,
 )
@@ -2233,6 +2233,54 @@ async def campo_catalogo_busca(q: str, sexo: str | None = None, limit: int = 15)
                  ORDER BY (MAX(CASE WHEN a.caracteristica_id = 20 THEN a.valor END)) DESC NULLS LAST, r.nome
                  LIMIT %(lim)s""",
             params)
+    except Exception as e:
+        return _error(e)
+
+
+def _ocr_brinco(image_bytes: bytes) -> list:
+    """OCR do número do brinco a partir de uma foto (Fase 2). Pré-processa com Pillow
+    (cinza, contraste, upscale) e roda Tesseract com whitelist de dígitos. Devolve
+    candidatos (mais longos primeiro) — a UI faz o usuário CONFIRMAR (nunca confia cego)."""
+    import re as _re
+    import pytesseract
+    from PIL import Image, ImageOps
+    img = Image.open(io.BytesIO(image_bytes))
+    if img.mode != "L":
+        img = img.convert("L")
+    w, h = img.size
+    if max(w, h) < 1200:                       # upscale fotos pequenas ajuda muito o OCR
+        s = 1200.0 / max(w, h)
+        img = img.resize((int(w * s), int(h * s)))
+    img = ImageOps.autocontrast(img)
+    cands = []
+    # passe 1: só dígitos (brinco visual costuma ser numérico)
+    for psm in ("11", "7", "6"):
+        txt = pytesseract.image_to_string(
+            img, config=f"--psm {psm} -c tessedit_char_whitelist=0123456789")
+        for n in _re.findall(r"\d{1,8}", txt):
+            if n not in cands:
+                cands.append(n)
+    # passe 2: alfanumérico (brincos com prefixo de letra)
+    txt2 = pytesseract.image_to_string(img, config="--psm 11")
+    for t in _re.findall(r"[A-Za-z0-9]{2,12}", txt2):
+        t = t.upper()
+        if any(c.isdigit() for c in t) and t not in cands:
+            cands.append(t)
+    cands.sort(key=len, reverse=True)
+    return cands[:6]
+
+
+@app.post("/api/campo/ocr/brinco")
+async def campo_ocr_brinco(foto: UploadFile = File(...)):
+    """Lê o número do brinco de uma foto (câmera do app). Retorna candidatos p/ o usuário escolher."""
+    try:
+        data = await foto.read()
+        if not data:
+            return {"error": "foto vazia"}
+        if len(data) > 12_000_000:
+            return {"error": "imagem muito grande (máx 12MB)"}
+        cands = await run_in_threadpool(_ocr_brinco, data)
+        return {"candidatos": cands}
     except Exception as e:
         return _error(e)
 
