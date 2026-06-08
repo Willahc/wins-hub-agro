@@ -168,6 +168,7 @@
                     <span x-show="r.lift!=null" :style="(r.lift>0)?'color:#2d7d2d':'color:#c0392b'"
                           x-text="' ('+(r.lift>0?'+':'')+r.lift+' vs raça)'"></span>
                     <span class="warn" x-show="r.prioridade_corretiva"> · corrigir</span>
+                    <span class="muted" x-show="r.genomica===false" style="font-style:italic"> · estimada pelo pai</span>
                   </div>
                 </div>
                 <div class="go">
@@ -294,6 +295,30 @@
         <div class="row">
           <div><label>Peso (kg)</label><input x-model.number="novo.peso_kg" inputmode="decimal" placeholder="0"></div>
           <div><label>Escore (1–9)</label><input x-model.number="novo.escore_corporal" inputmode="decimal" placeholder="0"></div>
+        </div>
+        <div x-show="novo.sexo==='F' && !novo.catalogo_id">
+          <label style="margin-top:11px">🐂 Pai (touro) — buscar na base (estima a genética da cria)</label>
+          <input x-model="pai.q" @input.debounce.400ms="buscarPai()"
+                 placeholder="nome ou registro do touro" :disabled="!!novo.pai_catalogo_id">
+          <div x-show="pai.loading" class="muted" style="margin-top:5px">Buscando…</div>
+          <div x-show="pai.results.length && !novo.pai_catalogo_id"
+               style="border:1px solid var(--linha); border-radius:10px; margin-top:6px; max-height:200px; overflow-y:auto">
+            <template x-for="r in pai.results" :key="r.id">
+              <div @click="pickPai(r)" style="padding:9px 11px; border-bottom:1px solid var(--linha)">
+                <div style="font-weight:600; font-size:14px" x-text="r.nome || r.registro || ('#'+r.id)"></div>
+                <div class="muted" x-text="(r.raca_sigla||'—')+' · Reg '+(r.registro||'—')+(r.iqgg!=null?' · IQGg '+r.iqgg:' · sem IQGg')"></div>
+              </div>
+            </template>
+          </div>
+          <div x-show="novo.pai_catalogo_id && pai.vinculado" class="rec" style="margin-top:6px; background:#eef5ee; border-color:#bcdcbc">
+            <div style="display:flex; align-items:center; gap:8px">
+              <div>
+                <div style="font-weight:700; color:var(--verde)" x-text="'🐂 Pai: '+(pai.vinculado && pai.vinculado.nome)"></div>
+                <div class="muted" x-text="(pai.vinculado&&pai.vinculado.iqgg!=null)?('IQGg do pai '+pai.vinculado.iqgg+' — mérito da cria estimado por parentesco'):'pai sem IQGg na base (entra só p/ consanguinidade)'"></div>
+              </div>
+              <button class="mini" style="margin-left:auto; flex:0 0 auto" @click="limparPai()">remover</button>
+            </div>
+          </div>
         </div>
         <div x-show="novo.sexo==='F'">
           <label style="margin-top:11px">Índices genômicos próprios (se a vaca foi genotipada — opcional)</label>
@@ -561,8 +586,9 @@ function campo() {
     clientes:[], racas:[], grupos:[], animais:[], resumo:{},
     cliente:0, grupo:0,
     novoCli:{razao_social:'', uf:'', municipio:''}, novoGrupo:'',
-    novo:{sexo:'F', brinco:'', eid:'', sisbov:'', nome:'', registro:'', raca_id:null, categoria:'', peso_kg:null, escore_corporal:null, iqgg:null, gpd:null, aol:null, catalogo_id:null},
+    novo:{sexo:'F', brinco:'', eid:'', sisbov:'', nome:'', registro:'', raca_id:null, categoria:'', peso_kg:null, escore_corporal:null, iqgg:null, gpd:null, aol:null, catalogo_id:null, pai_catalogo_id:null},
     cat:{q:'', results:[], loading:false, vinculado:null},
+    pai:{q:'', results:[], loading:false, vinculado:null},
     outbox:[],
     cruza:{dam:null, prioridade:'geral', recs:[], loading:false},
     psheet:{open:false, animal:null, nome:'', peso_kg:null, escore_corporal:null, altura_cm:null, obs:''},
@@ -574,7 +600,7 @@ function campo() {
     rebFiltro:'ativos',
     stsheet:{open:false, animal:null, nome:'', status:'ativo', eh_doadora:false, motivo_descarte:'', data_saida:''},
 
-    animalVazio(){ return {sexo:'F', brinco:'', eid:'', sisbov:'', nome:'', registro:'', raca_id:null, categoria:'', peso_kg:null, escore_corporal:null, iqgg:null, gpd:null, aol:null, catalogo_id:null}; },
+    animalVazio(){ return {sexo:'F', brinco:'', eid:'', sisbov:'', nome:'', registro:'', raca_id:null, categoria:'', peso_kg:null, escore_corporal:null, iqgg:null, gpd:null, aol:null, catalogo_id:null, pai_catalogo_id:null}; },
 
     async init(){
       this.outbox = JSON.parse(localStorage.getItem('wins_outbox')||'[]');
@@ -685,6 +711,7 @@ function campo() {
       this.flash((p.sexo==='F'?'Fêmea':'Macho')+' '+(p.nome||p.brinco||'')+' salvo'+(this.online?'':' (offline)'));
       this.novo = this.animalVazio();
       this.cat = {q:'', results:[], loading:false, vinculado:null};
+      this.pai = {q:'', results:[], loading:false, vinculado:null};
     },
     // ---------- ponte: busca no catálogo da plataforma ----------
     async buscarCatalogo(){
@@ -709,6 +736,18 @@ function campo() {
       this.novo.catalogo_id = null; this.cat.vinculado = null; this.cat.q=''; this.cat.results=[];
       this.novo.registro=''; this.novo.iqgg=null; this.novo.gpd=null; this.novo.aol=null;
     },
+    async buscarPai(){
+      const q = (this.pai.q||'').trim();
+      if(q.length < 2){ this.pai.results=[]; return; }
+      this.pai.loading=true;
+      try{ this.pai.results = await this.api('GET','/api/campo/catalogo/busca?sexo=M&q='+encodeURIComponent(q)); }
+      catch(e){ this.pai.results=[]; }
+      this.pai.loading=false;
+    },
+    pickPai(r){ this.novo.pai_catalogo_id = r.id; this.pai.vinculado = r; this.pai.results = [];
+      if(!this.novo.raca_id && r.raca_id) this.novo.raca_id = r.raca_id;  // herda a raça do pai (necessária p/ o acasalamento)
+      this.flash('Pai vinculado: '+(r.nome||r.registro||'touro')); },
+    limparPai(){ this.novo.pai_catalogo_id = null; this.pai.vinculado = null; this.pai.q=''; this.pai.results=[]; },
     async carregaAnimais(){ if(!this.cliente) return; try{ this.animais = await this.api('GET','/api/campo/animais?cliente_id='+this.cliente); }catch(e){} },
     animaisFiltrados(){
       const f = this.rebFiltro;

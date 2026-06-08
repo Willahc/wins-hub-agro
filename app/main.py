@@ -2083,7 +2083,8 @@ class AnimalIn(BaseModel):
     aol: float | None = None
     pes: float | None = None
     mar: float | None = None
-    catalogo_id: int | None = None  # ponte: vincula ao reprodutor REAL do catálogo
+    catalogo_id: int | None = None      # ponte: vincula ao reprodutor REAL do catálogo
+    pai_catalogo_id: int | None = None  # ponte pelo pai: vincula o touro real (genética + consanguinidade)
 
 
 class PesagemIn(BaseModel):
@@ -2382,6 +2383,25 @@ async def campo_animal(req: AnimalIn):
                  "obs": req.obs, "uuid": req.uuid})
             animal_id = cur.fetchone()["id"]
 
+            # pai (touro) escolhido na busca -> vincula o pai REAL e guarda sua genética
+            pai = None
+            if req.pai_catalogo_id:
+                prow = query(
+                    """SELECT r.id, r.nome, r.registro,
+                              MAX(CASE WHEN a.caracteristica_id = 20 THEN a.valor END) AS iqgg
+                         FROM mercado.reprodutor r
+                         LEFT JOIN mercado.avaliacao a ON a.reprodutor_id = r.id AND a.caracteristica_id = 20
+                        WHERE r.id = %(id)s GROUP BY r.id, r.nome, r.registro""",
+                    {"id": req.pai_catalogo_id})
+                pai = prow[0] if prow else None
+                if pai:
+                    cur.execute(
+                        """UPDATE fazenda.animal
+                             SET pai_reprodutor_id = %(p)s, pai_nome_externo = %(n)s,
+                                 pai_registro_externo = %(reg)s
+                           WHERE id = %(a)s""",
+                        {"p": pai["id"], "n": pai.get("nome"), "reg": pai.get("registro"), "a": animal_id})
+
             # primeira pesagem do cadastro também vira histórico em medicao
             if req.peso_kg is not None or req.escore_corporal is not None:
                 cur.execute(
@@ -2409,16 +2429,19 @@ async def campo_animal(req: AnimalIn):
                 cur.execute(
                     """INSERT INTO mercado.reprodutor
                          (registro, nome, especie_codigo, raca_id, sexo, fazenda_origem, uf, municipio,
-                          fonte_referencia, fonte_programa, coletado_em)
+                          pai_registro, pai_nome, fonte_referencia, fonte_programa, coletado_em)
                        VALUES (%(reg)s,%(nome)s,'BOV',%(raca)s,'F',%(faz)s,%(uf)s,%(mun)s,
-                          %(ref)s,%(prog)s, now())
+                          %(pai_reg)s,%(pai_nome)s,%(ref)s,%(prog)s, now())
                        ON CONFLICT (registro, raca_id) DO UPDATE SET
                           nome=EXCLUDED.nome, fazenda_origem=EXCLUDED.fazenda_origem,
                           uf=EXCLUDED.uf, municipio=EXCLUDED.municipio,
+                          pai_registro=EXCLUDED.pai_registro, pai_nome=EXCLUDED.pai_nome,
                           fonte_programa=EXCLUDED.fonte_programa
                        RETURNING id""",
                     {"reg": registro_m, "nome": req.nome or registro_m, "raca": req.raca_id,
                      "faz": cli.get("razao_social"), "uf": cli.get("uf"), "mun": cli.get("municipio"),
+                     "pai_reg": (pai.get("registro") if pai else None),
+                     "pai_nome": (pai.get("nome") if pai else None),
                      "ref": f"Rebanho {cli.get('razao_social')}", "prog": f"fazenda_{req.cliente_id}"})
                 reprodutor_id = cur.fetchone()["id"]
 
@@ -2434,6 +2457,17 @@ async def campo_animal(req: AnimalIn):
                                  (reprodutor_id, caracteristica_id, valor, eh_genomica, coletado_em)
                                VALUES (%(r)s,%(c)s,%(v)s,true, now())""",
                             {"r": reprodutor_id, "c": _GENOMICO[k], "v": v})
+                # mérito ESTIMADO pela média de parentesco (média da raça + metade do pai),
+                # quando a vaca não foi genotipada mas o pai é conhecido. eh_genomica=false (é estimativa).
+                elif pai and pai.get("iqgg") is not None:
+                    raca_mean = _media_iqgg_raca(req.raca_id) or 0
+                    dam_est = round(0.5 * float(raca_mean) + 0.5 * float(pai["iqgg"]), 2)
+                    cur.execute("DELETE FROM mercado.avaliacao WHERE reprodutor_id=%(r)s AND caracteristica_id=20",
+                                {"r": reprodutor_id})
+                    cur.execute(
+                        """INSERT INTO mercado.avaliacao (reprodutor_id, caracteristica_id, valor, eh_genomica, coletado_em)
+                           VALUES (%(r)s, 20, %(v)s, false, now())""",
+                        {"r": reprodutor_id, "v": dam_est})
 
                 cur.execute("UPDATE fazenda.animal SET reprodutor_espelho_id=%(r)s WHERE id=%(a)s",
                             {"r": reprodutor_id, "a": animal_id})
@@ -2626,6 +2660,7 @@ async def campo_auditoria(cliente_id: int):
                       MAX(CASE WHEN av.caracteristica_id = 16 THEN av.valor END) AS aol,
                       MAX(CASE WHEN av.caracteristica_id = 12 THEN av.valor END) AS pes,
                       MAX(CASE WHEN av.caracteristica_id = 18 THEN av.valor END) AS mar,
+                      bool_or(av.eh_genomica) FILTER (WHERE av.caracteristica_id = 20) AS iqgg_genomica,
                       a.reprodutor_espelho_id
                  FROM fazenda.animal a
                  LEFT JOIN catalogo.raca ra ON ra.id = a.raca_id
@@ -2683,6 +2718,7 @@ async def campo_auditoria(cliente_id: int):
                 "gpd": r.get("gpd"), "aol": r.get("aol"),
                 "lift": r.get("lift"), "media_raca": r.get("media_raca"),
                 "reprodutor_espelho_id": r.get("reprodutor_espelho_id"),
+                "genomica": bool(r.get("iqgg_genomica")),  # False = mérito estimado pelo pai
                 "prioridade_corretiva": (n >= 4 and i >= corte),
             })
 
