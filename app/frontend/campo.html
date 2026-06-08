@@ -175,6 +175,9 @@
                 </div>
               </div>
             </template>
+            <button class="btn sec" x-show="nCorretivas()>0" style="margin-top:10px; border-color:#c0392b; color:#c0392b"
+                    @click="descartarPioresAudit()"
+                    x-text="'Marcar '+nCorretivas()+' de prioridade corretiva como descarte'"></button>
           </div>
 
           <div x-show="audit.data.a_genotipar && audit.data.a_genotipar.length" class="badge-off" style="margin-top:11px">
@@ -599,6 +602,9 @@ function campo() {
       this.persist();
       if (ok && this.cliente){ await this.refresh(); }
       if (ok) this.flash(ok+' registro(s) sincronizado(s)');
+      // itens enfileirados DURANTE este sync (ex.: descarte em lote) ficam fora da
+      // fila inicial; drena numa nova passada. 'error' != 'pending' -> sem loop infinito.
+      if (this.online && this.outbox.some(o=>o.status==='pending')) setTimeout(()=>this.sync(), 60);
     },
 
     async refresh(){
@@ -656,16 +662,15 @@ function campo() {
       this.stsheet = {open:true, animal:a, nome:this.animalLabel(a), status:a.status||'ativo',
         eh_doadora:!!a.eh_doadora, motivo_descarte:a.motivo_descarte||'', data_saida:''};
     },
-    async salvarStatus(){
+    salvarStatus(){
       const s=this.stsheet, a=s.animal;
-      const payload = {animal_id:a.id, status:s.status, eh_doadora:s.eh_doadora,
+      // uuid p/ id do outbox; o endpoint ignora o campo extra (idempotente por natureza)
+      const payload = {uuid:this.uuid(), animal_id:a.id, status:s.status, eh_doadora:s.eh_doadora,
         motivo_descarte:s.motivo_descarte||null, data_saida:s.data_saida||null};
-      try{
-        await this.api('POST','/api/campo/animal/status', payload);
-        a.status=s.status; a.eh_doadora=s.eh_doadora; a.motivo_descarte=s.motivo_descarte||null;
-        s.open=false;
-        this.flash('Atualizado: '+s.nome);
-      }catch(e){ this.flash('Erro — manejo de status exige conexão'); }
+      this.enqueue('/api/campo/animal/status', payload);
+      a.status=s.status; a.eh_doadora=s.eh_doadora; a.motivo_descarte=s.motivo_descarte||null;
+      s.open=false;
+      this.flash('Atualizado: '+s.nome+(this.online?'':' (offline)'));
     },
 
     // ---------- rebanho: pesagem / sanitário ----------
@@ -730,6 +735,18 @@ function campo() {
       this.tab='cruzar';
       this.cruza={dam:null, prioridade:'geral', recs:[], loading:true, rid:r.reprodutor_espelho_id};
       this.acasalarRun();
+    },
+    nCorretivas(){ return (this.audit.data.ranking||[]).filter(r=>r.prioridade_corretiva).length; },
+    descartarPioresAudit(){
+      const piores = (this.audit.data.ranking||[]).filter(r=>r.prioridade_corretiva);
+      if(!piores.length) return;
+      if(!confirm('Marcar '+piores.length+' fêmea(s) de prioridade corretiva como DESCARTE? (pode reverter no Rebanho)')) return;
+      piores.forEach(r=>{
+        this.enqueue('/api/campo/animal/status', {uuid:this.uuid(), animal_id:r.id, status:'descarte',
+          motivo_descarte:'auditoria: baixo índice genético'});
+      });
+      this.flash(piores.length+' marcada(s) p/ descarte'+(this.online?'':' (offline)'));
+      if(this.online) setTimeout(()=>{ this.carregaAuditoria(); this.carregaAnimais(); }, 1300);
     },
 
     // ---------- movimentação / GTA ----------
