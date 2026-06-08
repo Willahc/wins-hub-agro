@@ -243,6 +243,32 @@
       <div class="badge-off" x-show="!cliente">Selecione a fazenda na aba <b>Fazenda</b> antes de capturar.</div>
       <div class="card" x-show="cliente">
         <h3>Cadastrar animal no curral</h3>
+
+        <!-- ===== PONTE: busca no catálogo da plataforma (104 mil) ===== -->
+        <label>🔎 Buscar na base WiNS — por nome ou registro</label>
+        <input x-model="cat.q" @input.debounce.400ms="buscarCatalogo()"
+               placeholder="acha o animal e puxa pedigree/genética" :disabled="!!novo.catalogo_id">
+        <div x-show="cat.loading" class="muted" style="margin-top:5px">Buscando…</div>
+        <div x-show="cat.results.length && !novo.catalogo_id"
+             style="border:1px solid var(--linha); border-radius:10px; margin-top:6px; max-height:230px; overflow-y:auto">
+          <template x-for="r in cat.results" :key="r.id">
+            <div @click="pickCatalogo(r)" style="padding:9px 11px; border-bottom:1px solid var(--linha)">
+              <div style="font-weight:600; font-size:14px" x-text="r.nome || r.registro || ('#'+r.id)"></div>
+              <div class="muted" x-text="(r.raca_sigla||'—')+' · '+r.sexo+' · Reg '+(r.registro||'—')+(r.iqgg!=null?' · IQGg '+r.iqgg:'')+(r.pai_nome?' · pai: '+r.pai_nome:'')"></div>
+            </div>
+          </template>
+        </div>
+        <div x-show="novo.catalogo_id && cat.vinculado" class="rec" style="margin-top:6px; background:#eef7ea; border-color:#bcdcbc">
+          <div style="display:flex; align-items:center; gap:8px">
+            <div>
+              <div style="font-weight:700; color:var(--verde)" x-text="'✓ Vinculado ao catálogo: '+(cat.vinculado && cat.vinculado.nome)"></div>
+              <div class="muted" x-text="'Reg '+((cat.vinculado&&cat.vinculado.registro)||'—')+((cat.vinculado&&cat.vinculado.iqgg!=null)?' · IQGg '+cat.vinculado.iqgg:' · sem genômica própria (cruzamento usa pedigree)')"></div>
+            </div>
+            <button class="mini" style="margin-left:auto; flex:0 0 auto" @click="limparVinculo()">desvincular</button>
+          </div>
+        </div>
+        <div class="muted" style="margin:10px 0 2px; font-size:11px">ou preencha manualmente:</div>
+
         <label>Sexo</label>
         <div class="seg">
           <button :class="{on:novo.sexo==='F'}" @click="novo.sexo='F'">♀ Fêmea</button>
@@ -535,7 +561,8 @@ function campo() {
     clientes:[], racas:[], grupos:[], animais:[], resumo:{},
     cliente:0, grupo:0,
     novoCli:{razao_social:'', uf:'', municipio:''}, novoGrupo:'',
-    novo:{sexo:'F', brinco:'', eid:'', sisbov:'', nome:'', raca_id:null, categoria:'', peso_kg:null, escore_corporal:null, iqgg:null, gpd:null, aol:null},
+    novo:{sexo:'F', brinco:'', eid:'', sisbov:'', nome:'', registro:'', raca_id:null, categoria:'', peso_kg:null, escore_corporal:null, iqgg:null, gpd:null, aol:null, catalogo_id:null},
+    cat:{q:'', results:[], loading:false, vinculado:null},
     outbox:[],
     cruza:{dam:null, prioridade:'geral', recs:[], loading:false},
     psheet:{open:false, animal:null, nome:'', peso_kg:null, escore_corporal:null, altura_cm:null, obs:''},
@@ -547,7 +574,7 @@ function campo() {
     rebFiltro:'ativos',
     stsheet:{open:false, animal:null, nome:'', status:'ativo', eh_doadora:false, motivo_descarte:'', data_saida:''},
 
-    animalVazio(){ return {sexo:'F', brinco:'', eid:'', sisbov:'', nome:'', raca_id:null, categoria:'', peso_kg:null, escore_corporal:null, iqgg:null, gpd:null, aol:null}; },
+    animalVazio(){ return {sexo:'F', brinco:'', eid:'', sisbov:'', nome:'', registro:'', raca_id:null, categoria:'', peso_kg:null, escore_corporal:null, iqgg:null, gpd:null, aol:null, catalogo_id:null}; },
 
     async init(){
       this.outbox = JSON.parse(localStorage.getItem('wins_outbox')||'[]');
@@ -657,6 +684,30 @@ function campo() {
       this.enqueue('/api/campo/animal', p);
       this.flash((p.sexo==='F'?'Fêmea':'Macho')+' '+(p.nome||p.brinco||'')+' salvo'+(this.online?'':' (offline)'));
       this.novo = this.animalVazio();
+      this.cat = {q:'', results:[], loading:false, vinculado:null};
+    },
+    // ---------- ponte: busca no catálogo da plataforma ----------
+    async buscarCatalogo(){
+      const q = (this.cat.q||'').trim();
+      if(q.length < 2){ this.cat.results=[]; return; }
+      this.cat.loading=true;
+      try{ this.cat.results = await this.api('GET','/api/campo/catalogo/busca?q='+encodeURIComponent(q)); }
+      catch(e){ this.cat.results=[]; }
+      this.cat.loading=false;
+    },
+    pickCatalogo(r){
+      this.novo.catalogo_id = r.id;
+      if(r.nome) this.novo.nome = r.nome;
+      this.novo.registro = r.registro || '';
+      if(r.sexo) this.novo.sexo = r.sexo;
+      if(r.raca_id) this.novo.raca_id = r.raca_id;
+      this.novo.iqgg = (r.iqgg ?? null); this.novo.gpd = (r.gpd ?? null); this.novo.aol = (r.aol ?? null);
+      this.cat.vinculado = r; this.cat.results = [];
+      this.flash('Vinculado: '+(r.nome||r.registro||'animal do catálogo'));
+    },
+    limparVinculo(){
+      this.novo.catalogo_id = null; this.cat.vinculado = null; this.cat.q=''; this.cat.results=[];
+      this.novo.registro=''; this.novo.iqgg=null; this.novo.gpd=null; this.novo.aol=null;
     },
     async carregaAnimais(){ if(!this.cliente) return; try{ this.animais = await this.api('GET','/api/campo/animais?cliente_id='+this.cliente); }catch(e){} },
     animaisFiltrados(){

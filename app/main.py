@@ -2083,6 +2083,7 @@ class AnimalIn(BaseModel):
     aol: float | None = None
     pes: float | None = None
     mar: float | None = None
+    catalogo_id: int | None = None  # ponte: vincula ao reprodutor REAL do catálogo
 
 
 class PesagemIn(BaseModel):
@@ -2199,6 +2200,38 @@ async def campo_clientes():
             """SELECT c.id, c.razao_social, c.uf, c.municipio,
                       (SELECT count(*) FROM fazenda.animal a WHERE a.cliente_id = c.id) AS n_animais
                FROM fazenda.cliente c ORDER BY c.razao_social""")
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/campo/catalogo/busca")
+async def campo_catalogo_busca(q: str, sexo: str | None = None, limit: int = 15):
+    """Busca um animal nos 104k registros do catálogo (por nome OU registro) p/ a
+    PONTE: ao cadastrar no campo, vincula a vaca ao registro real e traz pedigree/genética."""
+    try:
+        q = (q or "").strip()
+        if len(q) < 2:
+            return []
+        cond = ["(r.nome ILIKE %(q)s OR r.registro ILIKE %(q)s)"]
+        params = {"q": f"%{q}%", "lim": min(max(limit, 1), 30)}
+        if sexo in ("M", "F"):
+            cond.append("r.sexo = %(sx)s"); params["sx"] = sexo
+        return query(
+            f"""SELECT r.id, r.nome, r.registro, r.sexo, r.raca_id, ra.sigla AS raca_sigla, ra.nome AS raca,
+                       r.fazenda_origem, r.pai_nome, r.pai_registro,
+                       MAX(CASE WHEN a.caracteristica_id = 20 THEN a.valor END) AS iqgg,
+                       MAX(CASE WHEN a.caracteristica_id = 8  THEN a.valor END) AS gpd,
+                       MAX(CASE WHEN a.caracteristica_id = 16 THEN a.valor END) AS aol
+                  FROM mercado.reprodutor r
+                  JOIN catalogo.raca ra ON ra.id = r.raca_id
+                  LEFT JOIN mercado.avaliacao a ON a.reprodutor_id = r.id
+                        AND a.caracteristica_id IN (20, 8, 16)
+                 WHERE {' AND '.join(cond)}
+                 GROUP BY r.id, r.nome, r.registro, r.sexo, r.raca_id, ra.sigla, ra.nome,
+                          r.fazenda_origem, r.pai_nome, r.pai_registro
+                 ORDER BY (MAX(CASE WHEN a.caracteristica_id = 20 THEN a.valor END)) DESC NULLS LAST, r.nome
+                 LIMIT %(lim)s""",
+            params)
     except Exception as e:
         return _error(e)
 
@@ -2358,8 +2391,16 @@ async def campo_animal(req: AnimalIn):
                     {"a": animal_id, "p": req.peso_kg, "e": req.escore_corporal, "g": req.grupo_id})
 
             reprodutor_id = None
-            # espelha a fêmea no catálogo p/ entrar no acasalamento (igual ao loader)
-            if sexo == "F" and req.raca_id is not None:
+            # 1) PONTE: animal escolhido na busca do catálogo -> vincula ao registro REAL
+            #    (traz pedigree/genética de verdade; não cria espelho duplicado)
+            if req.catalogo_id:
+                cur.execute("SELECT id FROM mercado.reprodutor WHERE id = %(c)s", {"c": req.catalogo_id})
+                if cur.fetchone():
+                    reprodutor_id = req.catalogo_id
+                    cur.execute("UPDATE fazenda.animal SET reprodutor_espelho_id=%(r)s WHERE id=%(a)s",
+                                {"r": reprodutor_id, "a": animal_id})
+            # 2) senão, espelha a fêmea no catálogo p/ entrar no acasalamento (igual ao loader)
+            elif sexo == "F" and req.raca_id is not None:
                 registro_m = reg or (f"FZ{req.cliente_id}-{req.brinco}" if req.brinco
                                      else f"FZ{req.cliente_id}-U{req.uuid[:8]}")
                 cur.execute("SELECT razao_social, uf, municipio FROM fazenda.cliente WHERE id = %(c)s",
