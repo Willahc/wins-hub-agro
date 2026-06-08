@@ -551,12 +551,22 @@ function campo() {
 
     async init(){
       this.outbox = JSON.parse(localStorage.getItem('wins_outbox')||'[]');
+      this.tab = localStorage.getItem('wins_tab') || 'fazenda';
       window.addEventListener('online', ()=>{ this.online=true; this.sync(); });
       window.addEventListener('offline', ()=>{ this.online=false; });
       if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
+      // reabre onde parou: persiste fazenda + aba
+      this.$watch('cliente', v=>localStorage.setItem('wins_cliente', v||0));
+      this.$watch('tab', v=>localStorage.setItem('wins_tab', v));
       try {
         this.racas = await this.api('GET','/api/campo/racas');
         this.clientes = await this.api('GET','/api/campo/clientes');
+        // restaura a última fazenda, se ainda existir no catálogo
+        const saved = parseInt(localStorage.getItem('wins_cliente')||'0', 10);
+        if (saved && this.clientes.some(c=>c.id===saved)) {
+          this.cliente = saved;
+          await this.onCliente();
+        }
       } catch(e){ /* offline: segue com o que tem */ }
       this.sync();
     },
