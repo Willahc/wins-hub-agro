@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Response, Form
+from fastapi import FastAPI, Request, Response, Form, UploadFile, File
 from fastapi.responses import (
     HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse, FileResponse,
 )
@@ -9,7 +9,9 @@ from typing import Optional
 from datetime import datetime
 from starlette.concurrency import run_in_threadpool
 from auth import authenticate_user, create_access_token, decode_token
-from pdf_generator import gerar_parecer_pdf, gerar_relatorio_territorial
+from pdf_generator import gerar_relatorio_territorial
+from pdf_html import (gerar_parecer_cruzamento, gerar_parecer_matching,  # HTML/CSS -> WeasyPrint
+                      gerar_cotacao_acasalamento, gerar_briefing_chegada)
 import external_apis
 import psycopg2
 import psycopg2.extras
@@ -197,7 +199,8 @@ async def stats():
         return query(
             """
             SELECT
-              (SELECT COUNT(*) FROM mercado.reprodutor)            AS reprodutores,
+              (SELECT COUNT(*) FROM mercado.reprodutor WHERE sexo = 'M' OR sexo IS NULL) AS reprodutores,
+              (SELECT COUNT(*) FROM mercado.reprodutor WHERE sexo = 'F') AS matrizes,
               -- reprodutores de leite = têm avaliação em grupo de produção/conformação leiteira
               -- (PTA Leite/Gordura/Proteína/Sólidos, STA Úbere). Hoje: Gir Leiteiro + Girolando.
               (SELECT COUNT(DISTINCT a.reprodutor_id)
@@ -303,6 +306,7 @@ async def overview_racas():
             SELECT ra.id, ra.nome, COUNT(*) AS total
             FROM mercado.reprodutor r
             JOIN catalogo.raca ra ON ra.id = r.raca_id
+            WHERE r.sexo = 'M' OR r.sexo IS NULL
             GROUP BY ra.id, ra.nome
             ORDER BY total DESC
             LIMIT 8
@@ -326,6 +330,7 @@ async def racas_aptidao():
                    COUNT(r.id) AS reprodutores
             FROM catalogo.raca ra
             LEFT JOIN mercado.reprodutor r ON r.raca_id = ra.id
+                 AND (r.sexo = 'M' OR r.sexo IS NULL)
             GROUP BY ra.id, ra.nome, ra.sigla, ra.especie_codigo
             ORDER BY COUNT(r.id) DESC, ra.nome
             """
@@ -411,13 +416,13 @@ async def whitespace(uf: str = None):
 
 
 @app.get("/api/arbitragem")
-async def arbitragem(raca: int = None, segmento: str = None):
+async def arbitragem(raca: int = None, segmento: str = None, central: str = None):
     try:
         use_apt = segmento in ("corte", "leite", "dupla")
         racas_apt = _racas_por_finalidade(segmento) if use_apt else (0,)
         return query(
             """
-            SELECT r.nome AS nome_touro, r.registro,
+            SELECT r.id, r.nome AS nome_touro, r.registro,
                    ra.nome AS raca, c.nome AS central,
                    o.preco_dose_brl AS preco_convencional,
                    o.preco_dose_sexado_m AS preco_sexado_macho,
@@ -439,10 +444,12 @@ async def arbitragem(raca: int = None, segmento: str = None):
               AND (%(raca)s IS NULL OR ra.id = %(raca)s)
               -- filtro por aptidão (corte/leite/dupla); raça específica tem prioridade
               AND (%(raca)s IS NOT NULL OR NOT %(use_apt)s OR ra.id IN %(racas_apt)s)
+              AND (%(central)s IS NULL OR c.nome = %(central)s)
             ORDER BY preco_por_iqgg ASC NULLS LAST
-            LIMIT 50
+            LIMIT 200
             """,
-            {"iqgg": IQGG_ID, "raca": raca, "use_apt": use_apt, "racas_apt": racas_apt},
+            {"iqgg": IQGG_ID, "raca": raca, "use_apt": use_apt, "racas_apt": racas_apt,
+             "central": central},
         )
     except Exception as e:
         return _error(e)
@@ -706,6 +713,16 @@ async def matching(req: MatchingRequest):
             t["preco_por_iqgg"] = (
                 round(pr / iq, 2) if (pr and iq and iq > 0) else None
             )
+            # ROI da dose: valor agregado por bezerro/filha vs custo da dose.
+            # É a JUSTIFICATIVA DO PREÇO — premium genético paga mesmo a dose cara.
+            ganho = t.get("valor_bezerro") if fin != "leite" else t.get("valor_filha")
+            if ganho is not None and pr and pr > 0:
+                t["roi_dose"] = round(ganho / pr, 1)              # retorno por R$1 na dose
+                t["lucro_bezerro"] = round(ganho - pr, 2)         # lucro líquido / cria
+                # nº de bezerros p/ pagar 1 dose (normalmente <1 = paga no 1º)
+                t["paga_em"] = round(pr / ganho, 2) if ganho > 0 else None
+            else:
+                t["roi_dose"] = t["lucro_bezerro"] = t["paga_em"] = None
 
         rows = _scorar_matching(rows)[:30]
         return {
@@ -746,7 +763,7 @@ async def matching_pdf(req: MatchingRequest):
         "total": resultado["total"],
     }
 
-    pdf_bytes = gerar_parecer_pdf(perfil, touros)
+    pdf_bytes = await run_in_threadpool(gerar_parecer_matching, perfil, touros)
     data_str = datetime.now().strftime("%Y%m%d")
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
@@ -819,6 +836,539 @@ async def touro_detalhe(touro_id: int):
 
 
 # ---------------------------------------------------------------------------
+# Matrizes (fêmeas) — catálogo de doadoras/matrizes com mérito materno,
+# derivado do pedigree (mãe dos touros avaliados). Ver mercado.v_matriz.
+# ---------------------------------------------------------------------------
+@app.get("/api/matrizes")
+async def matrizes(raca: str | None = None, q: str | None = None, uf: str | None = None,
+                   min_filhos: int = 1, limit: int = 50):
+    """Lista matrizes rankeadas por performance da progênie (filhos touros avaliados)."""
+    try:
+        # inclui matrizes com mérito por progênie OU com avaliação genômica própria
+        # (vacas reais genotipadas do rebanho do cliente, que não têm filhos avaliados)
+        cond = ["(filhos_touros >= %(min_filhos)s OR iqgg_proprio IS NOT NULL)"]
+        params: dict = {"min_filhos": min_filhos, "limit": min(limit, 500)}
+        if raca:
+            cond.append("raca_sigla = %(raca)s")
+            params["raca"] = raca.upper()
+        if uf:
+            cond.append("uf = %(uf)s")
+            params["uf"] = uf.upper()
+        if q:
+            cond.append("(nome ILIKE %(q)s OR registro ILIKE %(q)s)")
+            params["q"] = f"%{q}%"
+        return query(
+            f"""
+            SELECT id, registro, nome, raca_sigla, pai_nome,
+                   filhos_touros, filhos_avaliados,
+                   iqgg_medio_filhos, iqgg_melhor_filho,
+                   iqgg_proprio, merito_iqgg, merito_origem,
+                   fazenda_origem, uf, municipio
+            FROM mercado.v_matriz
+            WHERE {' AND '.join(cond)}
+            ORDER BY merito_iqgg DESC NULLS LAST, filhos_avaliados DESC
+            LIMIT %(limit)s
+            """,
+            params,
+        )
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/matriz/{matriz_id}")
+async def matriz_detalhe(matriz_id: int):
+    """Ficha da matriz: dados, pai (avô materno) e a progênie com IQGg de cada filho."""
+    try:
+        rows = query(
+            "SELECT * FROM mercado.v_matriz WHERE id = %(id)s", {"id": matriz_id}
+        )
+        if not rows:
+            return {"error": "Matriz não encontrada"}
+        matriz = rows[0]
+        matriz["filhos"] = query(
+            """
+            SELECT f.id, f.nome, f.registro,
+                   MAX(a.valor) FILTER (WHERE a.caracteristica_id = 20) AS iqgg
+            FROM mercado.reprodutor f
+            LEFT JOIN mercado.avaliacao a ON a.reprodutor_id = f.id
+            WHERE f.mae_id = %(id)s
+            GROUP BY f.id, f.nome, f.registro
+            ORDER BY iqgg DESC NULLS LAST
+            """,
+            {"id": matriz_id},
+        )
+        return matriz
+    except Exception as e:
+        return _error(e)
+
+
+# ---------------------------------------------------------------------------
+# Acasalamento dirigido (PROTÓTIPO sobre base de exemplo)
+# Recomenda touros p/ uma matriz maximizando o mérito esperado da cria e
+# EVITANDO consanguinidade via o grafo de pedigree (mae_id / pai_registro /
+# avo_materno_registro). Demonstra o fluxo p/ a Monte Sião.
+# ---------------------------------------------------------------------------
+# características selecionáveis no acasalamento (key -> caracteristica_id, rótulo)
+TRAITS_MENU = [
+    ("geral", 20, "Índice geral (IQGg)"),
+    ("crescimento", 8, "Crescimento (GPD)"),
+    ("carcaca", 16, "Carcaça (AOL)"),
+    ("precocidade", 12, "Precocidade (PES)"),
+    ("fertilidade", 11, "Fertilidade (HP)"),
+    ("marmoreio", 18, "Marmoreio (MAR)"),
+]
+TRAIT_BY_KEY = {k: (cid, lbl) for k, cid, lbl in TRAITS_MENU}
+_TRAIT_LABEL = {k: lbl for k, cid, lbl in TRAITS_MENU}
+
+
+def _trait_keys(traits, prioridade="geral"):
+    """Normaliza o parâmetro de características (lista CSV) p/ keys válidas."""
+    keys = [k.strip() for k in (traits or "").split(",") if k.strip() in TRAIT_BY_KEY]
+    if not keys:
+        keys = [prioridade if prioridade in TRAIT_BY_KEY else "geral"]
+    # dedup preservando ordem
+    seen, out = set(), []
+    for k in keys:
+        if k not in seen:
+            seen.add(k); out.append(k)
+    return out
+
+
+def _ancestrais(a):
+    """Registros de ancestrais próximos (não vazios) do animal."""
+    return {(a.get(k) or "").strip()
+            for k in ("pai_registro", "mae_registro", "avo_materno_registro")
+            if (a.get(k) or "").strip()}
+
+
+def _relacao(a, b):
+    """Grau de parentesco entre dois animais (raso, via pedigree). Retorna
+    (label, severidade) com severidade em 'bloqueio' | 'alerta' | 'ok'.
+    'bloqueio' = consanguinidade próxima (pai/mãe×filho, irmãos); o front impede
+    o cruzamento. 'alerta' = ancestral comum mais distante (avós)."""
+    ra, rb = (a.get("registro") or "").strip(), (b.get("registro") or "").strip()
+    pa, ma = (a.get("pai_registro") or "").strip(), (a.get("mae_registro") or "").strip()
+    pb, mb = (b.get("pai_registro") or "").strip(), (b.get("mae_registro") or "").strip()
+    avo_a = (a.get("avo_materno_registro") or "").strip()
+    avo_b = (b.get("avo_materno_registro") or "").strip()
+    # pai/mãe × filho(a) — por registro ou por FK direta
+    if ra and ra in (pb, mb):
+        return ("Genitor × descendente", "bloqueio")
+    if rb and rb in (pa, ma):
+        return ("Genitor × descendente", "bloqueio")
+    if a.get("id") and a["id"] in (b.get("pai_id"), b.get("mae_id")):
+        return ("Genitor × descendente", "bloqueio")
+    if b.get("id") and b["id"] in (a.get("pai_id"), a.get("mae_id")):
+        return ("Genitor × descendente", "bloqueio")
+    # irmãos
+    if pa and pa == pb and ma and ma == mb:
+        return ("Irmãos completos", "bloqueio")
+    if pa and pa == pb:
+        return ("Meio-irmãos (mesmo pai)", "bloqueio")
+    if ma and ma == mb:
+        return ("Meio-irmãos (mesma mãe)", "bloqueio")
+    # avô × neto(a)
+    if ra and ra == avo_b:
+        return ("Avô × neta", "bloqueio")
+    if rb and rb == avo_a:
+        return ("Avô × neto(a)", "bloqueio")
+    # ancestral comum mais distante (avós etc.)
+    comum = _ancestrais(a) & _ancestrais(b)
+    if comum:
+        return ("Ancestral comum: " + ", ".join(sorted(comum)[:2]), "alerta")
+    return ("Sem parentesco detectado", "ok")
+
+
+@app.get("/api/acasalamento/{matriz_id}")
+async def acasalamento(matriz_id: int, prioridade: str = "geral",
+                       traits: str | None = None, raca: str | None = None,
+                       tipo: str | None = None, uf: str | None = None,
+                       orcamento: float | None = None, top: int = 10):
+    try:
+        keys = _trait_keys(traits, prioridade)
+        trait_ids = [TRAIT_BY_KEY[k][0] for k in keys]
+        all_ids = list(dict.fromkeys([IQGG_ID] + trait_ids))   # iqgg + características
+
+        # 1) matriz + dados de pedigree
+        drow = query(
+            """
+            SELECT dam.id, dam.nome, dam.registro, dam.raca_id, ra.nome AS raca, ra.sigla AS raca_sigla,
+                   dam.pai_registro, dam.pai_nome, dam.mae_registro, dam.avo_materno_registro,
+                   dam.pai_id, dam.mae_id, dam.fazenda_origem, dam.uf, dam.municipio,
+                   (SELECT COUNT(*) FROM mercado.reprodutor f WHERE f.mae_id = dam.id) AS n_filhos,
+                   (SELECT ROUND(AVG(a.valor), 2) FROM mercado.reprodutor f
+                      JOIN mercado.avaliacao a ON a.reprodutor_id = f.id
+                      WHERE f.mae_id = dam.id AND a.caracteristica_id = %(iqgg)s) AS iqgg
+            FROM mercado.reprodutor dam
+            JOIN catalogo.raca ra ON ra.id = dam.raca_id
+            WHERE dam.id = %(id)s AND dam.sexo = 'F'
+            """,
+            {"id": matriz_id, "iqgg": IQGG_ID},
+        )
+        if not drow:
+            return {"error": "Matriz não encontrada"}
+        dam = drow[0]
+        # nível genético da matriz: avaliação PRÓPRIA (vaca genotipada do rebanho real),
+        # senão proxy = média da progênie.
+        dam_deps = {r["cid"]: r["v"] for r in query(
+            """
+            SELECT caracteristica_id AS cid, MAX(valor) AS v FROM mercado.avaliacao
+            WHERE reprodutor_id = %(id)s AND caracteristica_id IN %(ids)s
+            GROUP BY caracteristica_id
+            """, {"id": matriz_id, "ids": tuple(all_ids)})}
+        if not dam_deps:
+            dam_deps = {r["cid"]: r["v"] for r in query(
+                """
+                SELECT a.caracteristica_id AS cid, ROUND(AVG(a.valor), 2) AS v
+                FROM mercado.reprodutor f JOIN mercado.avaliacao a ON a.reprodutor_id = f.id
+                WHERE f.mae_id = %(id)s AND a.caracteristica_id IN %(ids)s
+                GROUP BY a.caracteristica_id
+                """, {"id": matriz_id, "ids": tuple(all_ids)})}
+        dam_iqgg = dam_deps.get(IQGG_ID) or dam.get("iqgg") or 0
+
+        # raça-alvo dos candidatos: explícita (raca) > tipo (aptidão) > mesma raça da matriz
+        cand_params = {"ids": tuple(all_ids), "orc": orcamento, "uf": (uf.upper() if uf else None)}
+        if raca:
+            raca_cond = "AND ra.sigla = %(raca_sigla)s"
+            cand_params["raca_sigla"] = raca.upper()
+        elif tipo and _racas_por_finalidade(tipo):
+            raca_cond = "AND r.raca_id IN %(racas_apt)s"
+            cand_params["racas_apt"] = _racas_por_finalidade(tipo)
+        else:
+            raca_cond = "AND r.raca_id = %(raca_id)s"
+            cand_params["raca_id"] = dam["raca_id"]
+
+        # colunas de deps geradas a partir de IDs de whitelist (seguro injetar)
+        dep_cols = ", ".join(
+            f"MAX(CASE WHEN caracteristica_id = {cid} THEN valor END) AS t_{cid}" for cid in all_ids
+        )
+        cands = query(
+            f"""
+            WITH deps AS (
+                SELECT reprodutor_id, {dep_cols}
+                FROM mercado.avaliacao WHERE caracteristica_id IN %(ids)s
+                GROUP BY reprodutor_id
+            ),
+            ofertas AS (
+                SELECT reprodutor_id, MIN(preco_dose_brl) AS preco
+                FROM mercado.touro_oferta WHERE preco_dose_brl IS NOT NULL GROUP BY reprodutor_id
+            )
+            SELECT * FROM (
+                SELECT DISTINCT ON (r.id)
+                    r.id, r.nome, r.registro, r.fazenda_origem, r.uf, r.municipio, ra.sigla AS raca_sigla,
+                    r.pai_registro, r.mae_registro, r.avo_materno_registro, r.mae_id, r.pai_id,
+                    c.nome AS central, o.preco AS preco_dose, d.*
+                FROM mercado.reprodutor r
+                JOIN catalogo.raca ra ON ra.id = r.raca_id
+                JOIN deps d ON d.reprodutor_id = r.id
+                LEFT JOIN ofertas o ON o.reprodutor_id = r.id
+                LEFT JOIN mercado.touro_central tc ON tc.reprodutor_id = r.id
+                LEFT JOIN catalogo.central c ON c.id = tc.central_id
+                WHERE r.sexo = 'M' AND d.t_{IQGG_ID} IS NOT NULL {raca_cond}
+                  AND (%(uf)s IS NULL OR r.uf = %(uf)s)
+                  -- preço opcional: sem orçamento entram pelo mérito genético; com
+                  -- orçamento, só os que têm preço dentro do teto (modo comercial).
+                  AND (%(orc)s IS NULL OR %(orc)s = 0 OR o.preco <= %(orc)s)
+                ORDER BY r.id, c.nome NULLS LAST
+            ) cand
+            ORDER BY t_{IQGG_ID} DESC NULLS LAST
+            LIMIT 400
+            """,
+            cand_params,
+        )
+
+        # 2) screen de consanguinidade (bloqueia parentes próximos)
+        excluidos, pool = 0, []
+        for b in cands:
+            label, sev = _relacao(dam, b)
+            if sev == "bloqueio":
+                excluidos += 1
+                continue
+            b["parentesco"] = label
+            b["parente"] = sev == "alerta"
+            pool.append(b)
+
+        # 3) score: mérito esperado da cria (midparent IQGg) + média das características
+        #    escolhidas (normalizada no pool) + preço
+        if pool:
+            di = dam_iqgg
+            max_iqgg = max(0.5 * ((b.get(f"t_{IQGG_ID}") or 0) + di) for b in pool) or 1
+            trait_mid, trait_rng = {}, {}
+            for cid in trait_ids:
+                dv = dam_deps.get(cid)
+                vals = [0.5 * (b.get(f"t_{cid}") + dv) if (b.get(f"t_{cid}") is not None and dv is not None) else None
+                        for b in pool]
+                trait_mid[cid] = vals
+                present = [v for v in vals if v is not None]
+                trait_rng[cid] = (min(present), max(present)) if present else (0, 0)
+            precos = [b["preco_dose"] for b in pool if b.get("preco_dose")]
+            max_preco = max(precos) if precos else 0
+            for i, b in enumerate(pool):
+                prog_iqgg = round(0.5 * ((b.get(f"t_{IQGG_ID}") or 0) + di), 2)
+                b["prog_iqgg"] = prog_iqgg
+                calf, norms = {}, []
+                for k, cid in zip(keys, trait_ids):
+                    mv = trait_mid[cid][i]
+                    calf[k] = round(mv, 2) if mv is not None else None
+                    lo, hi = trait_rng[cid]
+                    if mv is not None:
+                        norms.append((mv - lo) / (hi - lo) if hi > lo else 0.5)
+                b["calf"] = calf
+                iqgg_norm = prog_iqgg / max_iqgg if max_iqgg else 0
+                trait_norm = (sum(norms) / len(norms)) if norms else 0.5
+                preco_score = (1 - b["preco_dose"] / max_preco) if (b.get("preco_dose") and max_preco) else 0.3
+                score = 0.50 * iqgg_norm + 0.35 * trait_norm + 0.15 * preco_score
+                if b["parente"]:
+                    score *= 0.85
+                b["score"] = round(score, 3)
+                b["nota"] = ("⚠ " + b["parentesco"]) if b["parente"] else ""
+                # limpa colunas cruas t_<id> do payload
+                for cid in all_ids:
+                    b.pop(f"t_{cid}", None)
+                b.pop("reprodutor_id", None)
+            pool.sort(key=lambda b: b["score"], reverse=True)
+
+        trait_labels = {k: TRAIT_BY_KEY[k][1] for k in keys}
+        return {
+            "matriz": {"id": dam["id"], "nome": dam["nome"], "registro": dam["registro"],
+                       "raca": dam["raca"], "raca_sigla": dam.get("raca_sigla"),
+                       # mérito exibido: avaliação PRÓPRIA (vaca genotipada) > proxy da progênie
+                       "iqgg": dam_deps.get(IQGG_ID) or dam.get("iqgg"),
+                       "fazenda_origem": dam.get("fazenda_origem"), "uf": dam.get("uf"),
+                       "municipio": dam.get("municipio"),
+                       "deps": {k: dam_deps.get(TRAIT_BY_KEY[k][0]) for k in keys},
+                       "n_filhos": dam["n_filhos"], "pai_nome": dam.get("pai_nome")},
+            "traits": keys, "trait_labels": trait_labels, "trait_label": trait_labels[keys[0]],
+            "candidatos": len(cands), "excluidos_parentesco": excluidos,
+            "recomendacoes": pool[:max(1, min(top, 30))],
+        }
+    except Exception as e:
+        return _error(e)
+
+
+# ---------------------------------------------------------------------------
+# Busca de animais (touros/matrizes) para os seletores do cruzamento livre
+# ---------------------------------------------------------------------------
+@app.get("/api/animais/busca")
+async def animais_busca(sexo: str = "M", q: str | None = None, raca: str | None = None,
+                        tipo: str | None = None, uf: str | None = None, limit: int = 30):
+    try:
+        cond = ["r.sexo = %(sexo)s"]
+        params: dict = {"sexo": sexo.upper(), "iqgg": IQGG_ID, "limit": min(limit, 100)}
+        if raca:
+            cond.append("ra.sigla = %(raca)s"); params["raca"] = raca.upper()
+        if uf:
+            cond.append("r.uf = %(uf)s"); params["uf"] = uf.upper()
+        if tipo and _racas_por_finalidade(tipo):
+            cond.append("r.raca_id IN %(apt)s"); params["apt"] = _racas_por_finalidade(tipo)
+        if q:
+            cond.append("(r.nome ILIKE %(q)s OR r.registro ILIKE %(q)s)"); params["q"] = f"%{q}%"
+        return query(
+            f"""
+            SELECT r.id, r.nome, r.registro, r.raca_id, ra.sigla AS raca_sigla, ra.nome AS raca, r.sexo,
+                   r.fazenda_origem, r.uf, r.municipio,
+                   (SELECT MAX(valor) FROM mercado.avaliacao a
+                      WHERE a.reprodutor_id = r.id AND a.caracteristica_id = %(iqgg)s) AS iqgg,
+                   (SELECT MIN(preco_dose_brl) FROM mercado.touro_oferta o
+                      WHERE o.reprodutor_id = r.id) AS preco_dose
+            FROM mercado.reprodutor r JOIN catalogo.raca ra ON ra.id = r.raca_id
+            WHERE {' AND '.join(cond)}
+            ORDER BY iqgg DESC NULLS LAST, r.nome
+            LIMIT %(limit)s
+            """, params)
+    except Exception as e:
+        return _error(e)
+
+
+# ---------------------------------------------------------------------------
+# Cruzamento livre: qualquer touro × qualquer vaca -> bezerro previsto + parentesco
+# ---------------------------------------------------------------------------
+def _num(v):
+    """Coerção segura p/ float (DB devolve Decimal); None se não der."""
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+_MEDIA_RACA_IQGG: dict = {}  # cache {raca_id: IQGg médio da raça} p/ o "lift" da matriz
+
+
+def _media_iqgg_raca(raca_id):
+    """IQGg médio da raça (baseline p/ medir o quanto a matriz puxa a combinação).
+    Cacheado por raça — escala difere muito entre raças (Nelore ~50 vs Girolando ~2000)."""
+    if raca_id not in _MEDIA_RACA_IQGG:
+        r = query(
+            """
+            SELECT ROUND(AVG(v)::numeric, 2) AS m FROM (
+              SELECT MAX(a.valor) AS v FROM mercado.avaliacao a
+              JOIN mercado.reprodutor rr ON rr.id = a.reprodutor_id
+              WHERE a.caracteristica_id = %(iq)s AND rr.raca_id = %(rid)s
+              GROUP BY a.reprodutor_id) s
+            """, {"iq": IQGG_ID, "rid": raca_id})
+        _MEDIA_RACA_IQGG[raca_id] = (r[0]["m"] if r and r[0]["m"] is not None else None)
+    return _MEDIA_RACA_IQGG[raca_id]
+
+
+async def _monetizacao(touro, vaca, calf):
+    """Bloco canal-aware (v1): canal DOSE com economia real (preço + valor/cria + ROI),
+    EMBRIÃO e ANIMAL VIVO como 'informar preço'. Discriminador: o quanto a matriz puxa
+    a combinação (lift sobre a média da raça) -> sinaliza quando o embrião faz sentido."""
+    arroba = (await run_in_threadpool(external_apis.boi_gordo) or {}).get("valor")
+    oferta = query(
+        "SELECT MIN(preco_dose_brl) AS p, MIN(preco_dose_sexado_m) AS ps "
+        "FROM mercado.touro_oferta WHERE reprodutor_id = %(id)s", {"id": touro["id"]})
+    preco = _num(oferta[0]["p"]) if oferta else None
+    preco_sx = _num(oferta[0]["ps"]) if oferta else None
+    pd_touro = _num(touro["_deps"].get(5))
+    valor_cria = round(pd_touro * arroba / 30, 2) if (pd_touro and pd_touro > 0 and arroba) else None
+    roi = round(valor_cria / preco, 1) if (valor_cria and preco) else None
+    lucro = round(valor_cria - preco, 2) if (valor_cria is not None and preco) else None
+
+    vaca_iqgg = _num(vaca["_deps"].get(IQGG_ID))
+    media = _num(_media_iqgg_raca(vaca["raca_id"]))
+    lift = round(vaca_iqgg - media, 2) if (vaca_iqgg is not None and media is not None) else None
+    combo = bool(lift is not None and lift > 0)
+
+    dose = {"tipo": "dose", "label": "Dose (sêmen do touro)",
+            "status": "ok" if preco else "sem_preco",
+            "preco": preco, "preco_sexado": preco_sx,
+            "valor_cria": valor_cria, "roi": roi, "lucro": lucro,
+            "nota": "Escala, ticket baixo, recorrente — o comprador faz a própria cruza."}
+    emb = {"tipo": "embriao", "label": "Embrião (FIV/TE desta cruza)", "status": "informar_preco",
+           "nota": ("A combinação agrega (matriz acima da média) — cadastre o preço do embrião para travar a dupla."
+                    if combo else "Cadastre o preço do embrião para avaliar a venda da combinação.")}
+    vivo = {"tipo": "animal_vivo", "label": "Animal vivo (touro / matriz)", "status": "informar_preco",
+            "nota": "Cadastre o valor de venda para comparar com a renda recorrente de dose/embrião (custo de oportunidade)."}
+
+    if not preco:
+        recomendado = "cadastrar_preco"
+        racional = ("Sem preço de dose cadastrado para este touro. Integre o catálogo da central "
+                    "para ativar a análise de monetização (dose/embrião/animal vivo).")
+    elif roi is not None and roi >= 1.0:
+        # dose se paga sozinha -> é o canal-cavalo (escala + recorrência)
+        recomendado = "dose"
+        racional = (f"<b>Dose</b> se paga sozinha: R${preco:.0f} → <b>+R${valor_cria:.0f}/cria</b> "
+                    f"(ROI <b>{roi:.1f}×</b>) — canal direto, escalável e recorrente.")
+    elif combo:
+        # dose não fecha no ROI puro, mas a combinação é elite -> embrião é o canal certo
+        recomendado = "embriao"
+        roi_txt = f" (ROI {roi:.1f}×)" if roi is not None else ""
+        racional = (f"A dose a R${preco:.0f} não se paga só no peso da cria{roi_txt}. O valor está na "
+                    f"<b>combinação elite</b> (matriz <b>+{lift:.1f} IQGg acima da média</b>): venda como "
+                    "<b>embrião</b> ou <b>animal vivo</b>; a dose vira porta de entrada / volume.")
+    else:
+        # sem prêmio de combinação: dose mesmo, no valor absoluto + escala de lote
+        recomendado = "dose"
+        roi_txt = f" (ROI {roi:.1f}×)" if roi is not None else ""
+        racional = (f"<b>Dose</b> a R${preco:.0f}, <b>+R${valor_cria:.0f}/cria</b>{roi_txt}. "
+                    f"Em 30 matrizes, +R${valor_cria*30:.0f} agregados na bezerrada." if valor_cria
+                    else f"<b>Dose</b> a R${preco:.0f}.")
+
+    return {"recomendado": recomendado, "racional": racional,
+            "combinacao": {"lift_vaca": lift, "media_raca": media, "valiosa": combo},
+            "canais": [dose, emb, vivo]}
+
+
+@app.get("/api/cruzamento")
+async def cruzamento(touro_id: int, vaca_id: int, traits: str | None = None):
+    try:
+        # A previsão do bezerro é biológica e existe para TODAS as características —
+        # não depende da prioridade escolhida (essa governa só a sugestão de touro).
+        # IQGg sai sempre separado (mid(IQGG_ID)); aqui ficam as demais, sem duplicar "geral".
+        keys = [k for k, _cid, _lbl in TRAITS_MENU if k != "geral"]
+        trait_ids = [TRAIT_BY_KEY[k][0] for k in keys]
+        # id 5 = peso à desmama (PD): base do valor econômico por cria (canal dose)
+        all_ids = tuple(dict.fromkeys([IQGG_ID, 5] + trait_ids))
+
+        def fetch(aid):
+            rows = query(
+                """
+                SELECT r.id, r.nome, r.registro, r.sexo, r.raca_id, ra.sigla AS raca_sigla, ra.nome AS raca,
+                       r.pai_registro, r.mae_registro, r.avo_materno_registro, r.pai_id, r.mae_id,
+                       r.fazenda_origem, r.uf, r.municipio
+                FROM mercado.reprodutor r JOIN catalogo.raca ra ON ra.id = r.raca_id WHERE r.id = %(id)s
+                """, {"id": aid})
+            if not rows:
+                return None
+            a = rows[0]
+            # avaliação PRÓPRIA do animal (touro sempre; vaca genotipada do rebanho real)
+            deps = query(
+                """
+                SELECT caracteristica_id AS cid, MAX(valor) AS v FROM mercado.avaliacao
+                WHERE reprodutor_id = %(id)s AND caracteristica_id IN %(ids)s GROUP BY caracteristica_id
+                """, {"id": aid, "ids": all_ids})
+            if not deps and a["sexo"] == "F":
+                # matriz sem avaliação própria -> proxy = média da progênie
+                deps = query(
+                    """
+                    SELECT a.caracteristica_id AS cid, ROUND(AVG(a.valor), 2) AS v
+                    FROM mercado.reprodutor f JOIN mercado.avaliacao a ON a.reprodutor_id = f.id
+                    WHERE f.mae_id = %(id)s AND a.caracteristica_id IN %(ids)s GROUP BY a.caracteristica_id
+                    """, {"id": aid, "ids": all_ids})
+            a["_deps"] = {d["cid"]: d["v"] for d in deps}
+            return a
+
+        touro, vaca = fetch(touro_id), fetch(vaca_id)
+        if not touro or not vaca:
+            return {"error": "Animal não encontrado"}
+        label, sev = _relacao(touro, vaca)
+
+        def mid(cid):
+            tv, vv = touro["_deps"].get(cid), vaca["_deps"].get(cid)
+            if tv is None or vv is None:
+                return {"touro": tv, "vaca": vv, "cria": None, "vs_touro": None, "vs_vaca": None}
+            cria = 0.5 * (tv + vv)
+            return {"touro": tv, "vaca": vv, "cria": round(cria, 2),
+                    "vs_touro": round(cria - tv, 2),   # ganho/perda vs pai
+                    "vs_vaca": round(cria - vv, 2)}    # ganho/perda vs mãe
+
+        def card(a):
+            return {"id": a["id"], "nome": a["nome"], "registro": a["registro"],
+                    "raca": a["raca"], "raca_sigla": a["raca_sigla"], "iqgg": a["_deps"].get(IQGG_ID),
+                    "fazenda_origem": a.get("fazenda_origem"), "uf": a.get("uf"),
+                    "municipio": a.get("municipio")}
+
+        calf = {"iqgg": mid(IQGG_ID),
+                "traits": {k: mid(TRAIT_BY_KEY[k][0]) for k in keys},
+                "trait_labels": {k: TRAIT_BY_KEY[k][1] for k in keys}}
+        return {
+            "touro": card(touro), "vaca": card(vaca),
+            "relacao": {"label": label, "severidade": sev, "bloqueio": sev == "bloqueio"},
+            "f1": touro["raca_id"] != vaca["raca_id"],
+            "calf": calf,
+            "monetizacao": await _monetizacao(touro, vaca, calf),
+        }
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/cruzamento/pdf")
+async def cruzamento_pdf(touro_id: int, vaca_id: int, traits: str | None = None):
+    """Parecer PDF de um cruzamento Touro × Vaca = Bezerro (reusa /api/cruzamento)."""
+    cruz = await cruzamento(touro_id, vaca_id, traits)
+    if "error" in cruz:
+        return cruz
+    # fichas completas dos genitores p/ anexar ao parecer (reusa os endpoints existentes)
+    touro_ficha = await touro_detalhe(touro_id)
+    matriz_ficha = await matriz_detalhe(vaca_id)
+    pdf_bytes = await run_in_threadpool(
+        gerar_parecer_cruzamento, cruz,
+        touro_ficha if isinstance(touro_ficha, dict) and "error" not in touro_ficha else None,
+        matriz_ficha if isinstance(matriz_ficha, dict) and "error" not in matriz_ficha else None,
+    )
+    t = (cruz["touro"]["nome"] or "touro").split()[0]
+    v = (cruz["vaca"]["nome"] or "vaca").split()[0]
+    fname = f"acasalamento_{t}_x_{v}_{datetime.now().strftime('%Y%m%d')}.pdf"
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes), media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Multi-raça: todas as raças com reprodutores + flags de dado disponível
 # ---------------------------------------------------------------------------
 @app.get("/api/racas/todas")
@@ -835,7 +1385,9 @@ async def racas_todas():
             FROM catalogo.raca ra
             JOIN (
                 SELECT raca_id, COUNT(*) AS cnt
-                FROM mercado.reprodutor GROUP BY raca_id
+                FROM mercado.reprodutor
+                WHERE sexo = 'M' OR sexo IS NULL
+                GROUP BY raca_id
             ) rc ON rc.raca_id = ra.id
             LEFT JOIN (
                 SELECT r.raca_id, COUNT(DISTINCT a.reprodutor_id) AS cnt
@@ -1452,5 +2004,853 @@ async def leads_enriquecido(uf: str = None, segmento: str = "corte", top: int = 
                         "capital_social": info.get("capital_social"),
                     }
         return base
+    except Exception as e:
+        return _error(e)
+
+
+# ===========================================================================
+# WiNS Campo — captura de campo (offline-first, PWA em /campo).
+# Escreve em fazenda.* e ESPELHA a fêmea no catálogo (mesma lógica do
+# load_rebanho_cliente.py) para ela entrar no acasalamento ao vivo. Todos os
+# writes são idempotentes por `uuid` (replay seguro do outbox quando o link cai).
+# ===========================================================================
+from contextlib import contextmanager
+
+# coluna do índice genômico próprio -> caracteristica_id (igual ao loader)
+_GENOMICO = {"iqgg": 20, "gpd": 8, "aol": 16, "pes": 12, "mar": 18}
+
+
+@contextmanager
+def _tx():
+    """Transação de escrita via pool: commit no sucesso, rollback no erro."""
+    pool = _get_pool()
+    conn = pool.getconn()
+    closed = False
+    try:
+        conn.autocommit = False
+        yield conn
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            closed = True
+        raise
+    finally:
+        try:
+            pool.putconn(conn, close=closed)
+        except Exception:
+            pass
+
+
+def _cur(conn):
+    return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+
+class ClienteIn(BaseModel):
+    razao_social: str
+    uf: str | None = None
+    municipio: str | None = None
+    cnpj: str | None = None
+
+
+class GrupoIn(BaseModel):
+    cliente_id: int
+    nome: str
+    tipo: str | None = "contemporaneo"
+    data_inicio: str | None = None
+
+
+class AnimalIn(BaseModel):
+    uuid: str
+    cliente_id: int
+    sexo: str
+    nome: str | None = None
+    brinco: str | None = None
+    eid: str | None = None
+    sisbov: str | None = None
+    registro: str | None = None
+    raca_id: int | None = None
+    composicao_racial: str | None = None
+    data_nascimento: str | None = None
+    categoria: str | None = None
+    grupo_id: int | None = None
+    peso_kg: float | None = None
+    escore_corporal: float | None = None
+    obs: str | None = None
+    iqgg: float | None = None
+    gpd: float | None = None
+    aol: float | None = None
+    pes: float | None = None
+    mar: float | None = None
+    catalogo_id: int | None = None      # ponte: vincula ao reprodutor REAL do catálogo
+    pai_catalogo_id: int | None = None  # ponte pelo pai: vincula o touro real (genética + consanguinidade)
+
+
+class PesagemIn(BaseModel):
+    uuid: str
+    animal_id: int
+    data_medicao: str | None = None
+    peso_kg: float | None = None
+    escore_corporal: float | None = None
+    altura_cm: float | None = None
+    grupo_id: int | None = None
+    origem: str | None = "manual"
+    dispositivo: str | None = None
+    obs: str | None = None
+
+
+class SanitarioIn(BaseModel):
+    uuid: str
+    tipo: str
+    animal_id: int | None = None
+    grupo_id: int | None = None
+    produto: str | None = None
+    data_evento: str | None = None
+    proxima_dose: str | None = None
+    dose: str | None = None
+    via: str | None = None
+    responsavel: str | None = None
+    obs: str | None = None
+    origem_lembrete_id: int | None = None  # se veio da Agenda: fecha o lembrete de origem
+
+
+class ConcluirLembreteIn(BaseModel):
+    id: int
+
+
+class AnimalStatusIn(BaseModel):
+    animal_id: int
+    status: str | None = None              # ativo | descarte | vendido | morto
+    eh_doadora: bool | None = None
+    motivo_descarte: str | None = None
+    data_saida: str | None = None
+
+
+class MovimentacaoIn(BaseModel):
+    uuid: str
+    cliente_id: int
+    tipo: str                       # entrada | saida | transferencia | nascimento | morte | abate
+    data_evento: str | None = None
+    gta_numero: str | None = None
+    origem: str | None = None
+    destino: str | None = None
+    finalidade: str | None = None
+    quantidade: int | None = None
+    obs: str | None = None
+
+
+# --- validação das capturas de campo (offline manda dado solto; barrar lixo) ---
+_TIPO_SANITARIO_OK = {"vacina", "vermífugo", "vermifugo", "medicamento", "exame", "suplemento", "outro"}
+_TIPO_MOV_OK = {"entrada", "saida", "saída", "transferencia", "transferência",
+                "nascimento", "morte", "abate"}
+_STATUS_ANIMAL_OK = {"ativo", "descarte", "vendido", "morto"}
+
+
+def _cap(s, n=200):
+    """Normaliza string: trim + corta no limite; vazio -> None."""
+    if not isinstance(s, str):
+        return s
+    s = s.strip()
+    return s[:n] if s else None
+
+
+def _valida_pesagem(req) -> str | None:
+    if req.peso_kg is not None and not (0 < req.peso_kg <= 2000):
+        return "peso deve estar entre 0 e 2000 kg"
+    if req.escore_corporal is not None and not (1 <= req.escore_corporal <= 9):
+        return "escore corporal deve estar entre 1 e 9"
+    if req.altura_cm is not None and not (0 < req.altura_cm <= 250):
+        return "altura deve estar entre 0 e 250 cm"
+    if req.peso_kg is None and req.escore_corporal is None and req.altura_cm is None:
+        return "informe ao menos peso, escore ou altura"
+    return None
+
+
+@app.get("/campo", response_class=HTMLResponse)
+async def campo_page(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    return templates.TemplateResponse("campo.html", {"request": request, "user": user})
+
+
+@app.get("/baixar/campo.apk")
+async def baixar_apk():
+    """Download público do APK (wrapper do app de campo) — alvo do QR code.
+    Força o content-type de pacote Android e o download (em vez de exibir)."""
+    return FileResponse(
+        "frontend/dl/WiNS_Campo.apk",
+        media_type="application/vnd.android.package-archive",
+        filename="WiNS_Campo.apk",
+    )
+
+
+@app.get("/api/campo/racas")
+async def campo_racas():
+    try:
+        return query("SELECT id, sigla, nome FROM catalogo.raca WHERE id IS NOT NULL ORDER BY nome")
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/campo/clientes")
+async def campo_clientes():
+    try:
+        return query(
+            """SELECT c.id, c.razao_social, c.uf, c.municipio,
+                      (SELECT count(*) FROM fazenda.animal a WHERE a.cliente_id = c.id) AS n_animais
+               FROM fazenda.cliente c ORDER BY c.razao_social""")
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/campo/catalogo/busca")
+async def campo_catalogo_busca(q: str, sexo: str | None = None, limit: int = 15):
+    """Busca um animal nos 104k registros do catálogo (por nome OU registro) p/ a
+    PONTE: ao cadastrar no campo, vincula a vaca ao registro real e traz pedigree/genética."""
+    try:
+        q = (q or "").strip()
+        if len(q) < 2:
+            return []
+        cond = ["(r.nome ILIKE %(q)s OR r.registro ILIKE %(q)s)"]
+        params = {"q": f"%{q}%", "lim": min(max(limit, 1), 30)}
+        if sexo in ("M", "F"):
+            cond.append("r.sexo = %(sx)s"); params["sx"] = sexo
+        return query(
+            f"""SELECT r.id, r.nome, r.registro, r.sexo, r.raca_id, ra.sigla AS raca_sigla, ra.nome AS raca,
+                       r.fazenda_origem, r.pai_nome, r.pai_registro,
+                       MAX(CASE WHEN a.caracteristica_id = 20 THEN a.valor END) AS iqgg,
+                       MAX(CASE WHEN a.caracteristica_id = 8  THEN a.valor END) AS gpd,
+                       MAX(CASE WHEN a.caracteristica_id = 16 THEN a.valor END) AS aol
+                  FROM mercado.reprodutor r
+                  JOIN catalogo.raca ra ON ra.id = r.raca_id
+                  LEFT JOIN mercado.avaliacao a ON a.reprodutor_id = r.id
+                        AND a.caracteristica_id IN (20, 8, 16)
+                 WHERE {' AND '.join(cond)}
+                 GROUP BY r.id, r.nome, r.registro, r.sexo, r.raca_id, ra.sigla, ra.nome,
+                          r.fazenda_origem, r.pai_nome, r.pai_registro
+                 ORDER BY (MAX(CASE WHEN a.caracteristica_id = 20 THEN a.valor END)) DESC NULLS LAST, r.nome
+                 LIMIT %(lim)s""",
+            params)
+    except Exception as e:
+        return _error(e)
+
+
+def _ocr_brinco(image_bytes: bytes) -> list:
+    """OCR do número do brinco a partir de uma foto (Fase 2). Pré-processa com Pillow
+    (cinza, contraste, upscale) e roda Tesseract com whitelist de dígitos. Devolve
+    candidatos (mais longos primeiro) — a UI faz o usuário CONFIRMAR (nunca confia cego)."""
+    import re as _re
+    import pytesseract
+    from PIL import Image, ImageOps
+    img = Image.open(io.BytesIO(image_bytes))
+    if img.mode != "L":
+        img = img.convert("L")
+    w, h = img.size
+    if max(w, h) < 1200:                       # upscale fotos pequenas ajuda muito o OCR
+        s = 1200.0 / max(w, h)
+        img = img.resize((int(w * s), int(h * s)))
+    img = ImageOps.autocontrast(img)
+    cands = []
+    # passe 1: só dígitos (brinco visual costuma ser numérico)
+    for psm in ("11", "7", "6"):
+        txt = pytesseract.image_to_string(
+            img, config=f"--psm {psm} -c tessedit_char_whitelist=0123456789")
+        for n in _re.findall(r"\d{1,8}", txt):
+            if n not in cands:
+                cands.append(n)
+    # passe 2: alfanumérico (brincos com prefixo de letra)
+    txt2 = pytesseract.image_to_string(img, config="--psm 11")
+    for t in _re.findall(r"[A-Za-z0-9]{2,12}", txt2):
+        t = t.upper()
+        if any(c.isdigit() for c in t) and t not in cands:
+            cands.append(t)
+    cands.sort(key=len, reverse=True)
+    return cands[:6]
+
+
+@app.post("/api/campo/ocr/brinco")
+async def campo_ocr_brinco(foto: UploadFile = File(...)):
+    """Lê o número do brinco de uma foto (câmera do app). Retorna candidatos p/ o usuário escolher."""
+    try:
+        data = await foto.read()
+        if not data:
+            return {"error": "foto vazia"}
+        if len(data) > 12_000_000:
+            return {"error": "imagem muito grande (máx 12MB)"}
+        cands = await run_in_threadpool(_ocr_brinco, data)
+        return {"candidatos": cands}
+    except Exception as e:
+        return _error(e)
+
+
+@app.post("/api/campo/cliente")
+async def campo_cliente(req: ClienteIn):
+    try:
+        with _tx() as conn:
+            cur = _cur(conn)
+            cur.execute("SELECT id FROM fazenda.cliente WHERE razao_social = %(r)s",
+                        {"r": req.razao_social})
+            row = cur.fetchone()
+            if row:
+                return {"id": row["id"], "novo": False}
+            cur.execute(
+                """INSERT INTO fazenda.cliente (razao_social, uf, municipio, cnpj, criado_em)
+                   VALUES (%(r)s,%(uf)s,%(m)s,%(c)s, now()) RETURNING id""",
+                {"r": req.razao_social, "uf": req.uf, "m": req.municipio, "c": req.cnpj})
+            return {"id": cur.fetchone()["id"], "novo": True}
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/campo/grupos")
+async def campo_grupos(cliente_id: int):
+    try:
+        return query(
+            """SELECT id, nome, tipo, data_inicio FROM fazenda.grupo_manejo
+               WHERE cliente_id = %(c)s ORDER BY criado_em DESC""", {"c": cliente_id})
+    except Exception as e:
+        return _error(e)
+
+
+@app.post("/api/campo/grupo")
+async def campo_grupo(req: GrupoIn):
+    try:
+        with _tx() as conn:
+            cur = _cur(conn)
+            cur.execute(
+                """INSERT INTO fazenda.grupo_manejo (cliente_id, nome, tipo, data_inicio, criado_em)
+                   VALUES (%(c)s,%(n)s,%(t)s,%(d)s, now()) RETURNING id""",
+                {"c": req.cliente_id, "n": req.nome, "t": req.tipo, "d": req.data_inicio or None})
+            return {"id": cur.fetchone()["id"]}
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/campo/resumo")
+async def campo_resumo(cliente_id: int):
+    try:
+        return query(
+            """SELECT
+                 (SELECT count(*) FROM fazenda.animal WHERE cliente_id = %(c)s) AS animais,
+                 (SELECT count(*) FROM fazenda.animal WHERE cliente_id = %(c)s AND sexo = 'F') AS femeas,
+                 (SELECT count(*) FROM fazenda.medicao m JOIN fazenda.animal a ON a.id = m.animal_id
+                    WHERE a.cliente_id = %(c)s) AS pesagens,
+                 (SELECT count(*) FROM fazenda.grupo_manejo WHERE cliente_id = %(c)s) AS grupos""",
+            {"c": cliente_id})[0]
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/campo/animais")
+async def campo_animais(cliente_id: int):
+    try:
+        return query(
+            """SELECT a.id, a.nome, a.brinco, a.eid, a.sexo, a.peso_atual_kg, a.escore_corporal,
+                      ra.sigla AS raca, a.reprodutor_espelho_id,
+                      COALESCE(a.status, 'ativo') AS status, a.eh_doadora, a.motivo_descarte,
+                      (SELECT max(data_medicao) FROM fazenda.medicao m WHERE m.animal_id = a.id) AS ultima_medicao
+               FROM fazenda.animal a LEFT JOIN catalogo.raca ra ON ra.id = a.raca_id
+               WHERE a.cliente_id = %(c)s
+               ORDER BY (COALESCE(a.status,'ativo') <> 'ativo'), a.coletado_em DESC LIMIT 500""",
+            {"c": cliente_id})
+    except Exception as e:
+        return _error(e)
+
+
+@app.post("/api/campo/animal/status")
+async def campo_animal_status(req: AnimalStatusIn):
+    """Marca descarte/venda/morte (ciclo de vida) e/ou doadora de uma fêmea.
+    Reativar (status=ativo) limpa motivo/data de saída."""
+    try:
+        sets, params = [], {"a": req.animal_id}
+        if req.status is not None:
+            st = req.status.lower()
+            if st not in _STATUS_ANIMAL_OK:
+                return {"error": "status inválido"}
+            sets.append("status = %(st)s"); params["st"] = st
+            if st == "ativo":
+                sets.append("data_saida = NULL")
+                sets.append("motivo_descarte = NULL")
+            else:
+                sets.append("data_saida = COALESCE(%(ds)s::date, current_date)")
+                params["ds"] = req.data_saida or None
+                sets.append("motivo_descarte = %(mt)s")
+                params["mt"] = _cap(req.motivo_descarte, 120)
+        if req.eh_doadora is not None:
+            sets.append("eh_doadora = %(dd)s"); params["dd"] = bool(req.eh_doadora)
+        if not sets:
+            return {"error": "nada a atualizar"}
+        with _tx() as conn:
+            cur = _cur(conn)
+            cur.execute(f"UPDATE fazenda.animal SET {', '.join(sets)} WHERE id = %(a)s RETURNING id", params)
+            row = cur.fetchone()
+            return {"id": row["id"], "ok": True} if row else {"error": "animal não encontrado"}
+    except Exception as e:
+        return _error(e)
+
+
+@app.post("/api/campo/animal")
+async def campo_animal(req: AnimalIn):
+    try:
+        sexo = (req.sexo or "").upper()[:1]
+        if sexo not in ("M", "F"):
+            return {"error": "sexo deve ser M ou F"}
+        if req.peso_kg is not None and not (0 < req.peso_kg <= 2000):
+            return {"error": "peso deve estar entre 0 e 2000 kg"}
+        if req.escore_corporal is not None and not (1 <= req.escore_corporal <= 9):
+            return {"error": "escore corporal deve estar entre 1 e 9"}
+        req.nome = _cap(req.nome, 120)
+        req.brinco = _cap(req.brinco, 40)
+        req.sisbov = _cap(req.sisbov, 20)
+        req.categoria = _cap(req.categoria, 60)
+        req.obs = _cap(req.obs, 500)
+        with _tx() as conn:
+            cur = _cur(conn)
+            # idempotência: uuid já cadastrado -> devolve o mesmo registro
+            cur.execute("SELECT id, reprodutor_espelho_id FROM fazenda.animal WHERE uuid = %(u)s",
+                        {"u": req.uuid})
+            ex = cur.fetchone()
+            if ex:
+                return {"animal_id": ex["id"], "reprodutor_id": ex["reprodutor_espelho_id"], "novo": False}
+
+            reg = req.registro
+            cur.execute(
+                """INSERT INTO fazenda.animal
+                     (cliente_id, brinco, eid, sisbov, registro_associacao, nome, especie_codigo,
+                      raca_id, composicao_racial, sexo, data_nascimento, categoria, status,
+                      grupo_id, peso_atual_kg, escore_corporal, obs, uuid, coletado_em)
+                   VALUES (%(cli)s,%(br)s,%(eid)s,%(sis)s,%(reg)s,%(nome)s,'BOV',
+                      %(raca)s,%(comp)s,%(sexo)s,%(nasc)s,%(cat)s,'ativo',
+                      %(grp)s,%(peso)s,%(ecc)s,%(obs)s,%(uuid)s, now()) RETURNING id""",
+                {"cli": req.cliente_id, "br": req.brinco, "eid": req.eid, "sis": req.sisbov,
+                 "reg": reg, "nome": req.nome, "raca": req.raca_id, "comp": req.composicao_racial,
+                 "sexo": sexo, "nasc": req.data_nascimento or None, "cat": req.categoria,
+                 "grp": req.grupo_id, "peso": req.peso_kg, "ecc": req.escore_corporal,
+                 "obs": req.obs, "uuid": req.uuid})
+            animal_id = cur.fetchone()["id"]
+
+            # pai (touro) escolhido na busca -> vincula o pai REAL e guarda sua genética
+            pai = None
+            if req.pai_catalogo_id:
+                prow = query(
+                    """SELECT r.id, r.nome, r.registro,
+                              MAX(CASE WHEN a.caracteristica_id = 20 THEN a.valor END) AS iqgg
+                         FROM mercado.reprodutor r
+                         LEFT JOIN mercado.avaliacao a ON a.reprodutor_id = r.id AND a.caracteristica_id = 20
+                        WHERE r.id = %(id)s GROUP BY r.id, r.nome, r.registro""",
+                    {"id": req.pai_catalogo_id})
+                pai = prow[0] if prow else None
+                if pai:
+                    cur.execute(
+                        """UPDATE fazenda.animal
+                             SET pai_reprodutor_id = %(p)s, pai_nome_externo = %(n)s,
+                                 pai_registro_externo = %(reg)s
+                           WHERE id = %(a)s""",
+                        {"p": pai["id"], "n": pai.get("nome"), "reg": pai.get("registro"), "a": animal_id})
+
+            # primeira pesagem do cadastro também vira histórico em medicao
+            if req.peso_kg is not None or req.escore_corporal is not None:
+                cur.execute(
+                    """INSERT INTO fazenda.medicao
+                         (animal_id, data_medicao, peso_kg, escore_corporal, grupo_id, origem, medido_em)
+                       VALUES (%(a)s, current_date, %(p)s, %(e)s, %(g)s, 'manual', now())""",
+                    {"a": animal_id, "p": req.peso_kg, "e": req.escore_corporal, "g": req.grupo_id})
+
+            reprodutor_id = None
+            # 1) PONTE: animal escolhido na busca do catálogo -> vincula ao registro REAL
+            #    (traz pedigree/genética de verdade; não cria espelho duplicado)
+            if req.catalogo_id:
+                cur.execute("SELECT id FROM mercado.reprodutor WHERE id = %(c)s", {"c": req.catalogo_id})
+                if cur.fetchone():
+                    reprodutor_id = req.catalogo_id
+                    cur.execute("UPDATE fazenda.animal SET reprodutor_espelho_id=%(r)s WHERE id=%(a)s",
+                                {"r": reprodutor_id, "a": animal_id})
+            # 2) senão, espelha a fêmea no catálogo p/ entrar no acasalamento (igual ao loader)
+            elif sexo == "F" and req.raca_id is not None:
+                registro_m = reg or (f"FZ{req.cliente_id}-{req.brinco}" if req.brinco
+                                     else f"FZ{req.cliente_id}-U{req.uuid[:8]}")
+                cur.execute("SELECT razao_social, uf, municipio FROM fazenda.cliente WHERE id = %(c)s",
+                            {"c": req.cliente_id})
+                cli = cur.fetchone() or {}
+                cur.execute(
+                    """INSERT INTO mercado.reprodutor
+                         (registro, nome, especie_codigo, raca_id, sexo, fazenda_origem, uf, municipio,
+                          pai_registro, pai_nome, fonte_referencia, fonte_programa, coletado_em)
+                       VALUES (%(reg)s,%(nome)s,'BOV',%(raca)s,'F',%(faz)s,%(uf)s,%(mun)s,
+                          %(pai_reg)s,%(pai_nome)s,%(ref)s,%(prog)s, now())
+                       ON CONFLICT (registro, raca_id) DO UPDATE SET
+                          nome=EXCLUDED.nome, fazenda_origem=EXCLUDED.fazenda_origem,
+                          uf=EXCLUDED.uf, municipio=EXCLUDED.municipio,
+                          pai_registro=EXCLUDED.pai_registro, pai_nome=EXCLUDED.pai_nome,
+                          fonte_programa=EXCLUDED.fonte_programa
+                       RETURNING id""",
+                    {"reg": registro_m, "nome": req.nome or registro_m, "raca": req.raca_id,
+                     "faz": cli.get("razao_social"), "uf": cli.get("uf"), "mun": cli.get("municipio"),
+                     "pai_reg": (pai.get("registro") if pai else None),
+                     "pai_nome": (pai.get("nome") if pai else None),
+                     "ref": f"Rebanho {cli.get('razao_social')}", "prog": f"fazenda_{req.cliente_id}"})
+                reprodutor_id = cur.fetchone()["id"]
+
+                # índices genômicos próprios da vaca -> avaliacao (regrava)
+                idx = {k: getattr(req, k) for k in _GENOMICO if getattr(req, k) is not None}
+                if idx:
+                    cur.execute(
+                        "DELETE FROM mercado.avaliacao WHERE reprodutor_id=%(r)s AND caracteristica_id = ANY(%(ids)s)",
+                        {"r": reprodutor_id, "ids": [_GENOMICO[k] for k in idx]})
+                    for k, v in idx.items():
+                        cur.execute(
+                            """INSERT INTO mercado.avaliacao
+                                 (reprodutor_id, caracteristica_id, valor, eh_genomica, coletado_em)
+                               VALUES (%(r)s,%(c)s,%(v)s,true, now())""",
+                            {"r": reprodutor_id, "c": _GENOMICO[k], "v": v})
+                # mérito ESTIMADO pela média de parentesco (média da raça + metade do pai),
+                # quando a vaca não foi genotipada mas o pai é conhecido. eh_genomica=false (é estimativa).
+                elif pai and pai.get("iqgg") is not None:
+                    raca_mean = _media_iqgg_raca(req.raca_id) or 0
+                    dam_est = round(0.5 * float(raca_mean) + 0.5 * float(pai["iqgg"]), 2)
+                    cur.execute("DELETE FROM mercado.avaliacao WHERE reprodutor_id=%(r)s AND caracteristica_id=20",
+                                {"r": reprodutor_id})
+                    cur.execute(
+                        """INSERT INTO mercado.avaliacao (reprodutor_id, caracteristica_id, valor, eh_genomica, coletado_em)
+                           VALUES (%(r)s, 20, %(v)s, false, now())""",
+                        {"r": reprodutor_id, "v": dam_est})
+
+                cur.execute("UPDATE fazenda.animal SET reprodutor_espelho_id=%(r)s WHERE id=%(a)s",
+                            {"r": reprodutor_id, "a": animal_id})
+
+            return {"animal_id": animal_id, "reprodutor_id": reprodutor_id, "novo": True}
+    except Exception as e:
+        return _error(e)
+
+
+@app.post("/api/campo/pesagem")
+async def campo_pesagem(req: PesagemIn):
+    try:
+        err = _valida_pesagem(req)
+        if err:
+            return {"error": err}
+        req.obs = _cap(req.obs, 500)
+        with _tx() as conn:
+            cur = _cur(conn)
+            cur.execute("SELECT id FROM fazenda.medicao WHERE uuid = %(u)s", {"u": req.uuid})
+            ex = cur.fetchone()
+            if ex:
+                return {"id": ex["id"], "novo": False}
+            cur.execute(
+                """INSERT INTO fazenda.medicao
+                     (animal_id, data_medicao, peso_kg, escore_corporal, altura_cm, grupo_id,
+                      origem, dispositivo, medido_em, obs, uuid)
+                   VALUES (%(a)s, COALESCE(%(d)s::date, current_date), %(p)s, %(e)s, %(alt)s, %(g)s,
+                      %(orig)s, %(disp)s, now(), %(obs)s, %(u)s) RETURNING id""",
+                {"a": req.animal_id, "d": req.data_medicao or None, "p": req.peso_kg,
+                 "e": req.escore_corporal, "alt": req.altura_cm, "g": req.grupo_id,
+                 "orig": req.origem or "manual", "disp": req.dispositivo, "obs": req.obs, "u": req.uuid})
+            mid = cur.fetchone()["id"]
+            if req.peso_kg is not None:
+                cur.execute("UPDATE fazenda.animal SET peso_atual_kg=%(p)s WHERE id=%(a)s",
+                            {"p": req.peso_kg, "a": req.animal_id})
+            if req.escore_corporal is not None:
+                cur.execute("UPDATE fazenda.animal SET escore_corporal=%(e)s WHERE id=%(a)s",
+                            {"e": req.escore_corporal, "a": req.animal_id})
+            return {"id": mid, "novo": True}
+    except Exception as e:
+        return _error(e)
+
+
+@app.post("/api/campo/sanitario")
+async def campo_sanitario(req: SanitarioIn):
+    try:
+        if not req.animal_id and not req.grupo_id:
+            return {"error": "informe animal_id ou grupo_id"}
+        if (req.tipo or "").lower() not in _TIPO_SANITARIO_OK:
+            return {"error": "tipo sanitário inválido"}
+        req.produto = _cap(req.produto, 150)
+        req.dose = _cap(req.dose, 40)
+        req.via = _cap(req.via, 30)
+        req.responsavel = _cap(req.responsavel, 120)
+        req.obs = _cap(req.obs, 500)
+        with _tx() as conn:
+            cur = _cur(conn)
+            cur.execute("SELECT id FROM fazenda.evento_sanitario WHERE uuid = %(u)s", {"u": req.uuid})
+            ex = cur.fetchone()
+            if ex:
+                return {"id": ex["id"], "novo": False}
+            cur.execute(
+                """INSERT INTO fazenda.evento_sanitario
+                     (animal_id, grupo_id, tipo, produto, data_evento, proxima_dose, dose, via,
+                      responsavel, obs, uuid, registrado_em)
+                   VALUES (%(a)s,%(g)s,%(t)s,%(prod)s, COALESCE(%(d)s::date, current_date),
+                      %(prox)s::date, %(dose)s,%(via)s,%(resp)s,%(obs)s,%(u)s, now()) RETURNING id""",
+                {"a": req.animal_id, "g": req.grupo_id, "t": req.tipo, "prod": req.produto,
+                 "d": req.data_evento or None, "prox": req.proxima_dose or None, "dose": req.dose,
+                 "via": req.via, "resp": req.responsavel, "obs": req.obs, "u": req.uuid})
+            new_id = cur.fetchone()["id"]
+            # se a aplicação veio de um lembrete da Agenda, fecha o lembrete de origem
+            if req.origem_lembrete_id:
+                cur.execute(
+                    """UPDATE fazenda.evento_sanitario
+                         SET lembrete_concluido = true, lembrete_concluido_em = now()
+                       WHERE id = %(lid)s AND lembrete_concluido = false""",
+                    {"lid": req.origem_lembrete_id})
+            return {"id": new_id, "novo": True}
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/campo/agenda")
+async def campo_agenda(cliente_id: int, dias: int = 30):
+    """Lembretes sanitários pendentes (proxima_dose definida, ainda não cumprida).
+    Inclui TODOS os atrasados + os que vencem nos próximos `dias`. Ordenado por urgência."""
+    try:
+        with _tx() as conn:
+            cur = _cur(conn)
+            cur.execute(
+                """SELECT e.id, e.animal_id, e.grupo_id, e.tipo, e.produto, e.dose, e.via,
+                          e.proxima_dose, (e.proxima_dose - current_date) AS dias,
+                          a.nome AS animal_nome, a.brinco, ra.sigla AS raca_sigla,
+                          g.nome AS lote_nome
+                     FROM fazenda.evento_sanitario e
+                     LEFT JOIN fazenda.animal a ON a.id = e.animal_id
+                     LEFT JOIN catalogo.raca ra ON ra.id = a.raca_id
+                     LEFT JOIN fazenda.grupo_manejo g ON g.id = e.grupo_id
+                    WHERE e.proxima_dose IS NOT NULL
+                      AND e.lembrete_concluido = false
+                      AND COALESCE(a.cliente_id, g.cliente_id) = %(c)s
+                      AND e.proxima_dose <= current_date + %(d)s
+                    ORDER BY e.proxima_dose ASC, e.id ASC""",
+                {"c": cliente_id, "d": dias})
+            itens = []
+            n_atrasado = n_hoje = n_prox = 0
+            for r in cur.fetchall():
+                d = r["dias"]
+                status = "atrasado" if d < 0 else ("hoje" if d == 0 else "proximo")
+                if status == "atrasado": n_atrasado += 1
+                elif status == "hoje": n_hoje += 1
+                else: n_prox += 1
+                itens.append({
+                    "id": r["id"], "animal_id": r["animal_id"], "grupo_id": r["grupo_id"],
+                    "alvo": r["animal_nome"] or r["brinco"] or (r["lote_nome"] and ("Lote " + r["lote_nome"]))
+                            or (r["animal_id"] and ("#" + str(r["animal_id"]))) or "—",
+                    "is_lote": r["animal_id"] is None and r["grupo_id"] is not None,
+                    "raca_sigla": r["raca_sigla"], "tipo": r["tipo"], "produto": r["produto"],
+                    "dose": r["dose"], "via": r["via"],
+                    "proxima_dose": r["proxima_dose"].isoformat() if r["proxima_dose"] else None,
+                    "dias": d, "status": status,
+                })
+            return {"itens": itens, "resumo": {"atrasado": n_atrasado, "hoje": n_hoje,
+                    "proximo": n_prox, "total": len(itens)}}
+    except Exception as e:
+        return _error(e)
+
+
+@app.post("/api/campo/agenda/concluir")
+async def campo_agenda_concluir(req: ConcluirLembreteIn):
+    """Dispensa um lembrete sem registrar nova aplicação (some da agenda)."""
+    try:
+        with _tx() as conn:
+            cur = _cur(conn)
+            cur.execute(
+                """UPDATE fazenda.evento_sanitario
+                     SET lembrete_concluido = true, lembrete_concluido_em = now()
+                   WHERE id = %(id)s RETURNING id""",
+                {"id": req.id})
+            row = cur.fetchone()
+            return {"id": row["id"], "ok": True} if row else {"error": "lembrete não encontrado"}
+    except Exception as e:
+        return _error(e)
+
+
+_PRIORIDADE_LABEL = {
+    "geral": "Geral (IQGg)", "crescimento": "Crescimento (GPD)", "carcaca": "Carcaça (AOL)",
+    "precocidade": "Precocidade (PES)", "fertilidade": "Fertilidade (HP)",
+}
+
+
+@app.get("/api/campo/cotacao/pdf")
+async def campo_cotacao_pdf(matriz_id: int, prioridade: str = "geral",
+                            cliente_id: int | None = None, top: int = 8,
+                            n_doses: int | None = None):
+    """Cotação de sêmen em PDF a partir do acasalamento ao vivo da matriz (tela Cruzar).
+    Reusa a lógica de /api/acasalamento e renderiza um documento comercial p/ o produtor."""
+    try:
+        res = await acasalamento(matriz_id, prioridade=prioridade, top=top)
+        if not res or res.get("error"):
+            return JSONResponse({"error": (res or {}).get("error", "matriz não encontrada")}, status_code=404)
+        cliente = None
+        if cliente_id:
+            rows = query("SELECT razao_social, uf, municipio FROM fazenda.cliente WHERE id = %(id)s",
+                         {"id": cliente_id})
+            cliente = rows[0] if rows else None
+        pdf_bytes = await run_in_threadpool(
+            gerar_cotacao_acasalamento, res["matriz"], res["recomendacoes"], cliente,
+            _PRIORIDADE_LABEL.get(prioridade, prioridade.capitalize()), n_doses)
+        vaca = res["matriz"].get("nome") or res["matriz"].get("registro") or matriz_id
+        slug = "".join(c if c.isalnum() else "_" for c in str(vaca))[:40]
+        fname = f"cotacao_semen_{slug}_{datetime.now().strftime('%Y%m%d')}.pdf"
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes), media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={fname}"})
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/campo/auditoria")
+async def campo_auditoria(cliente_id: int):
+    """Auditoria genética do rebanho: fêmeas do cliente avaliadas (via espelho no
+    catálogo) contra a média da própria raça. Aponta gargalos, ranking e quem genotipar."""
+    try:
+        rows = query(
+            """SELECT a.id, a.nome, a.brinco, a.raca_id, ra.sigla AS raca_sigla,
+                      MAX(CASE WHEN av.caracteristica_id = 20 THEN av.valor END) AS iqgg,
+                      MAX(CASE WHEN av.caracteristica_id = 8  THEN av.valor END) AS gpd,
+                      MAX(CASE WHEN av.caracteristica_id = 16 THEN av.valor END) AS aol,
+                      MAX(CASE WHEN av.caracteristica_id = 12 THEN av.valor END) AS pes,
+                      MAX(CASE WHEN av.caracteristica_id = 18 THEN av.valor END) AS mar,
+                      bool_or(av.eh_genomica) FILTER (WHERE av.caracteristica_id = 20) AS iqgg_genomica,
+                      a.reprodutor_espelho_id
+                 FROM fazenda.animal a
+                 LEFT JOIN catalogo.raca ra ON ra.id = a.raca_id
+                 LEFT JOIN mercado.avaliacao av ON av.reprodutor_id = a.reprodutor_espelho_id
+                       AND av.caracteristica_id IN (20, 8, 16, 12, 18)
+                WHERE a.cliente_id = %(c)s AND a.sexo = 'F'
+                GROUP BY a.id, a.nome, a.brinco, a.raca_id, ra.sigla, a.reprodutor_espelho_id""",
+            {"c": cliente_id})
+        tot = query(
+            """SELECT count(*) FILTER (WHERE sexo = 'F') AS femeas, count(*) AS total
+                 FROM fazenda.animal WHERE cliente_id = %(c)s""", {"c": cliente_id})[0]
+
+        genot = [r for r in rows if r.get("iqgg") is not None]
+        nao = [r for r in rows if r.get("iqgg") is None]
+
+        # raça predominante entre as genotipadas (p/ benchmark de exibição)
+        from collections import Counter
+        raca_cnt = Counter(r["raca_id"] for r in genot if r.get("raca_id"))
+        raca_pred = raca_cnt.most_common(1)[0][0] if raca_cnt else None
+        media_raca = _media_iqgg_raca(raca_pred) if raca_pred else None
+        raca_pred_sigla = next((r["raca_sigla"] for r in genot if r["raca_id"] == raca_pred), None)
+
+        for r in genot:
+            m = _media_iqgg_raca(r["raca_id"])
+            r["media_raca"] = m
+            r["lift"] = round(r["iqgg"] - m, 2) if (m is not None) else None
+
+        def _avg(key, src=genot):
+            vals = [r[key] for r in src if r.get(key) is not None]
+            return round(sum(vals) / len(vals), 2) if vals else None
+
+        iqggs = sorted(r["iqgg"] for r in genot)
+        stats = {}
+        if iqggs:
+            n = len(iqggs)
+            stats = {
+                "media": round(sum(iqggs) / n, 2),
+                "mediana": iqggs[n // 2] if n % 2 else round((iqggs[n // 2 - 1] + iqggs[n // 2]) / 2, 2),
+                "melhor": iqggs[-1], "pior": iqggs[0],
+                "media_raca": media_raca,
+                "lift_medio": _avg("lift"),
+                "acima_da_raca": sum(1 for r in genot if (r.get("lift") or 0) > 0),
+            }
+
+        # ranking: melhor -> pior; quartil inferior = prioridade de acasalamento corretivo
+        genot.sort(key=lambda r: r["iqgg"], reverse=True)
+        n = len(genot)
+        import math
+        corte = math.ceil(n * 0.75)  # índice a partir do qual entra no quartil inferior
+        ranking = []
+        for i, r in enumerate(genot):
+            ranking.append({
+                "id": r["id"], "nome": r.get("nome"), "brinco": r.get("brinco"),
+                "raca_sigla": r.get("raca_sigla"), "iqgg": r["iqgg"],
+                "gpd": r.get("gpd"), "aol": r.get("aol"),
+                "lift": r.get("lift"), "media_raca": r.get("media_raca"),
+                "reprodutor_espelho_id": r.get("reprodutor_espelho_id"),
+                "genomica": bool(r.get("iqgg_genomica")),  # False = mérito estimado pelo pai
+                "prioridade_corretiva": (n >= 4 and i >= corte),
+            })
+
+        # gargalos: características em que o rebanho está abaixo (lift negativo no IQGg
+        # já é o sinal-mestre; aqui sinalizamos a média de cada traço p/ leitura rápida)
+        traits = {k: _avg(k) for k in ("gpd", "aol", "pes", "mar")}
+
+        return {
+            "resumo": {
+                "total": tot["total"], "femeas": tot["femeas"],
+                "genotipadas": len(genot), "nao_genotipadas": len(nao),
+                "pct_genotipadas": round(100 * len(genot) / tot["femeas"]) if tot["femeas"] else 0,
+            },
+            "iqgg": stats, "raca_predominante": raca_pred_sigla, "traits": traits,
+            "ranking": ranking,
+            "a_genotipar": [{"id": r["id"], "nome": r.get("nome"), "brinco": r.get("brinco"),
+                             "raca_sigla": r.get("raca_sigla")} for r in nao],
+        }
+    except Exception as e:
+        return _error(e)
+
+
+@app.post("/api/campo/movimentacao")
+async def campo_movimentacao(req: MovimentacaoIn):
+    """Registra movimentação/GTA (entrada, saída, transferência…). Idempotente por uuid."""
+    try:
+        if (req.tipo or "").lower() not in _TIPO_MOV_OK:
+            return {"error": "tipo de movimentação inválido"}
+        if req.quantidade is not None and not (0 < req.quantidade <= 100000):
+            return {"error": "quantidade fora da faixa"}
+        gta = _cap(req.gta_numero, 30)
+        with _tx() as conn:
+            cur = _cur(conn)
+            cur.execute("SELECT id FROM fazenda.movimentacao WHERE uuid = %(u)s", {"u": req.uuid})
+            ex = cur.fetchone()
+            if ex:
+                return {"id": ex["id"], "novo": False}
+            cur.execute(
+                """INSERT INTO fazenda.movimentacao
+                     (cliente_id, tipo, data_evento, gta_numero, origem, destino,
+                      finalidade, quantidade, obs, uuid, registrado_em)
+                   VALUES (%(c)s, %(t)s, COALESCE(%(d)s::date, current_date), %(gta)s, %(o)s, %(dest)s,
+                      %(fin)s, %(q)s, %(obs)s, %(u)s, now()) RETURNING id""",
+                {"c": req.cliente_id, "t": req.tipo.lower(), "d": req.data_evento or None,
+                 "gta": gta, "o": _cap(req.origem), "dest": _cap(req.destino),
+                 "fin": _cap(req.finalidade, 60), "q": req.quantidade, "obs": _cap(req.obs, 500),
+                 "u": req.uuid})
+            return {"id": cur.fetchone()["id"], "novo": True}
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/campo/briefing/pdf")
+async def campo_briefing_pdf(movimentacao_id: int):
+    """Briefing de chegada (PDF) de um lote recebido — detalhes da entrada + protocolo de recepção."""
+    try:
+        rows = query(
+            """SELECT m.id, m.cliente_id, m.tipo, m.data_evento, m.gta_numero, m.origem,
+                      m.destino, m.finalidade, m.quantidade, m.obs,
+                      c.razao_social, c.uf, c.municipio
+                 FROM fazenda.movimentacao m JOIN fazenda.cliente c ON c.id = m.cliente_id
+                WHERE m.id = %(id)s""", {"id": movimentacao_id})
+        if not rows:
+            return JSONResponse({"error": "movimentação não encontrada"}, status_code=404)
+        m = rows[0]
+        cliente = {"razao_social": m.get("razao_social"), "uf": m.get("uf"), "municipio": m.get("municipio")}
+        pdf_bytes = await run_in_threadpool(gerar_briefing_chegada, m, cliente)
+        fname = f"briefing_chegada_{movimentacao_id}_{datetime.now().strftime('%Y%m%d')}.pdf"
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes), media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={fname}"})
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/campo/movimentacoes")
+async def campo_movimentacoes(cliente_id: int, limit: int = 50):
+    try:
+        return query(
+            """SELECT id, tipo, data_evento, gta_numero, origem, destino, finalidade,
+                      quantidade, obs
+                 FROM fazenda.movimentacao
+                WHERE cliente_id = %(c)s
+                ORDER BY data_evento DESC, id DESC LIMIT %(l)s""",
+            {"c": cliente_id, "l": min(limit, 200)})
     except Exception as e:
         return _error(e)

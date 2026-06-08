@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WiNS Agro — Como o Score de Adequação funciona</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; color:#1a2e1a;
+         background:#eef3ee; padding:32px; line-height:1.45; }
+  .slide { max-width:1000px; margin:0 auto 26px; background:#fff; border-radius:16px;
+           box-shadow:0 4px 18px rgba(0,0,0,.08); overflow:hidden; }
+  .hd { background:linear-gradient(110deg,#1f4a1f,#2d7a2d); color:#fff; padding:26px 34px; }
+  .hd h1 { font-size:25px; font-weight:800; }
+  .hd p { font-size:14px; opacity:.9; margin-top:5px; }
+  .body { padding:28px 34px; }
+  .formula { font-size:21px; font-weight:800; text-align:center; color:#1f4a1f;
+             background:#e8f5e9; border-radius:12px; padding:18px; margin:6px 0 22px; }
+  .formula small { display:block; font-size:13px; font-weight:600; color:#4a7a4a; margin-top:6px; }
+  h2 { font-size:15px; text-transform:uppercase; letter-spacing:.5px; color:#2d7a2d;
+       margin:24px 0 12px; border-bottom:2px solid #e4ece4; padding-bottom:6px; }
+  .premissas { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:8px; }
+  .premissas span { background:#f4f9f4; border:1px solid #d9e7d9; border-radius:8px;
+                    padding:8px 13px; font-size:13px; color:#335033; }
+  .premissas b { color:#1f4a1f; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th { background:#2d5a2d; color:#fff; text-align:left; padding:10px 13px; font-size:12px;
+       text-transform:uppercase; letter-spacing:.4px; }
+  th.n, td.n { text-align:right; }
+  td { padding:11px 13px; border-top:1px solid #eef2ee; }
+  tr.tot td { background:#e8f5e9; font-weight:800; color:#1f4a1f; font-size:15px; }
+  .axis { font-weight:700; }
+  .axis i { font-style:normal; color:#2d7a2d; }
+  .pct { color:#9aa39a; font-weight:600; font-size:12px; }
+  .calc { color:#555; font-family:ui-monospace,Menlo,monospace; font-size:13px; }
+  .money { background:#fffaf0; }
+  .money td { border-top:1px solid #f0e6cf; }
+  .badge { display:inline-block; background:#1f4a1f; color:#fff; border-radius:20px;
+           padding:3px 11px; font-size:12px; font-weight:700; }
+  .note { font-size:12.5px; color:#6a756a; margin-top:14px; padding:12px 14px;
+          background:#f7faf7; border-left:3px solid #9ec79e; border-radius:6px; }
+  .cmp td:first-child { font-weight:700; }
+  .win { color:#1f7a1f; font-weight:800; }
+  .pen { color:#b07a00; }
+</style>
+</head>
+<body>
+
+<div class="slide">
+  <div class="hd">
+    <h1>Como o Score de Adequação é calculado</h1>
+    <p>Matching WiNS Agro · exemplo real Nelore · prioridade Geral (IQGg) · finalidade Corte</p>
+  </div>
+  <div class="body">
+
+    <div class="formula">
+      Score = 0,45 × Genética + 0,35 × Valor (R$) + 0,20 × Disponibilidade
+      <small>cada eixo normalizado entre 0 e 1 — nenhum domina por estar em escala maior</small>
+    </div>
+
+    <h2>Premissas (dados ao vivo de hoje)</h2>
+    <div class="premissas">
+      <span>Boi gordo: <b>R$ 353,80/@</b> (ESALQ/B3, 05/06)</span>
+      <span>Pool Nelore: <b>340 touros</b></span>
+      <span>Melhor DEP da raça: <b>70,69</b></span>
+      <span>Melhor valor/bezerro: <b>R$ 351,17</b></span>
+      <span>Melhor R$/IQGg: <b>0,53</b></span>
+    </div>
+
+    <h2>Touro exemplo — MALBEC FC CACHOEIRAO (o melhor que dá pra comprar hoje)</h2>
+    <table>
+      <thead>
+        <tr><th>Eixo</th><th>O que mede</th><th>Conta com o número real</th><th class="n">Valor</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="axis"><i>g</i> Genética <span class="pct">45%</span></td>
+          <td>quão elite dentro da raça</td>
+          <td class="calc">44,99 ÷ 70,69</td>
+          <td class="n">0,636</td>
+        </tr>
+        <tr>
+          <td class="axis"><i>v</i> Valor R$ <span class="pct">35%</span></td>
+          <td>R$ a mais por bezerro</td>
+          <td class="calc">274,11 ÷ 351,17</td>
+          <td class="n">0,781</td>
+        </tr>
+        <tr>
+          <td class="axis"><i>a</i> Disponib. <span class="pct">20%</span></td>
+          <td>é comprável e eficiente?</td>
+          <td class="calc">0,5 + 0,5×(0,53 ÷ 0,69)</td>
+          <td class="n">0,884</td>
+        </tr>
+        <tr class="tot">
+          <td colspan="2">SCORE FINAL</td>
+          <td class="calc">0,45×0,636 + 0,35×0,781 + 0,20×0,884</td>
+          <td class="n">0,736</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>A tradução em dinheiro — o número que vende</h2>
+    <table class="money">
+      <tbody>
+        <tr><td>Vantagem em peso à desmama (PD)</td><td class="n">23,24 kg vs média da raça</td></tr>
+        <tr><td>Valor agregado por bezerro &nbsp;(23,24 × R$353,80 ÷ 30)</td><td class="n"><b>R$ 274</b></td></tr>
+        <tr><td>Preço da dose</td><td class="n">R$ 31,20</td></tr>
+        <tr><td>ROI da dose &nbsp;(274 ÷ 31,20)</td><td class="n"><span class="badge">8,8×</span></td></tr>
+        <tr><td>Lucro líquido por cria</td><td class="n"><b>R$ 243</b></td></tr>
+        <tr><td>Paga a dose em</td><td class="n">0,11 bezerro &nbsp;(o 1º filho já paga 9 doses)</td></tr>
+      </tbody>
+    </table>
+
+  </div>
+</div>
+
+<div class="slide">
+  <div class="hd" style="background:linear-gradient(110deg,#3a3a1f,#6a6a2d);">
+    <h1>Por que o score não é só genética nem só preço</h1>
+    <p>Os 3 primeiros touros do ranking real — repare como o blend reordena</p>
+  </div>
+  <div class="body">
+    <table class="cmp">
+      <thead>
+        <tr><th>Touro</th><th class="n">g (45%)</th><th class="n">v (35%)</th><th class="n">a (20%)</th>
+            <th class="n">Dose</th><th class="n">ROI</th><th class="n">Score</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>MAGNATA JMP</td>
+          <td class="n">0,806</td><td class="n">0,954</td>
+          <td class="n pen">0,300</td>
+          <td class="n">— sem preço</td><td class="n">—</td>
+          <td class="n win">0,757</td>
+        </tr>
+        <tr>
+          <td>DC10 FIV DA COMETA</td>
+          <td class="n">0,735</td><td class="n">1,000</td>
+          <td class="n pen">0,300</td>
+          <td class="n">— sem preço</td><td class="n">—</td>
+          <td class="n">0,741</td>
+        </tr>
+        <tr>
+          <td>MALBEC FC CACHOEIRAO</td>
+          <td class="n">0,636</td><td class="n">0,781</td>
+          <td class="n win">0,884</td>
+          <td class="n">R$ 31,20</td><td class="n win">8,8×</td>
+          <td class="n">0,736</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="note">
+      <b>Leitura para a reunião:</b> MAGNATA lidera porque é geneticamente o mais elite — mesmo
+      <i>penalizado</i> por não ter preço público (eixo de disponibilidade cai pra 0,30). Mas o MALBEC,
+      com genética menor, quase encosta nele: é o touro <b>que o produtor consegue de fato comprar</b>,
+      com o melhor retorno por real investido (8,8×). O score equilibra "o mais elite" com "o melhor
+      negócio" — e é por isso que ele não devolve só o touro mais caro nem só o mais barato.
+    </div>
+    <div class="note">
+      <b>Premissa honesta:</b> o valor agregado por bezerro é uma <i>estimativa</i> (carcaça ≈ 50% do peso
+      vivo, arroba = 15 kg) ancorada na cotação ESALQ/B3 ao vivo. É um modelo de ordem de grandeza para
+      comparar touros — não um valor contábil auditado.
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
