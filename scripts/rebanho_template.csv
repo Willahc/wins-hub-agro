@@ -1,0 +1,5 @@
+brinco,sisbov,registro,nome,raca,sexo,data_nascimento,categoria,composicao_racial,peso_kg,escore_corporal,pai_registro,pai_nome,mae_registro,mae_nome,iqgg,gpd,aol,pes,mar,obs
+0001,076000000000001,MS0001,ESTRELA DA MONTE SIAO,NEL,F,2020-08-15,matriz,PO,520,3.5,BJER1234,REM ELO,MSV0900,DALILA MS,42.5,11.8,3.1,2.0,1.2,doadora FIV
+0002,076000000000002,MS0002,PEROLA DA MONTE SIAO,NEL,F,2021-03-10,matriz,PO,495,3.0,RDM9089,BARAVAH MAT,MSV0901,FLOR MS,,,,,,sem genotipagem ainda
+0003,,,BRINCO-NOVILHA-03,NEL,F,2022-06-01,novilha,PO,360,3.0,,,,,38.0,10.5,2.8,1.7,0.9,novilha selecionada
+0010,076000000000010,MS0010,TOURO REI MS,NEL,M,2019-01-20,reprodutor,PO,820,4.0,,,,,,,,,,touro da fazenda (não vira matriz)
