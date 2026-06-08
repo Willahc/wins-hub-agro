@@ -174,28 +174,113 @@
 
         .modal-overlay {
             position: fixed; inset: 0; background: rgba(0,0,0,.55);
-            display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px;
+            display: flex; align-items: center; justify-content: center; z-index: 100;
+            /* respiro proporcional (vh/vw); o scroll mora DENTRO do modal, não aqui */
+            padding: 3vh 2vw;
         }
         .modal {
-            background: white; border-radius: 14px; width: 100%; max-width: 760px;
-            max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.4);
+            /* caixa = flex column com teto de altura: header fixo / body rola / footer fixo.
+               overflow:hidden -> a caixa nunca rola; só o .modal-body rola. */
+            background: white; border-radius: 14px; width: min(90vw, 760px);
+            max-height: 94vh; margin: auto;
+            display: flex; flex-direction: column; overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,.4);
+        }
+        /* wrapper do <template x-if> (único filho do .modal): repassa o flex column
+           pra que head/body/footer virem itens flex com o teto de altura do .modal. */
+        .modal-shell {
+            display: flex; flex-direction: column;
+            flex: 1 1 auto; min-height: 0; overflow: hidden;
         }
         .modal-head {
+            flex: 0 0 auto;                 /* altura natural, sempre visível no topo */
             display: flex; justify-content: space-between; align-items: flex-start;
             padding: 20px 24px; border-bottom: 1px solid #eee; background: #f8faf8;
             border-radius: 14px 14px 0 0;
-            /* fica fixo no topo do modal -> título nunca some no scroll interno */
-            position: sticky; top: 0; z-index: 2;
         }
         .modal-close { cursor: pointer; font-size: 20px; color: #999; line-height: 1; }
         .modal-close:hover { color: #1a3a1a; }
-        .modal-body { padding: 24px; }
+        /* miolo: o único que rola. min-height:0 é o pulo do gato — sem ele o filho flex
+           não encolhe abaixo do conteúdo e o scroll nunca ativa (a caixa estoura). */
+        .modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 24px; }
+        .modal-footer {
+            flex: 0 0 auto;                 /* botões sempre visíveis, nunca cortam */
+            padding: 16px 24px; border-top: 1px solid #eee; background: #fff;
+            border-radius: 0 0 14px 14px; display: flex; gap: 10px;
+        }
+        /* monetização canal-aware (modal do bezerro) */
+        .mon-row { display: flex; gap: 10px; flex-wrap: wrap; }
+        .mon-card { flex: 1 1 30%; min-width: 150px; border: 1px solid #e0e8e0; border-radius: 10px;
+            padding: 10px 11px; background: #fafcf9; }
+        .mon-card.rec { border: 1.5px solid #4a9e4a; background: #eef7ea; }
+        .mon-h { font-size: 11px; color: #6b7a6b; text-transform: uppercase; letter-spacing: .3px;
+            display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+        .mon-badge { background: #1a3a1a; color: #fff; font-size: 9px; font-weight: 700; padding: 1px 6px;
+            border-radius: 10px; text-transform: uppercase; letter-spacing: .3px; white-space: nowrap; }
+        .mon-v { font-size: 19px; font-weight: 800; color: #1a3a1a; margin: 4px 0 2px; }
+        .mon-v.nd { font-size: 13px; font-weight: 600; color: #9aa39a; }
+        .mon-s { font-size: 11px; color: #7a857a; line-height: 1.35; }
+        .mon-rac { margin-top: 8px; font-size: 13px; color: #283428; line-height: 1.45; }
         /* container de altura fixa p/ o radar: o canvas Chart.js preenche este box
            (com maintainAspectRatio:false) em vez de crescer com a largura/zoom. */
         .radar-wrap { position: relative; width: 100%; height: 280px; }
         .radar-wrap canvas { max-width: 100%; }
-        .modal-cols { display: grid; grid-template-columns: 1.1fr 1fr; gap: 28px; align-items: start; }
-        @media (max-width: 680px) { .modal-cols { grid-template-columns: 1fr; } }
+        /* layout VERTICAL (empilhado): gráfico em cima, tabela em largura cheia embaixo.
+           Melhor em Full HD e em telas escaladas (ex.: ultrawide @150% no Windows), onde
+           o lado-a-lado apertava a tabela e empurrava o conteúdo. O scroll interno do
+           .modal-body (min-height:0) garante que o footer nunca corte se ficar alto. */
+        .modal-cols { display: flex; flex-direction: column; gap: 18px; }
+        /* Acasalamento: cartões de cruzamento Touro × Vaca = Bezerro */
+        .cross-row { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap;
+            padding: 14px; border: 1px solid #e3e8e0; border-radius: 12px; margin-bottom: 12px;
+            background: #fff; cursor: pointer; transition: box-shadow .15s; }
+        .cross-row:hover { box-shadow: 0 2px 14px rgba(45,90,45,.14); }
+        .cross-box { flex: 1 1 0; min-width: 130px; padding: 10px 12px; border-radius: 10px; text-align: center; }
+        .cross-box .t { font-size: 12px; color: #777; margin-bottom: 3px; }
+        .cross-box .n { font-weight: 700; color: #1a3a1a; font-size: 14px; line-height: 1.2; }
+        .cross-box .v { font-size: 13px; color: #2d5a2d; margin-top: 4px; }
+        .cross-bull { background: #eef5ee; }
+        .cross-cow  { background: #f6f1ea; }
+        .cross-calf { background: #e7f3e0; border: 1.5px solid #4a9e4a; }
+        .cross-calf .n { color: #2d5a2d; font-size: 16px; }
+        .cross-op { display: flex; align-items: center; font-size: 22px; color: #9aa39a; font-weight: 700; }
+        .cross-meta { flex: 1 1 100%; display: flex; justify-content: space-between; align-items: center;
+            gap: 12px; margin-top: 4px; font-size: 12px; flex-wrap: wrap; }
+        @media (max-width: 680px) { .cross-op { transform: rotate(90deg); align-self: center; } .cross-box { flex-basis: 100%; } }
+        /* chips multi-seleção + pickers do cruzamento livre */
+        .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+        .chip { padding: 6px 13px; border: 1px solid #cdd6cd; border-radius: 999px; background: #fff;
+            cursor: pointer; font-size: 13px; color: #33503a; user-select: none; transition: all .12s; }
+        .chip:hover { border-color: #4a9e4a; }
+        .chip.on { background: #2d5a2d; border-color: #2d5a2d; color: #fff; }
+        .picker { position: relative; }
+        .pick-list { position: absolute; z-index: 30; left: 0; right: 0; top: 100%; background: #fff;
+            border: 1px solid #d6ddd6; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.12);
+            max-height: 280px; overflow: auto; margin-top: 4px; }
+        .pick-list .it { padding: 9px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f0f3f0; }
+        .pick-list .it:hover { background: #eef5ee; }
+        .pick-sel { display: flex; align-items: center; gap: 10px; padding: 11px 13px; margin-top: 8px;
+            border: 1.5px solid #4a9e4a; border-radius: 10px; background: #f3f9f1; }
+        .pick-sel button { padding: 5px 10px; }
+        .pick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 760px) { .pick-grid { grid-template-columns: 1fr; } }
+        .blocked-banner { background: #fbeaea; border: 1.5px solid #d98a8a; color: #9a2b2b;
+            padding: 12px 14px; border-radius: 10px; font-weight: 600; }
+        /* hero de pitch (Visão Geral) */
+        .pitch-hero { background: linear-gradient(135deg,#1a3a1a,#2d5a2d); color:#fff;
+            border-radius: 14px; padding: 22px 26px; margin-bottom: 22px; }
+        .pitch-hero h3 { margin: 0 0 4px; font-size: 20px; color:#fff; }
+        .pitch-hero .ph-sub { margin: 0; color: #cfe6cf; font-size: 14px; }
+        .pitch-steps { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 16px; }
+        .pitch-step { flex: 1 1 0; min-width: 180px; background: rgba(255,255,255,.08);
+            border: 1px solid rgba(255,255,255,.15); border-radius: 10px; padding: 12px 14px;
+            cursor: pointer; transition: background .15s; }
+        .pitch-step:hover { background: rgba(255,255,255,.18); }
+        .pitch-step .n { font-size: 11px; color: #9fd29f; font-weight: 700; letter-spacing:.04em; }
+        .pitch-step .t { font-weight: 700; margin: 3px 0; }
+        .pitch-step .d { font-size: 12px; color: #cfe6cf; line-height: 1.4; }
+        .pitch-ms { margin-top: 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+            font-size: 13px; background: rgba(255,255,255,.10); border-radius: 10px; padding: 10px 14px; }
         table.mini { width: 100%; border-collapse: collapse; font-size: 13px; }
         table.mini td { padding: 7px 8px; border-bottom: 1px solid #f0f0f0; }
         table.mini td:first-child { color: #666; }
@@ -348,6 +433,12 @@
             <div class="nav-item" :class="{active: section==='matching'}" @click="go('matching')">
                 <span class="ico">🎯</span> Matching
             </div>
+            <div class="nav-item" :class="{active: section==='matrizes'}" @click="go('matrizes')">
+                <span class="ico">🐄</span> Matrizes
+            </div>
+            <div class="nav-item" :class="{active: section==='acasalamento'}" @click="go('acasalamento')">
+                <span class="ico">💞</span> Acasalamento
+            </div>
             <div class="nav-group">Mercado</div>
             <div class="nav-item" :class="{active: section==='marketplace'}" @click="go('marketplace')">
                 <span class="ico">🛒</span> Marketplace
@@ -375,10 +466,41 @@
             <section x-show="section==='visao'">
                 <h2>Visão Geral</h2>
                 <p class="subtitle">Panorama da base de inteligência genética e prospecção.</p>
+
+                <div class="pitch-hero">
+                    <h3>O canal de distribuição técnica da genética premium</h3>
+                    <p class="ph-sub">Acha o produtor certo, recomenda o touro ideal e <b style="color:#fff">prova o retorno</b> — transformando dose premium em venda fechada, mesmo no deserto vet.</p>
+                    <div class="pitch-steps">
+                        <div class="pitch-step" @click="go('territorio')">
+                            <div class="n">1 · ENCONTRAR</div>
+                            <div class="t">📍 Território · Desertos Vet</div>
+                            <div class="d">Produtores com rebanho alto e zero suporte técnico — começando pelo TO.</div>
+                        </div>
+                        <div class="pitch-step" @click="go('matching')">
+                            <div class="n">2 · RECOMENDAR</div>
+                            <div class="t">🎯 Matching genético</div>
+                            <div class="d">O touro certo para o perfil de cada fazenda, por característica.</div>
+                        </div>
+                        <div class="pitch-step" @click="go('matching')">
+                            <div class="n">3 · PROVAR &amp; FECHAR</div>
+                            <div class="t">💡 Parecer com ROI</div>
+                            <div class="d">"Dose R$190 → +R$258/bezerro" — a justificativa que vende o premium.</div>
+                        </div>
+                    </div>
+                    <div class="pitch-ms">
+                        🐂 <span>Catálogo em destaque: <b>Monte Sião Genética</b> — 12 touros · R$190–390/dose · ROI provado no parecer</span>
+                        <a @click="arbCentral='Monte Sião Genética'; loaded.arbitragem=false; go('arbitragem')" style="margin-left:auto;color:#9fd29f;cursor:pointer;text-decoration:underline;">ver no app →</a>
+                    </div>
+                </div>
+
                 <div class="kpi-grid">
                     <div class="kpi k2 clickable" @click="go('matching')">
                         <span class="kico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 3c0 6 14 6 14 12M19 3c0 6-14 6-14 12M5 21c0-1.5 14-1.5 14 0M5 3c0-.5 14-.5 14 0"/><path d="M7 7h10M8 11h8M8 14h8M7 18h10"/></svg></span>
                         <div><div class="value" x-text="fmt(stats.reprodutores)"></div><div class="label">Reprodutores cadastrados</div><div class="ctx">21 raças · corte e leite</div><div class="more">ver matching →</div></div>
+                    </div>
+                    <div class="kpi k2 clickable" @click="go('matrizes')">
+                        <span class="kico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5c0 4 3 6 7 6s7-2 7-6"/><path d="M5 5C4 5 3 6 3 8M19 5c1 0 2 1 2 3"/><path d="M12 11v3M9 21a3 3 0 0 1 6 0"/><circle cx="9.5" cy="16.5" r=".6"/><circle cx="14.5" cy="16.5" r=".6"/></svg></span>
+                        <div><div class="value" x-text="fmt(stats.matrizes)"></div><div class="label">Matrizes cadastradas</div><div class="ctx">doadoras · mérito por progênie</div><div class="more">ver matrizes →</div></div>
                     </div>
                     <div class="kpi k2 clickable" @click="go('matching')">
                         <span class="kico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17c0-3 1.5-5 4-5 1.5 0 2 1 4 1s2.5-1 4-1c2.5 0 4 2 4 5"/><path d="M6 12V8c0-1.5-1-2.5-2.5-2.5M18 12V8c0-1.5 1-2.5 2.5-2.5"/><path d="M9 21h6M10 17v4M14 17v4"/></svg></span>
@@ -554,6 +676,11 @@
                         <option value="">Todas</option>
                         <template x-for="r in racas" :key="r.id"><option :value="r.id" x-text="r.nome"></option></template>
                     </select>
+                    <label>Central:</label>
+                    <select x-ref="arbCentralSel" x-model="arbCentral" @change="loadArbitragem()">
+                        <option value="">Todas</option>
+                        <template x-for="c in centrais" :key="c.central"><option :value="c.central" x-text="c.central"></option></template>
+                    </select>
                 </div>
                 <div class="card">
                     <div class="loading" x-show="loading.arbitragem">Carregando…</div>
@@ -571,7 +698,7 @@
                                 </tr></thead>
                                 <tbody>
                                     <template x-for="(row, i) in page(sorted(arbitragem, 'arb'), 'arbitragem')" :key="row.registro + row.central + i">
-                                        <tr :class="{best: row.preco_por_iqgg !== null && pageIdx.arbitragem===0 && i<3}">
+                                        <tr :class="{best: row.preco_por_iqgg !== null && pageIdx.arbitragem===0 && i<3}" style="cursor:pointer" @click="abrirTouro(row.id)" title="Ver ficha completa">
                                             <td data-label="Touro" x-text="row.nome_touro"></td>
                                             <td data-label="Raça" x-text="row.raca"></td>
                                             <td data-label="Central" x-text="row.central"></td>
@@ -731,7 +858,17 @@
                             <div class="v" x-text="valorAgregado(matchResult[0])"></div>
                             <div class="l">Valor agregado / filho(a)</div>
                         </div>
+                        <div class="tm-value" x-show="matchResult[0].roi_dose">
+                            <div class="v" x-text="(matchResult[0].roi_dose||'') + 'x'"></div>
+                            <div class="l">Retorno por dose (ROI)</div>
+                        </div>
                     </div>
+                    <p class="subtitle" x-show="matchResult[0].roi_dose" style="margin:10px 4px 0;background:#eef7ea;border-left:3px solid #4a9e4a;padding:10px 14px;border-radius:6px;">
+                        💡 <b>Justificativa do preço:</b> a dose de <b x-text="brl(matchResult[0].preco_dose)"></b> gera um bezerro
+                        <b style="color:#2d5a2d" x-text="'+' + valorAgregado(matchResult[0])"></b> mais valioso que a média da raça —
+                        retorno de <b x-text="(matchResult[0].roi_dose||'') + 'x'"></b> sobre o custo da dose
+                        (lucro de <b style="color:#2d5a2d" x-text="brl(matchResult[0].lucro_bezerro)"></b> por cria).
+                    </p>
                 </template>
 
                 <div class="card" x-show="matchRan">
@@ -739,7 +876,7 @@
                     <template x-if="!loading.matching">
                         <div>
                             <table x-show="matchResult.length">
-                                <colgroup><col style="width:8%"><col style="width:19%"><col style="width:11%"><col style="width:13%"><col style="width:10%"><col style="width:9%"><col style="width:10%"><col style="width:9%"><col style="width:11%"></colgroup>
+                                <colgroup><col style="width:7%"><col style="width:17%"><col style="width:9%"><col style="width:12%"><col style="width:9%"><col style="width:8%"><col style="width:9%"><col style="width:8%"><col style="width:11%"><col style="width:10%"></colgroup>
                                 <thead><tr>
                                     <th class="num sortable" @click="setSort('match','score','num')">Score<span x-text="sortArrow('match','score')"></span></th>
                                     <th class="sortable" @click="setSort('match','nome','txt')">Touro<span x-text="sortArrow('match','nome')"></span></th>
@@ -750,6 +887,7 @@
                                     <th class="num sortable" @click="setSort('match','dep_prioritaria','num')">DEP prior.<span x-text="sortArrow('match','dep_prioritaria')"></span></th>
                                     <th class="num sortable" @click="setSort('match','preco_por_iqgg','num')">R$/IQGg<span x-text="sortArrow('match','preco_por_iqgg')"></span></th>
                                     <th class="num sortable" @click="setSort('match','valor_agregado','num')">Valor agregado 💰<span x-text="sortArrow('match','valor_agregado')"></span></th>
+                                    <th class="num sortable" @click="setSort('match','roi_dose','num')">ROI dose<span x-text="sortArrow('match','roi_dose')"></span></th>
                                 </tr></thead>
                                 <tbody>
                                     <template x-for="row in sorted(matchResult, 'match')" :key="row.id">
@@ -763,6 +901,7 @@
                                             <td data-label="DEP prior." class="num" x-text="row.dep_prioritaria !== null ? Number(row.dep_prioritaria).toFixed(2) : '—'"></td>
                                             <td data-label="R$/IQGg" class="num" x-text="row.preco_por_iqgg !== null ? brl(row.preco_por_iqgg) : '—'"></td>
                                             <td data-label="Valor agregado" class="num" style="color:#2d5a2d;font-weight:700" x-text="valorAgregado(row)"></td>
+                                            <td data-label="ROI dose" class="num"><span x-show="row.roi_dose" class="badge" :class="row.roi_dose>=2?'score-high':(row.roi_dose>=1?'score-mid':'score-low')" x-text="(row.roi_dose||'')+'x'"></span><span x-show="!row.roi_dose">—</span></td>
                                         </tr>
                                     </template>
                                 </tbody>
@@ -783,6 +922,341 @@
                         <span x-text="exportando ? 'Gerando PDF…' : '📄 Exportar Parecer PDF'"></span>
                     </button>
                 </div>
+            </section>
+
+            <!-- ============ MATRIZES (fêmeas) ============ -->
+            <section x-show="section==='matrizes'">
+                <h2>🐄 Matrizes</h2>
+                <p class="subtitle">Doadoras e matrizes ranqueadas pelo <b>mérito da progênie</b> (filhos touros avaliados), derivado do pedigree da base genética. Clique numa linha para ver os filhos e o IQGg de cada um.</p>
+                <div class="toolbar">
+                    <label>Raça:</label>
+                    <select x-model="matFilter.raca" @change="loadMatrizes()">
+                        <option value="">Todas</option>
+                        <template x-for="r in racasTodas" :key="r.sigla"><option :value="r.sigla" x-text="r.nome"></option></template>
+                    </select>
+                    <label>Mín. filhos:</label>
+                    <select x-model.number="matFilter.min" @change="loadMatrizes()">
+                        <option :value="1">1+</option>
+                        <option :value="3">3+</option>
+                        <option :value="5">5+</option>
+                        <option :value="10">10+</option>
+                    </select>
+                    <input type="text" x-model.debounce.400ms="matFilter.q" @input="loadMatrizes()" placeholder="nome ou registro…" style="padding:7px 10px;">
+                </div>
+
+                <div class="loading" x-show="matLoading">Carregando matrizes…</div>
+                <template x-if="!matLoading">
+                    <div class="card">
+                        <table x-show="matrizes.length">
+                            <colgroup><col style="width:25%"><col style="width:11%"><col style="width:6%"><col style="width:18%"><col style="width:8%"><col style="width:10%"><col style="width:11%"><col style="width:11%"></colgroup>
+                            <thead><tr>
+                                <th class="sortable" @click="setSort('mat','nome','txt')">Matriz<span x-text="sortArrow('mat','nome')"></span></th>
+                                <th class="sortable" @click="setSort('mat','registro','txt')">Registro<span x-text="sortArrow('mat','registro')"></span></th>
+                                <th class="sortable" @click="setSort('mat','raca_sigla','txt')">Raça<span x-text="sortArrow('mat','raca_sigla')"></span></th>
+                                <th class="sortable" @click="setSort('mat','pai_nome','txt')">Pai (avô materno)<span x-text="sortArrow('mat','pai_nome')"></span></th>
+                                <th class="num sortable" @click="setSort('mat','filhos_touros','num')">Filhos<span x-text="sortArrow('mat','filhos_touros')"></span></th>
+                                <th class="num sortable" @click="setSort('mat','filhos_avaliados','num')">Avaliados<span x-text="sortArrow('mat','filhos_avaliados')"></span></th>
+                                <th class="num sortable" @click="setSort('mat','iqgg_medio_filhos','num')">IQGg médio<span x-text="sortArrow('mat','iqgg_medio_filhos')"></span></th>
+                                <th class="num sortable" @click="setSort('mat','iqgg_melhor_filho','num')">Melhor<span x-text="sortArrow('mat','iqgg_melhor_filho')"></span></th>
+                            </tr></thead>
+                            <tbody>
+                                <template x-for="m in sorted(matrizes,'mat')" :key="m.id">
+                                    <tr style="cursor:pointer" @click="abrirMatriz(m.id)" title="Ver progênie">
+                                        <td data-label="Matriz" x-text="m.nome"></td>
+                                        <td data-label="Registro" x-text="m.registro"></td>
+                                        <td data-label="Raça" x-text="m.raca_sigla"></td>
+                                        <td data-label="Pai" x-text="m.pai_nome || '—'"></td>
+                                        <td data-label="Filhos" class="num" x-text="m.filhos_touros"></td>
+                                        <td data-label="Avaliados" class="num" x-text="m.filhos_avaliados"></td>
+                                        <td data-label="IQGg médio" class="num" x-text="m.iqgg_medio_filhos != null ? Number(m.iqgg_medio_filhos).toFixed(2) : '—'"></td>
+                                        <td data-label="Melhor" class="num" style="color:#2d5a2d;font-weight:700" x-text="m.iqgg_melhor_filho != null ? Number(m.iqgg_melhor_filho).toFixed(2) : '—'"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                        <div class="empty" x-show="!matrizes.length">Nenhuma matriz encontrada com esse filtro.</div>
+                        <div class="pager" x-show="matrizes.length"><span x-text="matrizes.length + ' matrizes (top por mérito de progênie)'"></span></div>
+                    </div>
+                </template>
+            </section>
+
+            <!-- ============ ACASALAMENTO (Cruzamento livre + Sugestões) ============ -->
+            <section x-show="section==='acasalamento'">
+                <h2>💞 Acasalamento</h2>
+                <p class="subtitle">Cruze <b>qualquer touro com qualquer vaca</b> e veja o <b>bezerro previsto</b> — ou peça as melhores sugestões. Cruzamento entre <b>parentes é bloqueado</b> pelo pedigree.</p>
+
+                <div class="chips" style="margin-bottom:14px;">
+                    <span class="chip" :class="{on: acMode==='livre'}" @click="acMode='livre'">🔀 Cruzamento livre</span>
+                    <span class="chip" :class="{on: acMode==='sugestoes'}" @click="acMode='sugestoes'">⭐ Sugestões de touro</span>
+                </div>
+
+                <!-- prioridade guia SÓ a sugestão de touro (a previsão do bezerro é sempre completa) -->
+                <template x-if="acMode==='sugestoes'">
+                    <div>
+                        <div style="margin:6px 0;"><label style="font-weight:600;color:#33503a;">Prioridade para a sugestão de touro (uma ou mais):</label></div>
+                        <div class="chips" style="margin-bottom:18px;">
+                            <template x-for="t in TRAITS" :key="t.k">
+                                <span class="chip" :class="{on: acTraits.includes(t.k)}" @click="toggleTrait(t.k)" x-text="t.lbl"></span>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- ===== MODO: CRUZAMENTO LIVRE ===== -->
+                <div x-show="acMode==='livre'">
+                    <div class="pick-grid">
+                        <div>
+                            <label style="font-weight:600;">🐂 Touro</label>
+                            <template x-if="!livre.touro">
+                                <div class="picker">
+                                    <div class="toolbar" style="margin:8px 0;">
+                                        <select x-model="livre.touroRaca" @change="buscarTouro()" style="max-width:160px;">
+                                            <option value="">Raça</option>
+                                            <template x-for="r in racasComDado()" :key="r.sigla"><option :value="r.sigla" x-text="r.nome"></option></template>
+                                        </select>
+                                        <select x-model="livre.touroUf" @change="buscarTouro()" style="max-width:80px;">
+                                            <option value="">UF</option>
+                                            <template x-for="u in ufs" :key="u"><option :value="u" x-text="u"></option></template>
+                                        </select>
+                                        <input type="text" x-model.debounce.350ms="livre.touroQ" @input="buscarTouro()" placeholder="nome ou registro do touro…" style="flex:1;padding:7px 10px;">
+                                    </div>
+                                    <div class="pick-list" x-show="livre.touroRes.length">
+                                        <template x-for="a in livre.touroRes" :key="a.id">
+                                            <div class="it" @click="selTouro(a)"><b x-text="a.nome"></b> · <span x-text="a.raca_sigla"></span> · IQGg <span x-text="fmtNum(a.iqgg,1)"></span><span x-show="a.preco_dose" x-text="' · '+brl(a.preco_dose)"></span> · <span style="color:#888" x-text="'📍 '+localStr(a)"></span></div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                            <template x-if="livre.touro">
+                                <div class="pick-sel">
+                                    <div style="flex:1"><b x-text="livre.touro.nome"></b><br><span class="subtitle" x-text="livre.touro.raca_sigla + ' · Reg. ' + livre.touro.registro + ' · IQGg ' + fmtNum(livre.touro.iqgg,1)"></span></div>
+                                    <button @click="livre.touro=null; livre.touroRes=[]; acCruz=null">trocar</button>
+                                </div>
+                            </template>
+                        </div>
+                        <div>
+                            <label style="font-weight:600;">🐄 Vaca (matriz)</label>
+                            <template x-if="!livre.vaca">
+                                <div class="picker">
+                                    <div class="toolbar" style="margin:8px 0;">
+                                        <select x-model="livre.vacaRaca" @change="buscarVaca()" style="max-width:160px;">
+                                            <option value="">Raça</option>
+                                            <template x-for="r in racasComDado()" :key="r.sigla"><option :value="r.sigla" x-text="r.nome"></option></template>
+                                        </select>
+                                        <select x-model="livre.vacaUf" @change="buscarVaca()" style="max-width:80px;">
+                                            <option value="">UF</option>
+                                            <template x-for="u in ufs" :key="u"><option :value="u" x-text="u"></option></template>
+                                        </select>
+                                        <input type="text" x-model.debounce.350ms="livre.vacaQ" @input="buscarVaca()" placeholder="nome ou registro da vaca…" style="flex:1;padding:7px 10px;">
+                                    </div>
+                                    <div class="pick-list" x-show="livre.vacaRes.length">
+                                        <template x-for="a in livre.vacaRes" :key="a.id">
+                                            <div class="it" @click="selVaca(a)"><b x-text="a.nome"></b> · <span x-text="a.raca_sigla"></span> · IQGg <span x-text="fmtNum(a.merito_iqgg,1)"></span><span x-show="a.merito_origem==='propria'" style="color:#c47a1a"> (próprio)</span> · <span style="color:#888" x-text="'📍 '+localStr(a)"></span></div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                            <template x-if="livre.vaca">
+                                <div class="pick-sel">
+                                    <div style="flex:1"><b x-text="livre.vaca.nome"></b><br><span class="subtitle" x-text="livre.vaca.raca_sigla + ' · Reg. ' + livre.vaca.registro"></span></div>
+                                    <button @click="livre.vaca=null; livre.vacaRes=[]; acCruz=null">trocar</button>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div class="empty" x-show="!(livre.touro && livre.vaca)" style="margin-top:16px;">Selecione um touro e uma vaca para ver o bezerro previsto.</div>
+                    <div class="loading" x-show="acCruzLoading">Calculando…</div>
+
+                    <template x-if="acCruz && livre.touro && livre.vaca && !acCruzLoading">
+                        <div style="margin-top:18px;">
+                            <div class="blocked-banner" x-show="acCruz.relacao.bloqueio" style="margin-bottom:14px;">
+                                🚫 Cruzamento bloqueado — <span x-text="acCruz.relacao.label"></span>. Consanguinidade próxima; escolha outro animal.
+                            </div>
+                            <div class="cross-row" style="cursor:default;" :style="acCruz.relacao.bloqueio ? 'opacity:.5;filter:grayscale(.4)' : ''">
+                                <div class="cross-box cross-bull" style="cursor:pointer" @click="abrirTouro(acCruz.touro.id)" title="Ver ficha do pai">
+                                    <div class="t">🐂 Touro (pai) ›</div><div class="n" x-text="acCruz.touro.nome"></div>
+                                    <div class="v">IQGg <span x-text="fmtNum(acCruz.touro.iqgg,1)"></span></div>
+                                    <div class="v" style="font-size:11px;color:#888" x-text="'📍 ' + localStr(acCruz.touro)"></div>
+                                </div>
+                                <div class="cross-op">✕</div>
+                                <div class="cross-box cross-cow" style="cursor:pointer" @click="abrirMatriz(acCruz.vaca.id)" title="Ver ficha da mãe">
+                                    <div class="t">🐄 Vaca (mãe) ›</div><div class="n" x-text="acCruz.vaca.nome"></div>
+                                    <div class="v">IQGg <span x-text="fmtNum(acCruz.vaca.iqgg,1)"></span></div>
+                                    <div class="v" style="font-size:11px;color:#888" x-text="'📍 ' + localStr(acCruz.vaca)"></div>
+                                </div>
+                                <div class="cross-op">=</div>
+                                <div class="cross-box cross-calf" style="cursor:pointer" @click="abrirFilhote(acCruz.touro.id, acCruz.vaca.id)" title="Ver ficha do bezerro">
+                                    <div class="t">🐮 Bezerro previsto › <span x-show="acCruz.f1" style="color:#c47a1a">· F1</span></div>
+                                    <div class="n">IQGg <span x-text="fmtNum(acCruz.calf.iqgg.cria,1)"></span></div>
+                                    <div class="v" x-show="acCruz.calf.iqgg.vs_vaca!=null">
+                                        vs mãe <span :style="deltaStyle(acCruz.calf.iqgg.vs_vaca)" x-text="fmtDelta(acCruz.calf.iqgg.vs_vaca,1)"></span>
+                                        · vs pai <span :style="deltaStyle(acCruz.calf.iqgg.vs_touro)" x-text="fmtDelta(acCruz.calf.iqgg.vs_touro,1)"></span>
+                                    </div>
+                                </div>
+                                <div class="cross-meta">
+                                    <span :style="acCruz.relacao.severidade==='ok' ? 'color:#4a9e4a;font-weight:600' : (acCruz.relacao.severidade==='alerta'?'color:#c47a1a;font-weight:600':'color:#9a2b2b;font-weight:700')" x-text="(acCruz.relacao.severidade==='ok'?'✓ ':'⚠ ')+acCruz.relacao.label"></span>
+                                </div>
+                            </div>
+                            <div class="card" style="margin-top:14px;">
+                                <table class="mini">
+                                    <thead><tr><th>Característica</th><th class="num">Touro (pai)</th><th class="num">Vaca (mãe)</th><th class="num">Bezerro previsto</th><th class="num">vs pai</th><th class="num">vs mãe</th></tr></thead>
+                                    <tbody>
+                                        <tr style="background:#f3f9f1;">
+                                            <td><b>Índice geral (IQGg)</b></td>
+                                            <td class="num" x-text="fmtNum(acCruz.calf.iqgg.touro)"></td>
+                                            <td class="num" x-text="fmtNum(acCruz.calf.iqgg.vaca)"></td>
+                                            <td class="num" style="color:#2d5a2d;font-weight:700" x-text="fmtNum(acCruz.calf.iqgg.cria)"></td>
+                                            <td class="num" :style="deltaStyle(acCruz.calf.iqgg.vs_touro)" x-text="fmtDelta(acCruz.calf.iqgg.vs_touro)"></td>
+                                            <td class="num" :style="deltaStyle(acCruz.calf.iqgg.vs_vaca)" x-text="fmtDelta(acCruz.calf.iqgg.vs_vaca)"></td>
+                                        </tr>
+                                        <template x-for="k in (acCruz && acCruz.calf ? Object.keys(acCruz.calf.traits) : [])" :key="k">
+                                            <tr>
+                                                <td x-text="acCruz.calf.trait_labels[k]"></td>
+                                                <td class="num" x-text="fmtNum(acCruz.calf.traits[k].touro)"></td>
+                                                <td class="num" x-text="fmtNum(acCruz.calf.traits[k].vaca)"></td>
+                                                <td class="num" style="color:#2d5a2d;font-weight:700" x-text="fmtNum(acCruz.calf.traits[k].cria)"></td>
+                                                <td class="num" :style="deltaStyle(acCruz.calf.traits[k].vs_touro)" x-text="fmtDelta(acCruz.calf.traits[k].vs_touro)"></td>
+                                                <td class="num" :style="deltaStyle(acCruz.calf.traits[k].vs_vaca)" x-text="fmtDelta(acCruz.calf.traits[k].vs_vaca)"></td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                                <p class="subtitle" style="margin:8px 12px;font-size:12px;">
+                                    <b>vs pai / vs mãe</b> = quanto o bezerro previsto ganha (verde) ou perde (vermelho) em relação a cada genitor. A cria fica na média dos pais: ganha sobre o genitor inferior e regride frente ao superior.
+                                </p>
+                            </div>
+                            <div style="margin-top:14px;text-align:right;">
+                                <button class="run-btn" @click="exportarCruzamentoPDF()" :disabled="exportando" style="background:#1a3a1a;">
+                                    <span x-text="exportando ? 'Gerando PDF…' : '📄 Exportar parecer PDF'"></span>
+                                </button>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- ===== MODO: SUGESTÕES ===== -->
+                <div x-show="acMode==='sugestoes'">
+                    <!-- seletor rico de matriz (busca + filtro raça + ordenação) -->
+                    <div class="toolbar" x-show="!acasalDam">
+                        <label>Buscar matriz:</label>
+                        <input type="text" x-model.debounce.350ms="acVacaQ" @input="loadAcList()" placeholder="nome ou registro…" style="flex:1;min-width:150px;padding:7px 10px;">
+                        <label>Raça:</label>
+                        <select x-model="sugVacaRaca" @change="loadAcList()">
+                            <option value="">Todas</option>
+                            <template x-for="r in racasComDado()" :key="r.sigla"><option :value="r.sigla" x-text="r.nome"></option></template>
+                        </select>
+                        <label>UF:</label>
+                        <select x-model="sugVacaUf" @change="loadAcList()">
+                            <option value="">Todas</option>
+                            <template x-for="u in ufs" :key="u"><option :value="u" x-text="u"></option></template>
+                        </select>
+                        <label>Ordenar por:</label>
+                        <select x-model="acSort" @change="ordenarAcList()">
+                            <option value="medio">IQGg (mérito)</option>
+                            <option value="melhor">Melhor filho</option>
+                            <option value="filhos">Nº filhos avaliados</option>
+                            <option value="nome">Nome (A–Z)</option>
+                        </select>
+                    </div>
+
+                    <div class="card" x-show="!acasalDam" style="margin-bottom:14px;">
+                        <div class="loading" x-show="acListLoading">Carregando matrizes…</div>
+                        <div class="pick-list" x-show="!acListLoading" style="position:static;max-height:360px;box-shadow:none;border:none;margin:0;">
+                            <template x-for="m in acList" :key="m.id">
+                                <div class="it" @click="escolherMatrizSug(m)" style="display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;">
+                                    <b x-text="m.nome" style="min-width:180px;"></b>
+                                    <span class="subtitle" x-text="m.registro"></span>
+                                    <span style="color:#2d5a2d;font-weight:600;">IQGg <span x-text="fmtNum(m.merito_iqgg,2)"></span></span>
+                                    <template x-if="m.merito_origem==='propria'">
+                                        <span class="subtitle" style="color:#c47a1a;">genômico próprio</span>
+                                    </template>
+                                    <template x-if="m.merito_origem!=='propria'">
+                                        <span class="subtitle"><span x-text="(m.filhos_avaliados ?? 0)"></span> filhos · melhor <span x-text="fmtNum(m.iqgg_melhor_filho,1)"></span></span>
+                                    </template>
+                                    <span x-show="m.raca_sigla" class="subtitle" x-text="m.raca_sigla"></span>
+                                </div>
+                            </template>
+                            <div class="empty" x-show="!acList.length && !acListLoading">Nenhuma matriz encontrada com esse filtro.</div>
+                        </div>
+                    </div>
+
+                    <!-- card de detalhe da matriz escolhida -->
+                    <div class="pick-sel" x-show="acasalDam" style="margin-bottom:14px;align-items:flex-start;">
+                        <div style="flex:1;">
+                            <b x-text="(matrizDetalhe && matrizDetalhe.nome) || (acasalDam && acasalDam.nome)"></b>
+                            <span class="subtitle" x-show="matrizDetalhe" x-text="matrizDetalhe ? (' · ' + matrizDetalhe.raca_sigla + ' · Reg. ' + matrizDetalhe.registro) : ''"></span>
+                            <div class="subtitle" x-show="matrizDetalhe" style="margin-top:5px;line-height:1.6;">
+                                Pai (avô materno): <b x-text="(matrizDetalhe && matrizDetalhe.pai_nome) || '—'"></b> ·
+                                <template x-if="matrizDetalhe && matrizDetalhe.merito_origem==='propria'">
+                                    <span>IQGg genômico próprio <b x-text="fmtNum(matrizDetalhe.iqgg_proprio,2)"></b> <span style="color:#c47a1a">(vaca avaliada)</span></span>
+                                </template>
+                                <template x-if="!matrizDetalhe || matrizDetalhe.merito_origem!=='propria'">
+                                    <span>IQGg médio dos filhos <b x-text="fmtNum(matrizDetalhe && matrizDetalhe.iqgg_medio_filhos,2)"></b> ·
+                                    melhor filho <b x-text="fmtNum(matrizDetalhe && matrizDetalhe.iqgg_melhor_filho,1)"></b> ·
+                                    <b x-text="(matrizDetalhe && matrizDetalhe.filhos_avaliados) ?? 0"></b> de <b x-text="(matrizDetalhe && matrizDetalhe.filhos_touros) ?? 0"></b> filhos avaliados</span>
+                                </template>
+                            </div>
+                        </div>
+                        <button @click="trocarMatriz()">trocar vaca</button>
+                    </div>
+
+                    <div class="toolbar" x-show="acasalDam">
+                        <label>Raça do touro:</label>
+                        <select x-model="sug.raca" @change="loadAcasalamento()">
+                            <option value="">Mesma da vaca</option>
+                            <template x-for="r in racasComDado()" :key="r.sigla"><option :value="r.sigla" x-text="r.nome"></option></template>
+                        </select>
+                        <label>UF do touro:</label>
+                        <select x-model="sug.uf" @change="loadAcasalamento()">
+                            <option value="">Todas</option>
+                            <template x-for="u in ufs" :key="u"><option :value="u" x-text="u"></option></template>
+                        </select>
+                        <label>Orçamento/dose:</label>
+                        <input type="number" x-model.number="acasalReq.orcamento" @change="loadAcasalamento()" placeholder="R$ máx" style="width:100px;padding:7px 10px;">
+                    </div>
+
+                    <div class="loading" x-show="acasalLoading">Calculando…</div>
+                    <template x-if="!acasalLoading && acasal && acasalDam">
+                        <div>
+                            <p class="subtitle" style="margin:6px 0 16px;">
+                                Matriz <b x-text="acasal.matriz.nome"></b> · IQGg <b x-text="acasal.matriz.iqgg ?? '—'"></b> · <span x-text="acasal.matriz.n_filhos + ' filhos'"></span>.
+                                De <b x-text="acasal.candidatos"></b> touros, <b style="color:#b23b3b" x-text="acasal.excluidos_parentesco"></b> excluídos por parentesco.
+                            </p>
+                            <template x-for="(b,i) in acasal.recomendacoes" :key="b.id">
+                                <div class="cross-row" style="cursor:default;">
+                                    <div class="cross-box cross-bull" style="cursor:pointer" @click="abrirTouro(b.id)" title="Ver ficha do pai">
+                                        <div class="t">🐂 #<span x-text="i+1"></span> · <span x-text="b.raca_sigla"></span> ›</div>
+                                        <div class="n" x-text="b.nome"></div>
+                                        <div class="v">IQGg <span x-text="fmtNum(b.iqgg,1)"></span> · <span x-text="brl(b.preco_dose)"></span></div>
+                                        <div class="v" style="font-size:11px;color:#888" x-text="'📍 ' + localStr(b)"></div>
+                                    </div>
+                                    <div class="cross-op">✕</div>
+                                    <div class="cross-box cross-cow" style="cursor:pointer" @click="abrirMatriz(acasal.matriz.id)" title="Ver ficha da mãe">
+                                        <div class="t">🐄 Vaca (mãe) ›</div><div class="n" x-text="acasal.matriz.nome"></div>
+                                        <div class="v">IQGg <span x-text="acasal.matriz.iqgg ?? '—'"></span></div>
+                                        <div class="v" style="font-size:11px;color:#888" x-text="'📍 ' + localStr(acasal.matriz)"></div>
+                                    </div>
+                                    <div class="cross-op">=</div>
+                                    <div class="cross-box cross-calf" style="cursor:pointer" @click="abrirFilhote(b.id, acasal.matriz.id)" title="Ver ficha do bezerro">
+                                        <div class="t">🐮 Bezerro previsto ›</div>
+                                        <div class="n">IQGg <span x-text="fmtNum(b.prog_iqgg,1)"></span></div>
+                                        <div class="v" x-text="calfTraitsLabel(b)"></div>
+                                    </div>
+                                    <div class="cross-meta">
+                                        <span :style="b.parente ? 'color:#c47a1a;font-weight:600' : 'color:#4a9e4a;font-weight:600'" x-text="(b.parente?'⚠ ':'✓ ')+b.parentesco"></span>
+                                        <span>Score <span class="badge" :class="scoreClass(b.score)" x-text="Number(b.score).toFixed(3)"></span></span>
+                                    </div>
+                                </div>
+                            </template>
+                            <div class="empty" x-show="!acasal.recomendacoes.length">Nenhum touro disponível nesse filtro.</div>
+                        </div>
+                    </template>
+                </div>
+
+                <p class="subtitle" style="margin:14px 0 0;font-size:12px;">
+                    <b>Bezerro previsto</b> = mérito médio dos pais (½ touro + ½ vaca). Parentesco pelo pedigree: genitor×descendente, irmãos, avô×neto, ancestral comum. Protótipo sobre base de exemplo.
+                </p>
             </section>
 
             <!-- ============ MARKETPLACE (Oferta × Demanda) ============ -->
@@ -1196,7 +1670,7 @@
     <div class="modal-overlay" x-show="touroModal" @click="fecharTouro()" style="display:none;">
         <div class="modal" @click.stop x-show="touroModal">
             <template x-if="touro">
-                <div>
+                <div class="modal-shell">
                     <div class="modal-head">
                         <div>
                             <h2 x-text="touro.nome" style="font-size:20px;"></h2>
@@ -1237,6 +1711,145 @@
         </div>
     </div>
 
+    <!-- Modal: ficha da matriz (progênie) -->
+    <div class="modal-overlay" x-show="matrizModal" @click="fecharMatriz()" style="display:none;">
+        <div class="modal" @click.stop x-show="matrizModal" style="width:min(94vw,760px);max-width:760px;">
+            <template x-if="matriz">
+                <div class="modal-shell">
+                    <div class="modal-head">
+                        <div>
+                            <h2 x-text="matriz.nome" style="font-size:20px;"></h2>
+                            <p class="subtitle" style="margin:2px 0 0;" x-text="(matriz.raca_sigla||'NEL') + ' · Reg. ' + (matriz.registro||'—') + ' · ♀ matriz'"></p>
+                        </div>
+                        <span class="modal-close" @click="fecharMatriz()">✕</span>
+                    </div>
+                    <div class="modal-body">
+                        <button class="run-btn" @click="abrirAcasalamento(matriz)" style="width:100%;margin-bottom:16px;">🎯 Acasalamento dirigido — recomendar touros</button>
+                        <div class="modal-cols">
+                            <div>
+                                <table class="mini">
+                                    <tbody>
+                                        <tr><td>Pai (avô materno)</td><td class="num" x-text="matriz.pai_nome || '—'"></td></tr>
+                                        <tr><td>Filhos touros</td><td class="num" x-text="matriz.filhos_touros"></td></tr>
+                                        <tr><td>Filhos avaliados</td><td class="num" x-text="matriz.filhos_avaliados"></td></tr>
+                                        <tr><td>IQGg médio dos filhos</td><td class="num" x-text="depVal(matriz.iqgg_medio_filhos)"></td></tr>
+                                        <tr><td>Melhor filho (IQGg)</td><td class="num" x-text="depVal(matriz.iqgg_melhor_filho)"></td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div>
+                                <h3 style="font-size:14px;margin:0 0 8px;color:#1a3a1a;">Progênie — filhos touros</h3>
+                                <table class="mini">
+                                    <tbody>
+                                        <template x-for="f in (matriz.filhos||[])" :key="f.id">
+                                            <tr style="cursor:pointer" @click="fecharMatriz(); abrirTouro(f.id)" title="Ver ficha do touro">
+                                                <td x-text="f.nome"></td>
+                                                <td class="num" x-text="depVal(f.iqgg)"></td>
+                                            </tr>
+                                        </template>
+                                        <tr x-show="!(matriz.filhos||[]).length"><td colspan="2" style="color:#999">Sem filhos cadastrados.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Modal: ficha do bezerro (filhote previsto) -->
+    <div class="modal-overlay" x-show="filhoteModal" @click="fecharFilhote()" style="display:none;">
+        <div class="modal" @click.stop x-show="filhoteModal" style="width:min(92vw,720px);max-width:720px;">
+            <template x-if="filhote">
+                <div class="modal-shell">
+                    <div class="modal-head">
+                        <div>
+                            <h2 style="font-size:20px;">🐮 Bezerro previsto <span x-show="filhote.f1" style="color:#c47a1a;font-size:14px;">· F1</span></h2>
+                            <p class="subtitle" style="margin:2px 0 0;" x-text="'Filho de ' + filhote.touro.nome + ' (pai) × ' + filhote.vaca.nome + ' (mãe)'"></p>
+                            <p class="subtitle" style="margin:2px 0 0;font-size:12px;">📍 Pai: <b x-text="localStr(filhote.touro)"></b> · Mãe: <b x-text="localStr(filhote.vaca)"></b></p>
+                        </div>
+                        <span class="modal-close" @click="fecharFilhote()">✕</span>
+                    </div>
+                    <div class="modal-body">
+                        <div class="blocked-banner" x-show="filhote.relacao.bloqueio" style="margin-bottom:14px;">
+                            🚫 Cruzamento bloqueado — <span x-text="filhote.relacao.label"></span>. Consanguinidade próxima.
+                        </div>
+                        <div class="modal-cols">
+                            <div>
+                                <div style="text-align:center;margin:0 0 12px;">
+                                    <div style="font-size:13px;color:#777;">IQGg previsto da cria</div>
+                                    <div style="font-size:32px;font-weight:800;color:#2d5a2d;line-height:1.1;" x-text="fmtNum(filhote.calf.iqgg.cria,1)"></div>
+                                    <div style="font-size:13px;margin-top:2px;">
+                                        vs mãe <span :style="deltaStyle(filhote.calf.iqgg.vs_vaca)" x-text="fmtDelta(filhote.calf.iqgg.vs_vaca,1)"></span>
+                                        · vs pai <span :style="deltaStyle(filhote.calf.iqgg.vs_touro)" x-text="fmtDelta(filhote.calf.iqgg.vs_touro,1)"></span>
+                                    </div>
+                                </div>
+                                <div class="radar-wrap" style="height:230px;"><canvas id="filhoteChart"></canvas></div>
+                                <p class="subtitle" style="text-align:center;margin:4px 0 0;font-size:11px;">Altura relativa por característica (cada barra = % do maior entre pai/mãe/bezerro).</p>
+                            </div>
+                            <div>
+                                <table class="mini">
+                                    <thead><tr><th>Característica</th><th class="num">Pai</th><th class="num">Mãe</th><th class="num">Bezerro</th><th class="num">vs pai</th><th class="num">vs mãe</th></tr></thead>
+                                    <tbody>
+                                        <tr style="background:#f3f9f1;">
+                                            <td><b>Índice geral (IQGg)</b></td>
+                                            <td class="num" x-text="fmtNum(filhote.calf.iqgg.touro)"></td>
+                                            <td class="num" x-text="fmtNum(filhote.calf.iqgg.vaca)"></td>
+                                            <td class="num" style="font-weight:700;color:#2d5a2d" x-text="fmtNum(filhote.calf.iqgg.cria)"></td>
+                                            <td class="num" :style="deltaStyle(filhote.calf.iqgg.vs_touro)" x-text="fmtDelta(filhote.calf.iqgg.vs_touro)"></td>
+                                            <td class="num" :style="deltaStyle(filhote.calf.iqgg.vs_vaca)" x-text="fmtDelta(filhote.calf.iqgg.vs_vaca)"></td>
+                                        </tr>
+                                        <template x-for="k in (filhote && filhote.calf ? Object.keys(filhote.calf.traits) : [])" :key="k">
+                                            <tr>
+                                                <td x-text="filhote.calf.trait_labels[k]"></td>
+                                                <td class="num" x-text="fmtNum(filhote.calf.traits[k].touro)"></td>
+                                                <td class="num" x-text="fmtNum(filhote.calf.traits[k].vaca)"></td>
+                                                <td class="num" style="font-weight:700;color:#2d5a2d" x-text="fmtNum(filhote.calf.traits[k].cria)"></td>
+                                                <td class="num" :style="deltaStyle(filhote.calf.traits[k].vs_touro)" x-text="fmtDelta(filhote.calf.traits[k].vs_touro)"></td>
+                                                <td class="num" :style="deltaStyle(filhote.calf.traits[k].vs_vaca)" x-text="fmtDelta(filhote.calf.traits[k].vs_vaca)"></td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div x-show="filhote.monetizacao" style="margin-top:20px;">
+                            <h3 style="font-size:14px;margin:0 0 8px;color:#1a3a1a;">💰 Como monetizar esta genética</h3>
+                            <div class="mon-row">
+                                <template x-for="ch in (filhote.monetizacao ? filhote.monetizacao.canais : [])" :key="ch.tipo">
+                                    <div class="mon-card" :class="{rec: ch.tipo===filhote.monetizacao.recomendado}">
+                                        <div class="mon-h">
+                                            <span x-text="ch.label"></span>
+                                            <span class="mon-badge" x-show="ch.tipo===filhote.monetizacao.recomendado">Recomendado</span>
+                                        </div>
+                                        <template x-if="ch.status==='ok' && ch.tipo==='dose'">
+                                            <div>
+                                                <div class="mon-v"><span x-text="brl(ch.preco)"></span><span style="font-size:11px;font-weight:600">/dose</span></div>
+                                                <div class="mon-s">
+                                                    <span x-show="ch.valor_cria!=null" x-text="'+'+brl(ch.valor_cria)+'/cria'"></span>
+                                                    <span x-show="ch.roi!=null" x-text="' · ROI '+Number(ch.roi).toFixed(1)+'×'"></span>
+                                                </div>
+                                            </div>
+                                        </template>
+                                        <template x-if="!(ch.status==='ok' && ch.tipo==='dose')">
+                                            <div><div class="mon-v nd">informar preço</div><div class="mon-s" x-text="ch.nota"></div></div>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
+                            <p class="mon-rac" x-html="filhote.monetizacao.racional"></p>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button @click="fecharFilhote(); abrirTouro(filhote.touro.id)" style="flex:1;">🐂 Ficha do pai</button>
+                        <button @click="fecharFilhote(); abrirMatriz(filhote.vaca.id)" style="flex:1;">🐄 Ficha da mãe</button>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
     <script>
         // Se a sessão expirar, qualquer chamada /api/* responde 401 -> volta ao login.
         const _origFetch = window.fetch;
@@ -1259,7 +1872,7 @@
                 ovRacas: [], ovRegioes: [], ovAptidao: {},
                 ufs: [], racas: [],
                 whitespace: [], arbitragem: [], centrais: [], fazendas: [],
-                ufFilter: '', racaFilter: '', arbSegmento: '',
+                ufFilter: '', racaFilter: '', arbSegmento: '', arbCentral: '',
                 pageIdx: { whitespace: 0, arbitragem: 0 },
                 pageSize: 20,
                 loading: { whitespace: false, arbitragem: false, centrais: false, fazendas: false, matching: false, marketplace: false, mercado: false, demanda: false, territorio: false },
@@ -1275,6 +1888,23 @@
                 mapUf: '', mapMin: 100000, mapLayer: 'rebanho', _map: null, _mapLayer: null,
                 mapMunicipio: '', mapMunicipios: [], _mapPts: [],
                 touroModal: false, touro: null, _radar: null,
+                matrizes: [], matFilter: { raca: '', q: '', min: 1 }, matLoading: false,
+                matrizModal: false, matriz: null,
+                acasalModal: false, acasal: null, acasalLoading: false, acasalDam: null,
+                acasalReq: { prioridade: 'geral', orcamento: null },
+                acList: [], acListLoading: false,
+                acVacaQ: '', sugVacaRaca: '', sugVacaUf: '', acSort: 'medio', matrizDetalhe: null,
+                acMode: 'livre',
+                TRAITS: [
+                    { k: 'geral', lbl: 'Índice geral' }, { k: 'crescimento', lbl: 'Crescimento' },
+                    { k: 'carcaca', lbl: 'Carcaça' }, { k: 'precocidade', lbl: 'Precocidade' },
+                    { k: 'fertilidade', lbl: 'Fertilidade' }, { k: 'marmoreio', lbl: 'Marmoreio' },
+                ],
+                acTraits: ['geral'],
+                livre: { touro: null, vaca: null, touroQ: '', touroRaca: '', touroUf: '', touroRes: [], vacaQ: '', vacaRaca: '', vacaUf: '', vacaRes: [] },
+                acCruz: null, acCruzLoading: false,
+                sug: { raca: '', uf: '' },
+                filhoteModal: false, filhote: null, _fchart: null,
                 mercado: null, _chLeite: null, _chRebanho: null, _chAbate: null,
                 cnpjModal: false, cnpjData: null, cnpjLoading: false,
 
@@ -1296,7 +1926,7 @@
                 },
                 _secValida(s) {
                     const ok = ['visao', 'whitespace', 'arbitragem', 'rankings', 'matching',
-                                'marketplace', 'demanda', 'territorio', 'mapa', 'mercado'];
+                                'matrizes', 'acasalamento', 'marketplace', 'demanda', 'territorio', 'mapa', 'mercado'];
                     return ok.includes(s) ? s : 'visao';
                 },
                 async loadOverview() {
@@ -1318,9 +1948,13 @@
                 _activate(s) {
                     this.section = s;
                     this.mobileNav = false;
+                    // navegar entre seções fecha qualquer modal aberto
+                    this.touroModal = false; this.matrizModal = false; this.acasalModal = false; this.cnpjModal = false; this.filhoteModal = false;
+                    if (s === 'acasalamento' && !this.loaded.acasalamento) { this.loadAcList(); this.loaded.acasalamento = true; }
                     if (s === 'whitespace' && !this.loaded.whitespace) this.loadWhitespace();
                     if (s === 'arbitragem' && !this.loaded.arbitragem) this.loadArbitragem();
                     if (s === 'rankings' && !this.loaded.rankings) { this.loadCentrais(); this.loadFazendas(); this.loaded.rankings = true; }
+                    if (s === 'matrizes' && !this.loaded.matrizes) { this.loadMatrizes(); this.loaded.matrizes = true; }
                     if (s === 'marketplace' && !this.loaded.marketplace) { this.loadMarketplace(); this.loaded.marketplace = true; }
                     if (s === 'demanda' && !this.loaded.demanda) { this.loadDemanda(); this.loaded.demanda = true; }
                     if (s === 'territorio') {
@@ -1344,12 +1978,16 @@
                 },
                 async loadArbitragem() {
                     this.loading.arbitragem = true; this.pageIdx.arbitragem = 0;
+                    if (!this.centrais.length) await this.loadCentrais();   // p/ o filtro de central
                     const p = [];
                     if (this.racaFilter) p.push('raca=' + this.racaFilter);
                     if (this.arbSegmento) p.push('segmento=' + this.arbSegmento);
+                    if (this.arbCentral) p.push('central=' + encodeURIComponent(this.arbCentral));
                     const q = p.length ? ('?' + p.join('&')) : '';
                     this.arbitragem = await (await fetch('/api/arbitragem' + q)).json();
                     this.loaded.arbitragem = true; this.loading.arbitragem = false;
+                    // sincroniza o <select> de central (Alpine não reflete valor setado via código)
+                    this.$nextTick(() => { if (this.$refs.arbCentralSel) this.$refs.arbCentralSel.value = this.arbCentral; });
                 },
                 async loadCentrais() {
                     this.loading.centrais = true;
@@ -1685,23 +2323,32 @@
 
                 // ---- Ficha do touro (modal + radar) ----
                 async abrirTouro(id) {
-                    this.touro = null; this.touroModal = true;
+                    // busca ANTES de abrir — evita o flash com touro=null (bindings do
+                    // x-if avaliando em null durante o teardown = erros de console).
                     const data = await (await fetch('/api/touro/' + id)).json();
-                    if (data.error) { this.touroModal = false; alert('Touro não encontrado.'); return; }
-                    this.touro = data;
-                    this.$nextTick(() => {
-                        this.renderRadar();
-                        document.querySelectorAll('.modal').forEach(b => { b.scrollTop = 0; });  // abre no topo
-                    });
+                    if (data.error) { alert('Touro não encontrado.'); return; }
+                    this.touro = data; this.touroModal = true;
+                    this.$nextTick(() => { document.querySelectorAll('.modal').forEach(b => { b.scrollTop = 0; }); });
+                    this._drawAfterPaint(() => this.renderRadar());   // draw só após o modal pintar
                 },
                 fecharTouro() {
                     this.touroModal = false;
                     if (this._radar) { this._radar.destroy(); this._radar = null; }
                 },
+                // adia o draw p/ depois do paint do modal (2 frames = layout pronto)
+                _drawAfterPaint(fn) {
+                    this.$nextTick(() => requestAnimationFrame(() => requestAnimationFrame(() => {
+                        try { fn(); } catch (e) { /* noop */ }
+                    })));
+                },
                 renderRadar() {
                     const el = document.getElementById('radarTouro');
                     if (!el || typeof Chart === 'undefined' || !this.touro) return;
-                    if (this._radar) { this._radar.destroy(); this._radar = null; }
+                    // destrói QUALQUER chart preso ao canvas (não só nossa ref) — evita
+                    // acúmulo/"Canvas already in use" que dá o bug intermitente.
+                    const prev = Chart.getChart ? Chart.getChart(el) : null;
+                    if (prev) prev.destroy();
+                    this._radar = null;
                     const t = this.touro;
                     const labels = ['Crescim. (PS)', 'Ganho (GPD)', 'Carcaça (AOL)', 'Marmoreio', 'Fertil. (HP)', 'Precoc. (PES)'];
                     const vals = [t.dep_ps, t.dep_gpd, t.dep_aol, t.dep_mar, t.dep_hp, t.dep_pes].map(v => v == null ? 0 : Number(v));
@@ -1713,8 +2360,199 @@
                             plugins: { legend: { display: false } },
                             scales: { r: { ticks: { display: false } } } }
                     });
+                    this._chartResize(this._radar);
+                },
+                // Força o chart a remedir o container após o modal pintar — evita canvas
+                // com tamanho 0 (radar/barras vazias) em zoom/timing do navegador.
+                _chartResize(chart) {
+                    if (!chart) return;
+                    requestAnimationFrame(() => requestAnimationFrame(() => {
+                        try { if (chart.canvas && chart.canvas.isConnected) chart.resize(); } catch (e) { /* noop */ }
+                    }));
                 },
                 depVal(v) { return v == null ? '—' : Number(v).toFixed(2); },
+
+                // ---- Matrizes (fêmeas) ----
+                async loadMatrizes() {
+                    this.matLoading = true;
+                    const p = new URLSearchParams();
+                    if (this.matFilter.raca) p.set('raca', this.matFilter.raca);
+                    if (this.matFilter.q) p.set('q', this.matFilter.q);
+                    p.set('min_filhos', this.matFilter.min || 1);
+                    p.set('limit', 100);
+                    this.matrizes = await (await fetch('/api/matrizes?' + p.toString())).json();
+                    this.loaded.matrizes = true; this.matLoading = false;
+                },
+                async abrirMatriz(id) {
+                    const data = await (await fetch('/api/matriz/' + id)).json();
+                    if (data.error) { alert('Matriz não encontrada.'); return; }
+                    this.matriz = data; this.matrizModal = true;   // dados antes de abrir
+                    this.$nextTick(() => { document.querySelectorAll('.modal').forEach(b => { b.scrollTop = 0; }); });
+                },
+                fecharMatriz() { this.matrizModal = false; },
+
+                // ---- Acasalamento dirigido ----
+                // do modal da matriz -> vai pra seção Acasalamento (modo sugestões) já com a vaca
+                abrirAcasalamento(matriz) {
+                    this.acMode = 'sugestoes';
+                    this.matrizModal = false;
+                    if (!this.loaded.acasalamento) { this.loadAcList(); this.loaded.acasalamento = true; }
+                    this.go('acasalamento');
+                    this.escolherMatrizSug(matriz);
+                },
+                racasComDado() { return (this.racasTodas || []).filter(r => r.com_avaliacao > 0); },
+                traitsCsv() { return (this.acTraits.length ? this.acTraits : ['geral']).join(','); },
+                fmtNum(v, dec = 2) { return v == null ? '—' : Number(v).toFixed(dec); },
+                fmtDelta(v, dec = 2) { if (v == null) return '—'; const n = Number(v); return (n > 0 ? '+' : '') + n.toFixed(dec); },
+                deltaStyle(v) { if (v == null) return 'color:#888'; const n = Number(v); return n > 0 ? 'color:#2d7d2d;font-weight:600' : (n < 0 ? 'color:#c0392b;font-weight:600' : 'color:#888'); },
+                toggleTrait(k) {
+                    // prioridade governa só a sugestão de touro; a previsão (gráfico/tabela/PDF)
+                    // é sempre completa, então não recarrega o cruzamento aqui.
+                    const i = this.acTraits.indexOf(k);
+                    if (i >= 0) this.acTraits.splice(i, 1); else this.acTraits.push(k);
+                    if (!this.acTraits.length) this.acTraits = ['geral'];
+                    if (this.acasalDam) this.loadAcasalamento();
+                },
+                calfTraitsLabel(b) {
+                    if (!this.acasal || !this.acasal.trait_labels || !b.calf) return '';
+                    return (this.acasal.traits || []).map(k => {
+                        const lbl = (this.acasal.trait_labels[k] || k).split(' (')[0];
+                        const v = b.calf[k];
+                        return lbl + ' ' + (v != null ? Number(v).toFixed(1) : '—');
+                    }).join(' · ');
+                },
+                // ---- cruzamento livre ----
+                async buscarTouro() {
+                    const p = new URLSearchParams({ sexo: 'M', limit: 15 });
+                    if (this.livre.touroRaca) p.set('raca', this.livre.touroRaca);
+                    if (this.livre.touroUf) p.set('uf', this.livre.touroUf);
+                    if (this.livre.touroQ) p.set('q', this.livre.touroQ);
+                    this.livre.touroRes = await (await fetch('/api/animais/busca?' + p)).json();
+                },
+                async buscarVaca() {
+                    const p = new URLSearchParams({ min_filhos: 1, limit: 15 });
+                    if (this.livre.vacaQ) p.set('q', this.livre.vacaQ);
+                    if (this.livre.vacaRaca) p.set('raca', this.livre.vacaRaca);
+                    if (this.livre.vacaUf) p.set('uf', this.livre.vacaUf);
+                    this.livre.vacaRes = await (await fetch('/api/matrizes?' + p)).json();
+                },
+                localStr(a) {
+                    if (!a) return '—';
+                    if (a.municipio && a.uf) return a.municipio + '/' + a.uf;
+                    if (a.uf) return a.uf;
+                    return a.fazenda_origem || '—';
+                },
+                selTouro(a) { this.livre.touro = a; this.livre.touroRes = []; this.loadCruzamento(); },
+                selVaca(a) { this.livre.vaca = a; this.livre.vacaRes = []; this.loadCruzamento(); },
+                async loadCruzamento() {
+                    if (!this.livre.touro || !this.livre.vaca) return;
+                    this.acCruzLoading = true; this.acCruz = null;
+                    const p = new URLSearchParams({ touro_id: this.livre.touro.id, vaca_id: this.livre.vaca.id, traits: this.traitsCsv() });
+                    const d = await (await fetch('/api/cruzamento?' + p)).json();
+                    this.acCruz = d.error ? null : d; this.acCruzLoading = false;
+                },
+                async abrirFilhote(touroId, vacaId) {
+                    const p = new URLSearchParams({ touro_id: touroId, vaca_id: vacaId, traits: this.traitsCsv() });
+                    const d = await (await fetch('/api/cruzamento?' + p)).json();
+                    if (d.error) { alert('Erro ao calcular o bezerro.'); return; }
+                    this.filhote = d; this.filhoteModal = true;   // dados prontos antes de abrir
+                    this.$nextTick(() => { document.querySelectorAll('.modal').forEach(b => { b.scrollTop = 0; }); });
+                    this._drawAfterPaint(() => this.renderFilhoteChart());   // draw após o modal pintar
+                },
+                fecharFilhote() {
+                    this.filhoteModal = false;
+                    if (this._fchart) { this._fchart.destroy(); this._fchart = null; }
+                },
+                renderFilhoteChart() {
+                    const el = document.getElementById('filhoteChart');
+                    if (!el || typeof Chart === 'undefined' || !this.filhote) return;
+                    const prev = Chart.getChart ? Chart.getChart(el) : null;
+                    if (prev) prev.destroy();
+                    this._fchart = null;
+                    const f = this.filhote;
+                    const items = [['IQGg', f.calf.iqgg]].concat(
+                        Object.keys(f.calf.traits).map(k => [(f.calf.trait_labels[k] || k).split(' (')[0], f.calf.traits[k]]));
+                    const labels = items.map(it => it[0]);
+                    const maxs = items.map(it => { const d = it[1] || {}; return Math.max(d.touro || 0, d.vaca || 0, d.cria || 0, 0.0001); });
+                    const norm = (v, mx) => (mx > 0 && v != null) ? Math.max(0, v / mx * 100) : 0;
+                    this._fchart = new Chart(el, {
+                        type: 'bar',
+                        data: {
+                            labels,
+                            datasets: [
+                                { label: 'Pai', data: items.map((it, i) => norm(it[1] && it[1].touro, maxs[i])), backgroundColor: '#9cc49c' },
+                                { label: 'Mãe', data: items.map((it, i) => norm(it[1] && it[1].vaca, maxs[i])), backgroundColor: '#d8c4a8' },
+                                { label: 'Bezerro', data: items.map((it, i) => norm(it[1] && it[1].cria, maxs[i])), backgroundColor: '#2d5a2d' },
+                            ],
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            scales: { y: { display: false, beginAtZero: true } },
+                            plugins: { legend: { position: 'bottom' }, tooltip: { enabled: false } },
+                        },
+                    });
+                    this._chartResize(this._fchart);
+                },
+                async exportarCruzamentoPDF() {
+                    if (!this.livre.touro || !this.livre.vaca) return;
+                    this.exportando = true;
+                    try {
+                        const p = new URLSearchParams({ touro_id: this.livre.touro.id, vaca_id: this.livre.vaca.id, traits: this.traitsCsv() });
+                        const res = await fetch('/api/cruzamento/pdf?' + p);
+                        if (!res.ok) throw new Error('Erro');
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url; a.download = `acasalamento_${new Date().toISOString().slice(0, 10)}.pdf`;
+                        a.click(); URL.revokeObjectURL(url);
+                    } catch (e) { alert('Erro ao gerar PDF. Tente novamente.'); }
+                    finally { this.exportando = false; }
+                },
+                // ---- sugestões ----
+                async loadAcasalamento() {
+                    if (!this.acasalDam) return;
+                    this.acasalLoading = true;
+                    const p = new URLSearchParams();
+                    p.set('traits', this.traitsCsv());
+                    if (this.sug.raca) p.set('raca', this.sug.raca);
+                    if (this.sug.uf) p.set('uf', this.sug.uf);
+                    if (this.acasalReq.orcamento) p.set('orcamento', this.acasalReq.orcamento);
+                    p.set('top', 12);
+                    const data = await (await fetch('/api/acasalamento/' + this.acasalDam.id + '?' + p.toString())).json();
+                    if (data.error) { this.acasalLoading = false; alert('Erro ao calcular acasalamento.'); return; }
+                    this.acasal = data; this.acasalLoading = false;
+                },
+                fecharAcasalamento() { this.acasalModal = false; },
+                async loadAcList() {
+                    this.acListLoading = true;
+                    const p = new URLSearchParams({ min_filhos: 1, limit: 200 });
+                    if (this.acVacaQ) p.set('q', this.acVacaQ);
+                    if (this.sugVacaRaca) p.set('raca', this.sugVacaRaca);
+                    if (this.sugVacaUf) p.set('uf', this.sugVacaUf);
+                    this.acList = await (await fetch('/api/matrizes?' + p)).json();
+                    this.ordenarAcList();
+                    this.acListLoading = false;
+                },
+                ordenarAcList() {
+                    const k = this.acSort;
+                    const num = (o, f) => (o[f] == null ? -Infinity : Number(o[f]));
+                    const f = k === 'medio' ? 'merito_iqgg' : (k === 'melhor' ? 'iqgg_melhor_filho' : 'filhos_avaliados');
+                    this.acList = [...this.acList].sort((a, b) =>
+                        k === 'nome' ? String(a.nome).localeCompare(String(b.nome), 'pt-BR') : num(b, f) - num(a, f));
+                },
+                escolherMatrizSug(m) {
+                    this.acasalDam = { id: m.id, nome: m.nome, registro: m.registro };
+                    this.matrizDetalhe = null;
+                    this.carregarMatrizDetalhe(m.id);
+                    this.loadAcasalamento();
+                },
+                async carregarMatrizDetalhe(id) {
+                    const d = await (await fetch('/api/matriz/' + id)).json();
+                    this.matrizDetalhe = d.error ? null : d;
+                },
+                trocarMatriz() {
+                    this.acasalDam = null; this.matrizDetalhe = null; this.acasal = null;
+                },
 
                 // ---- Mercado & dados abertos ----
                 async loadMercado() {

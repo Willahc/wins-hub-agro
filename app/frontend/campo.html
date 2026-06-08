@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1a3a1a">
+  <title>WiNS Campo — Curral</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <script defer src="/static/vendor/alpine.min.js"></script>
+  <style>
+    :root { --verde:#1a3a1a; --verde2:#2d7d2d; --claro:#7fc77f; --bg:#f4f7f3; --linha:#e1e8e0; --txt:#20291f; }
+    * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    body { margin:0; font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif; background:var(--bg); color:var(--txt); padding-bottom:80px; }
+    .top { background:var(--verde); color:#fff; padding:10px 14px; position:sticky; top:0; z-index:20; }
+    .top .brand { font-size:17px; font-weight:700; } .top .brand .a { color:var(--claro); }
+    .top .sub { font-size:11px; color:#bcdcbc; }
+    .net { display:flex; align-items:center; gap:8px; margin-top:8px; font-size:12px; }
+    .dot { width:9px; height:9px; border-radius:50%; background:#5dd35d; box-shadow:0 0 0 3px rgba(93,211,93,.25); }
+    .dot.off { background:#e8a13a; box-shadow:0 0 0 3px rgba(232,161,58,.25); }
+    .pill { background:rgba(255,255,255,.16); padding:2px 9px; border-radius:11px; font-weight:600; }
+    .btn-sync { margin-left:auto; background:var(--claro); color:var(--verde); border:none; font-weight:700; padding:5px 12px; border-radius:9px; font-size:12px; }
+    .btn-sync:disabled { opacity:.5; }
+    .wrap { padding:12px 14px; }
+    .card { background:#fff; border:1px solid var(--linha); border-radius:13px; padding:13px; margin-bottom:12px; }
+    .card h3 { margin:0 0 9px; font-size:13px; color:var(--verde); text-transform:uppercase; letter-spacing:.4px; }
+    label { display:block; font-size:11px; color:#5a675a; margin:8px 0 3px; font-weight:600; }
+    input, select, textarea { width:100%; padding:11px; border:1px solid var(--linha); border-radius:10px; font-size:16px; background:#fff; }
+    .row { display:flex; gap:9px; } .row > * { flex:1; }
+    .seg { display:flex; gap:7px; } .seg button { flex:1; padding:11px; border:1px solid var(--linha); background:#fff; border-radius:10px; font-size:15px; font-weight:600; color:#5a675a; }
+    .seg button.on { background:var(--verde); color:#fff; border-color:var(--verde); }
+    .btn { width:100%; padding:14px; border:none; border-radius:11px; background:var(--verde2); color:#fff; font-size:16px; font-weight:700; margin-top:13px; }
+    .btn.sec { background:#fff; color:var(--verde); border:1.5px solid var(--verde2); }
+    .btn:active { transform:scale(.99); }
+    .tabs { display:flex; position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--linha); z-index:20; padding-bottom:env(safe-area-inset-bottom); }
+    .tabs button { flex:1; padding:11px 4px 10px; border:none; background:none; font-size:11px; font-weight:600; color:#8a978a; }
+    .tabs button .ic { display:block; font-size:20px; line-height:1.1; }
+    .tabs button.on { color:var(--verde2); }
+    .stat { display:flex; gap:9px; }
+    .stat > div { flex:1; background:#f0f5ef; border-radius:10px; padding:9px; text-align:center; }
+    .stat .v { font-size:19px; font-weight:700; color:var(--verde); } .stat .l { font-size:10px; color:#6b7a6b; text-transform:uppercase; }
+    .an { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--linha); }
+    .an .sx { width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff; font-size:13px; }
+    .an .sx.F { background:#b5559e; } .an .sx.M { background:#3a6ea5; }
+    .an .nm { font-weight:600; font-size:14px; } .an .meta { font-size:11px; color:#7a857a; }
+    .an .go { margin-left:auto; display:flex; gap:6px; }
+    .mini { padding:7px 10px; border-radius:8px; font-size:12px; font-weight:700; border:1px solid var(--linha); background:#fff; color:var(--verde); }
+    .mini.p { background:var(--verde2); color:#fff; border-color:var(--verde2); }
+    .empty { text-align:center; color:#9aa89a; padding:22px 0; font-size:13px; }
+    .rec { border:1px solid var(--linha); border-radius:11px; padding:11px; margin-bottom:9px; }
+    .rec .h { display:flex; align-items:baseline; gap:8px; } .rec .rk { font-weight:800; color:var(--verde2); }
+    .rec .nm { font-weight:700; font-size:15px; } .rec .rg { font-size:11px; color:#7a857a; margin-left:auto; }
+    .rec .kv { display:flex; gap:14px; margin-top:7px; font-size:12px; }
+    .rec .kv b { color:var(--verde); } .warn { color:#b8860b; font-size:11px; margin-top:5px; }
+    .toast { position:fixed; bottom:78px; left:14px; right:14px; background:var(--verde); color:#fff; padding:12px 15px; border-radius:11px; font-size:14px; z-index:40; box-shadow:0 6px 20px rgba(0,0,0,.2); }
+    .badge-off { background:#fff7e8; border:1px solid #e8c97a; color:#8a6516; font-size:12px; padding:8px 11px; border-radius:9px; margin-bottom:11px; }
+    .muted { color:#7a857a; font-size:12px; }
+    /* bottom-sheet (telas de pesagem / sanitário) */
+    .sheet-bg { position:fixed; inset:0; background:rgba(20,30,18,.45); z-index:50; display:flex; align-items:flex-end; }
+    .sheet { background:var(--bg); width:100%; border-radius:18px 18px 0 0; padding:16px 16px calc(16px + env(safe-area-inset-bottom)); max-height:92vh; overflow-y:auto; box-shadow:0 -8px 30px rgba(0,0,0,.25); }
+    .sheet .sh-h { display:flex; align-items:center; margin-bottom:4px; }
+    .sheet .sh-t { font-size:17px; font-weight:800; color:var(--verde); }
+    .sheet .sh-s { font-size:12px; color:#7a857a; }
+    .sheet .x { margin-left:auto; background:#fff; border:1px solid var(--linha); border-radius:9px; width:34px; height:34px; font-size:18px; color:#7a857a; }
+    .seg.wrap3 { flex-wrap:wrap; } .seg.wrap3 button { flex:0 0 calc(33.33% - 5px); }
+    .escore { display:flex; gap:5px; } .escore button { flex:1; padding:9px 0; border:1px solid var(--linha); background:#fff; border-radius:9px; font-size:15px; font-weight:700; color:#5a675a; }
+    .escore button.on { background:var(--verde2); color:#fff; border-color:var(--verde2); }
+  </style>
+</head>
+<body x-data="campo()" x-init="init()">
+
+  <div class="top">
+    <div style="display:flex; align-items:center;">
+      <div>
+        <div class="brand">WiNS <span class="a">Campo</span></div>
+        <div class="sub" x-text="cliente ? clienteNome() : 'Selecione a fazenda'"></div>
+      </div>
+      <button class="btn-sync" :disabled="syncing || pendentes()===0" @click="sync()"
+              x-text="syncing ? 'sincronizando…' : (pendentes()? 'Sincronizar '+pendentes() : 'Tudo salvo')"></button>
+    </div>
+    <div class="net">
+      <span class="dot" :class="{off:!online}"></span>
+      <span x-text="online ? 'Online (Starlink)' : 'Offline — capturando local'"></span>
+      <span class="pill" x-text="pendentes()+' na fila'"></span>
+    </div>
+  </div>
+
+  <div class="wrap">
+
+    <!-- ====================== FAZENDA ====================== -->
+    <div x-show="tab==='fazenda'">
+      <div class="card">
+        <h3>Fazenda (cliente)</h3>
+        <label>Selecionar fazenda existente</label>
+        <select x-model.number="cliente" @change="onCliente()">
+          <option :value="0">— escolha —</option>
+          <template x-for="c in clientes" :key="c.id">
+            <option :value="c.id" x-text="c.razao_social + (c.uf? ' · '+c.uf:'') + ' ('+c.n_animais+')'"></option>
+          </template>
+        </select>
+        <div class="muted" style="margin:10px 0 4px">ou cadastrar nova:</div>
+        <input x-model="novoCli.razao_social" placeholder="Razão social / nome da fazenda">
+        <div class="row">
+          <div><label>UF</label><input x-model="novoCli.uf" maxlength="2" placeholder="TO"></div>
+          <div><label>Município</label><input x-model="novoCli.municipio" placeholder="Porto Nacional"></div>
+        </div>
+        <button class="btn sec" @click="criarCliente()">Criar fazenda</button>
+      </div>
+
+      <div class="card" x-show="cliente">
+        <h3>Lote / grupo de contemporâneos</h3>
+        <p class="muted">Anima​is do mesmo lote são comparáveis entre si — base de índice e genética.</p>
+        <select x-model.number="grupo">
+          <option :value="0">— sem lote —</option>
+          <template x-for="g in grupos" :key="g.id">
+            <option :value="g.id" x-text="g.nome + (g.tipo?' · '+g.tipo:'')"></option>
+          </template>
+        </select>
+        <div class="row" style="margin-top:9px">
+          <input x-model="novoGrupo" placeholder="Novo lote (ex.: Bezerras 2026)">
+          <button class="mini p" style="flex:0 0 auto; padding:11px 14px" @click="criarGrupo()">+ Lote</button>
+        </div>
+      </div>
+
+      <div class="card" x-show="cliente">
+        <h3>Resumo do rebanho</h3>
+        <div class="stat">
+          <div><div class="v" x-text="resumo.animais||0"></div><div class="l">animais</div></div>
+          <div><div class="v" x-text="resumo.femeas||0"></div><div class="l">fêmeas</div></div>
+          <div><div class="v" x-text="resumo.pesagens||0"></div><div class="l">pesagens</div></div>
+          <div><div class="v" x-text="resumo.grupos||0"></div><div class="l">lotes</div></div>
+        </div>
+      </div>
+
+      <!-- ============ AUDITORIA GENÉTICA ============ -->
+      <div class="card" x-show="cliente">
+        <h3>Auditoria genética</h3>
+        <p class="muted" style="margin:0 0 8px">Avalia as fêmeas genotipadas contra a média da raça — gargalos, ranking e quem genotipar.</p>
+        <button class="btn sec" :disabled="audit.loading" @click="carregaAuditoria()"
+                x-text="audit.loading ? 'Analisando…' : (audit.loaded ? '↻ Reavaliar rebanho' : 'Rodar auditoria')"></button>
+
+        <div x-show="audit.loaded" style="margin-top:13px">
+          <div class="stat">
+            <div><div class="v" x-text="(audit.data.resumo&&audit.data.resumo.genotipadas)||0"></div><div class="l">genotipadas</div></div>
+            <div><div class="v" x-text="((audit.data.resumo&&audit.data.resumo.pct_genotipadas)||0)+'%'"></div><div class="l">do plantel</div></div>
+            <div><div class="v" x-text="(audit.data.iqgg&&audit.data.iqgg.media)||'—'"></div><div class="l">IQGg médio</div></div>
+          </div>
+
+          <div class="rec" x-show="audit.data.iqgg && audit.data.iqgg.media!=null" style="margin-top:11px; background:#eef7ea; border-color:#bcdcbc">
+            <div class="kv" style="flex-wrap:wrap">
+              <span>Raça <b x-text="audit.data.raca_predominante||'—'"></b></span>
+              <span>Média da raça <b x-text="audit.data.iqgg.media_raca ?? '—'"></b></span>
+              <span :style="(audit.data.iqgg.lift_medio>0)?'color:#2d7d2d':'color:#c0392b'">
+                Vantagem do rebanho <b x-text="(audit.data.iqgg.lift_medio>0?'+':'')+(audit.data.iqgg.lift_medio ?? '—')"></b></span>
+            </div>
+            <div class="muted" style="margin-top:6px"
+                 x-text="audit.data.iqgg.acima_da_raca+' de '+audit.data.resumo.genotipadas+' fêmeas acima da média racial · melhor IQGg '+audit.data.iqgg.melhor+' · pior '+audit.data.iqgg.pior"></div>
+          </div>
+
+          <div x-show="audit.data.ranking && audit.data.ranking.length" style="margin-top:6px">
+            <div class="muted" style="margin:9px 0 4px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; font-size:11px">Ranking genético</div>
+            <template x-for="(r,i) in audit.data.ranking" :key="r.id">
+              <div class="an">
+                <div class="sx" style="background:#3a6e3a; font-size:11px" x-text="'#'+(i+1)"></div>
+                <div>
+                  <div class="nm" x-text="r.nome || r.brinco || ('#'+r.id)"></div>
+                  <div class="meta">
+                    IQGg <b x-text="r.iqgg"></b>
+                    <span x-show="r.lift!=null" :style="(r.lift>0)?'color:#2d7d2d':'color:#c0392b'"
+                          x-text="' ('+(r.lift>0?'+':'')+r.lift+' vs raça)'"></span>
+                    <span class="warn" x-show="r.prioridade_corretiva"> · corrigir</span>
+                  </div>
+                </div>
+                <div class="go">
+                  <button class="mini p" x-show="r.reprodutor_espelho_id" @click="cruzarDoAudit(r)">♥ Cruzar</button>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <div x-show="audit.data.a_genotipar && audit.data.a_genotipar.length" class="badge-off" style="margin-top:11px">
+            <b x-text="audit.data.a_genotipar.length"></b> fêmea(s) sem genotipagem —
+            <span x-text="audit.data.a_genotipar.map(x=>x.nome||x.brinco).slice(0,6).join(', ')"></span>.
+            Genotipar destrava o acasalamento dirigido.
+          </div>
+          <div class="empty" x-show="audit.data.resumo && audit.data.resumo.genotipadas===0">
+            Nenhuma fêmea genotipada ainda. Cadastre o IQGg das matrizes no <b>Curral</b> p/ rodar a auditoria.
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ MOVIMENTAÇÃO / GTA ============ -->
+      <div class="card" x-show="cliente">
+        <h3>Movimentação / GTA</h3>
+        <p class="muted" style="margin:0 0 6px">Entradas, saídas e transferências com nº de GTA — rastreabilidade SISBOV.</p>
+        <div class="seg wrap3">
+          <template x-for="t in ['entrada','saida','transferencia','nascimento','morte','abate']" :key="t">
+            <button :class="{on:mov.tipo===t}" @click="mov.tipo=t" x-text="t"></button>
+          </template>
+        </div>
+        <div class="row">
+          <div><label>Nº da GTA</label><input x-model="mov.gta_numero" placeholder="opcional"></div>
+          <div><label>Data</label><input type="date" x-model="mov.data_evento"></div>
+        </div>
+        <div class="row">
+          <div><label>Origem</label><input x-model="mov.origem" placeholder="de onde"></div>
+          <div><label>Destino</label><input x-model="mov.destino" placeholder="para onde"></div>
+        </div>
+        <div class="row">
+          <div><label>Finalidade</label><input x-model="mov.finalidade" placeholder="reprodução, engorda…"></div>
+          <div><label>Quantidade</label><input x-model.number="mov.quantidade" inputmode="numeric" placeholder="cabeças"></div>
+        </div>
+        <label>Observação</label>
+        <input x-model="mov.obs" placeholder="opcional">
+        <button class="btn sec" @click="salvarMov()">Registrar movimentação</button>
+
+        <div x-show="mov.lista.length" style="margin-top:12px">
+          <div class="muted" style="margin:4px 0; font-weight:700; text-transform:uppercase; letter-spacing:.4px; font-size:11px">Últimas movimentações</div>
+          <template x-for="m in mov.lista" :key="m.id">
+            <div class="rec">
+              <div class="h">
+                <span class="rk" x-text="m.tipo"></span>
+                <span class="nm" x-text="(m.gta_numero ? 'GTA '+m.gta_numero : 'sem GTA')"></span>
+                <span class="rg" x-text="m.data_evento"></span>
+              </div>
+              <div class="kv">
+                <span x-show="m.origem||m.destino" x-text="(m.origem||'—')+' → '+(m.destino||'—')"></span>
+                <span x-show="m.quantidade" x-text="m.quantidade+' cab.'"></span>
+                <span x-show="m.finalidade" x-text="m.finalidade"></span>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====================== CURRAL (cadastro) ====================== -->
+    <div x-show="tab==='curral'">
+      <div class="badge-off" x-show="!cliente">Selecione a fazenda na aba <b>Fazenda</b> antes de capturar.</div>
+      <div class="card" x-show="cliente">
+        <h3>Cadastrar animal no curral</h3>
+        <label>Sexo</label>
+        <div class="seg">
+          <button :class="{on:novo.sexo==='F'}" @click="novo.sexo='F'">♀ Fêmea</button>
+          <button :class="{on:novo.sexo==='M'}" @click="novo.sexo='M'">♂ Macho</button>
+        </div>
+        <div class="row">
+          <div><label>Brinco visual</label><input x-model="novo.brinco" inputmode="text" placeholder="247"></div>
+          <div><label>EID / RFID</label><input x-model="novo.eid" inputmode="numeric" placeholder="bastão…"></div>
+        </div>
+        <label>Nome / identificação</label>
+        <input x-model="novo.nome" placeholder="opcional">
+        <label>SISBOV (15 dígitos) — rastreabilidade</label>
+        <input x-model="novo.sisbov" inputmode="numeric" maxlength="15" placeholder="opcional">
+        <div class="row">
+          <div><label>Raça</label>
+            <select x-model.number="novo.raca_id">
+              <option :value="null">—</option>
+              <template x-for="r in racas" :key="r.id"><option :value="r.id" x-text="r.sigla+' · '+r.nome"></option></template>
+            </select>
+          </div>
+          <div><label>Categoria</label><input x-model="novo.categoria" placeholder="matriz / bezerro"></div>
+        </div>
+        <div class="row">
+          <div><label>Peso (kg)</label><input x-model.number="novo.peso_kg" inputmode="decimal" placeholder="0"></div>
+          <div><label>Escore (1–9)</label><input x-model.number="novo.escore_corporal" inputmode="decimal" placeholder="0"></div>
+        </div>
+        <div x-show="novo.sexo==='F'">
+          <label style="margin-top:11px">Índices genômicos próprios (se a vaca foi genotipada — opcional)</label>
+          <div class="row">
+            <div><label>IQGg</label><input x-model.number="novo.iqgg" inputmode="decimal"></div>
+            <div><label>GPD</label><input x-model.number="novo.gpd" inputmode="decimal"></div>
+            <div><label>AOL</label><input x-model.number="novo.aol" inputmode="decimal"></div>
+          </div>
+        </div>
+        <button class="btn" @click="cadastrar()">Salvar no curral</button>
+        <p class="muted" style="text-align:center; margin-top:8px" x-show="novo.sexo==='F'">
+          A fêmea entra automaticamente no <b>acasalamento ao vivo</b>.</p>
+      </div>
+    </div>
+
+    <!-- ====================== REBANHO ====================== -->
+    <div x-show="tab==='rebanho'">
+      <div class="card" x-show="cliente">
+        <h3 x-text="'Rebanho ('+animais.length+')'"></h3>
+        <div class="empty" x-show="animais.length===0">Nenhum animal ainda. Capture no curral.</div>
+        <template x-for="a in animais" :key="a.id">
+          <div class="an">
+            <div class="sx" :class="a.sexo" x-text="a.sexo"></div>
+            <div>
+              <div class="nm" x-text="a.nome || a.brinco || ('#'+a.id)"></div>
+              <div class="meta" x-text="(a.raca||'—')+' · '+(a.peso_atual_kg? a.peso_atual_kg+' kg':'sem peso')"></div>
+            </div>
+            <div class="go">
+              <button class="mini" @click="pesar(a)">⚖ Pesar</button>
+              <button class="mini" @click="sanitar(a)">💉</button>
+              <button class="mini p" x-show="a.sexo==='F' && a.reprodutor_espelho_id" @click="acasalar(a)">♥ Cruzar</button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- ====================== ACASALAMENTO ====================== -->
+    <div x-show="tab==='cruzar'">
+      <div class="card">
+        <h3>Acasalamento ao vivo</h3>
+        <div class="empty" x-show="!cruza.dam">Na aba <b>Rebanho</b>, toque <b>♥ Cruzar</b> numa fêmea.</div>
+        <div x-show="cruza.dam">
+          <div style="font-weight:700; font-size:15px" x-text="cruza.dam && (cruza.dam.nome||cruza.dam.registro)"></div>
+          <div class="muted" x-text="cruza.dam && (cruza.dam.raca+' · IQGg '+(cruza.dam.iqgg??'—'))"></div>
+          <label style="margin-top:10px">Prioridade</label>
+          <select x-model="cruza.prioridade" @change="acasalarRun()">
+            <option value="geral">Geral (IQGg)</option>
+            <option value="crescimento">Crescimento (GPD)</option>
+            <option value="carcaca">Carcaça (AOL)</option>
+            <option value="precocidade">Precocidade (PES)</option>
+            <option value="fertilidade">Fertilidade (HP)</option>
+          </select>
+        </div>
+      </div>
+      <div x-show="cruza.loading" class="empty">Consultando o catálogo…</div>
+      <div class="card" x-show="cruza.recs.length">
+        <h3 x-text="'Touros recomendados ('+cruza.recs.length+')'"></h3>
+        <template x-for="(r,i) in cruza.recs" :key="r.id">
+          <div class="rec">
+            <div class="h">
+              <span class="rk" x-text="'#'+(i+1)"></span>
+              <span class="nm" x-text="r.nome"></span>
+              <span class="rg" x-text="r.raca_sigla"></span>
+            </div>
+            <div class="kv">
+              <span>IQGg cria <b x-text="r.prog_iqgg ?? '—'"></b></span>
+              <span x-show="r.preco_dose">Dose <b x-text="'R$ '+r.preco_dose"></b></span>
+              <span>Score <b x-text="r.score"></b></span>
+            </div>
+            <div class="warn" x-show="r.parente" x-text="r.nota"></div>
+          </div>
+        </template>
+      </div>
+      <div class="card" x-show="cruza.recs.length">
+        <h3>Cotação de sêmen</h3>
+        <p class="muted" style="margin:0 0 6px">Gera um PDF com a matriz e o ranking de touros (preço da dose) p/ enviar ao produtor.</p>
+        <button class="btn" :disabled="cota.busy" @click="enviarWhatsapp()"
+                x-text="cota.busy ? 'Gerando…' : '📲 Enviar cotação no WhatsApp'"></button>
+        <button class="btn sec" :disabled="cota.busy" @click="baixarCotacao()">📄 Baixar PDF</button>
+      </div>
+    </div>
+
+    <!-- ====================== AGENDA SANITÁRIA ====================== -->
+    <div x-show="tab==='agenda'">
+      <div class="badge-off" x-show="!cliente">Selecione a fazenda na aba <b>Fazenda</b> para ver a agenda.</div>
+      <div x-show="cliente">
+        <div class="card">
+          <h3>Agenda sanitária</h3>
+          <div class="stat">
+            <div style="background:#fbe9e9"><div class="v" style="color:#c0392b" x-text="agenda.resumo.atrasado||0"></div><div class="l">atrasados</div></div>
+            <div style="background:#fff4e0"><div class="v" style="color:#b8860b" x-text="agenda.resumo.hoje||0"></div><div class="l">hoje</div></div>
+            <div><div class="v" x-text="agenda.resumo.proximo||0"></div><div class="l">próximos</div></div>
+          </div>
+          <div class="row" style="margin-top:11px; align-items:flex-end">
+            <div><label>Janela</label>
+              <select x-model.number="agenda.dias" @change="carregaAgenda()">
+                <option :value="7">7 dias</option><option :value="30">30 dias</option>
+                <option :value="90">90 dias</option><option :value="365">1 ano</option>
+              </select>
+            </div>
+            <button class="mini" style="flex:0 0 auto; padding:11px 14px" @click="carregaAgenda()">↻ Atualizar</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="empty" x-show="!agenda.loading && !agenda.itens.length">Nenhum lembrete na janela. 🎉<br>
+            <span class="muted">Lembretes aparecem aqui quando você preenche <b>Próxima dose</b> no manejo sanitário.</span></div>
+          <div class="empty" x-show="agenda.loading">Carregando…</div>
+          <template x-for="it in agenda.itens" :key="it.id">
+            <div class="rec" :style="it.status==='atrasado' ? 'border-color:#e6b0aa' : (it.status==='hoje' ? 'border-color:#f0d28a' : '')">
+              <div class="h">
+                <span class="nm" x-text="it.alvo"></span>
+                <span class="rg" x-text="it.raca_sigla || (it.is_lote ? 'lote' : '')"></span>
+              </div>
+              <div class="kv">
+                <span x-text="(it.tipo||'')+' · '+(it.produto||'—')"></span>
+                <span x-show="it.dose" x-text="it.dose"></span>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px; margin-top:8px">
+                <span class="pill" :style="it.status==='atrasado' ? 'background:#fbe9e9;color:#c0392b' : (it.status==='hoje' ? 'background:#fff4e0;color:#b8860b' : 'background:#eef4ee;color:#3a6e3a')"
+                      x-text="lembreteLabel(it)"></span>
+                <div style="margin-left:auto; display:flex; gap:6px">
+                  <button class="mini" @click="concluirLembrete(it)">dispensar</button>
+                  <button class="mini p" x-show="it.animal_id" @click="aplicarLembrete(it)">✓ Aplicar</button>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ====================== SHEET: PESAGEM ====================== -->
+  <div class="sheet-bg" x-show="psheet.open" x-transition.opacity @click.self="psheet.open=false" style="display:none">
+    <div class="sheet" x-show="psheet.open" x-transition>
+      <div class="sh-h">
+        <div>
+          <div class="sh-t">⚖ Pesagem</div>
+          <div class="sh-s" x-text="psheet.nome"></div>
+        </div>
+        <button class="x" @click="psheet.open=false">×</button>
+      </div>
+      <label>Peso (kg)</label>
+      <input x-model.number="psheet.peso_kg" inputmode="decimal" placeholder="0" style="font-size:22px; font-weight:700; text-align:center"
+             x-ref="pesoInput">
+      <label style="margin-top:12px">Escore corporal (1–9)</label>
+      <div class="escore">
+        <template x-for="n in 9" :key="n">
+          <button :class="{on:psheet.escore_corporal===n}" @click="psheet.escore_corporal = (psheet.escore_corporal===n? null : n)" x-text="n"></button>
+        </template>
+      </div>
+      <div class="row" style="margin-top:4px">
+        <div><label>Altura (cm) — opcional</label><input x-model.number="psheet.altura_cm" inputmode="decimal" placeholder="—"></div>
+      </div>
+      <label>Observação</label>
+      <input x-model="psheet.obs" placeholder="opcional">
+      <button class="btn" @click="salvarPesagem()">Registrar pesagem</button>
+    </div>
+  </div>
+
+  <!-- ====================== SHEET: SANITÁRIO ====================== -->
+  <div class="sheet-bg" x-show="ssheet.open" x-transition.opacity @click.self="ssheet.open=false" style="display:none">
+    <div class="sheet" x-show="ssheet.open" x-transition>
+      <div class="sh-h">
+        <div>
+          <div class="sh-t">💉 Manejo sanitário</div>
+          <div class="sh-s" x-text="ssheet.nome"></div>
+        </div>
+        <button class="x" @click="ssheet.open=false">×</button>
+      </div>
+      <label>Tipo</label>
+      <div class="seg wrap3">
+        <template x-for="t in ['vacina','vermífugo','medicamento','exame','suplemento','outro']" :key="t">
+          <button :class="{on:ssheet.tipo===t}" @click="ssheet.tipo=t" x-text="t"></button>
+        </template>
+      </div>
+      <label>Produto / vacina</label>
+      <input x-model="ssheet.produto" placeholder="ex.: Aftosa, Ivomec…" x-ref="prodInput">
+      <div class="row">
+        <div><label>Dose</label><input x-model="ssheet.dose" placeholder="ex.: 5 mL"></div>
+        <div><label>Via</label>
+          <select x-model="ssheet.via">
+            <option value="">—</option>
+            <option>SC</option><option>IM</option><option>oral</option><option>tópica</option><option>IV</option>
+          </select>
+        </div>
+      </div>
+      <label>Próxima dose / reforço (alimenta o calendário)</label>
+      <input type="date" x-model="ssheet.proxima_dose">
+      <div class="row">
+        <div><label>Responsável</label><input x-model="ssheet.responsavel" placeholder="quem aplicou"></div>
+      </div>
+      <label>Observação</label>
+      <input x-model="ssheet.obs" placeholder="opcional">
+      <button class="btn" @click="salvarSanitario()">Registrar manejo</button>
+    </div>
+  </div>
+
+  <!-- toast -->
+  <div class="toast" x-show="toast" x-transition x-text="toast" @click="toast=''"></div>
+
+  <!-- nav -->
+  <div class="tabs">
+    <button :class="{on:tab==='fazenda'}" @click="tab='fazenda'"><span class="ic">🏠</span>Fazenda</button>
+    <button :class="{on:tab==='curral'}"  @click="tab='curral'"><span class="ic">➕</span>Curral</button>
+    <button :class="{on:tab==='rebanho'}" @click="tab='rebanho'; if(cliente) carregaAnimais()"><span class="ic">🐂</span>Rebanho</button>
+    <button :class="{on:tab==='agenda'}"  @click="tab='agenda'; if(cliente) carregaAgenda()" style="position:relative">
+      <span class="ic">🗓</span>Agenda
+      <span x-show="agendaUrgentes()>0" x-text="agendaUrgentes()"
+            style="position:absolute; top:4px; right:50%; transform:translateX(20px); background:#c0392b; color:#fff; font-size:10px; font-weight:800; min-width:16px; height:16px; line-height:16px; border-radius:9px; padding:0 4px"></span>
+    </button>
+    <button :class="{on:tab==='cruzar'}"  @click="tab='cruzar'"><span class="ic">♥</span>Cruzar</button>
+  </div>
+
+<script>
+function campo() {
+  return {
+    tab:'fazenda', online:navigator.onLine, syncing:false, toast:'',
+    clientes:[], racas:[], grupos:[], animais:[], resumo:{},
+    cliente:0, grupo:0,
+    novoCli:{razao_social:'', uf:'', municipio:''}, novoGrupo:'',
+    novo:{sexo:'F', brinco:'', eid:'', sisbov:'', nome:'', raca_id:null, categoria:'', peso_kg:null, escore_corporal:null, iqgg:null, gpd:null, aol:null},
+    outbox:[],
+    cruza:{dam:null, prioridade:'geral', recs:[], loading:false},
+    psheet:{open:false, animal:null, nome:'', peso_kg:null, escore_corporal:null, altura_cm:null, obs:''},
+    ssheet:{open:false, animal:null, nome:'', tipo:'vacina', produto:'', dose:'', via:'', proxima_dose:'', responsavel:'', obs:'', origem_lembrete_id:null},
+    agenda:{itens:[], resumo:{}, dias:30, loading:false},
+    cota:{busy:false},
+    audit:{loaded:false, loading:false, data:{resumo:{}, iqgg:{}, ranking:[], a_genotipar:[]}},
+    mov:{tipo:'entrada', data_evento:'', gta_numero:'', origem:'', destino:'', finalidade:'', quantidade:null, obs:'', lista:[]},
+
+    animalVazio(){ return {sexo:'F', brinco:'', eid:'', sisbov:'', nome:'', raca_id:null, categoria:'', peso_kg:null, escore_corporal:null, iqgg:null, gpd:null, aol:null}; },
+
+    async init(){
+      this.outbox = JSON.parse(localStorage.getItem('wins_outbox')||'[]');
+      window.addEventListener('online', ()=>{ this.online=true; this.sync(); });
+      window.addEventListener('offline', ()=>{ this.online=false; });
+      if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
+      try {
+        this.racas = await this.api('GET','/api/campo/racas');
+        this.clientes = await this.api('GET','/api/campo/clientes');
+      } catch(e){ /* offline: segue com o que tem */ }
+      this.sync();
+    },
+
+    // ---------- infra ----------
+    async api(method, path, body){
+      const opt = {method, headers:{'Content-Type':'application/json'}, credentials:'same-origin'};
+      if (body) opt.body = JSON.stringify(body);
+      const res = await fetch(path, opt);
+      if (res.status===401){ location.href='/login'; throw new Error('auth'); }
+      const j = await res.json();
+      if (j && j.error) throw new Error(j.error);
+      return j;
+    },
+    uuid(){ return (crypto.randomUUID ? crypto.randomUUID() : 'u'+Date.now()+Math.random().toString(16).slice(2)); },
+    persist(){ localStorage.setItem('wins_outbox', JSON.stringify(this.outbox)); },
+    pendentes(){ return this.outbox.filter(o=>o.status!=='synced').length; },
+    flash(m){ this.toast=m; setTimeout(()=>{ if(this.toast===m) this.toast=''; }, 2600); },
+    clienteNome(){ const c=this.clientes.find(c=>c.id===this.cliente); return c? c.razao_social : ''; },
+
+    enqueue(endpoint, payload){
+      this.outbox.push({id:payload.uuid, endpoint, payload, status:'pending', ts:Date.now()});
+      this.persist();
+      this.sync();
+    },
+
+    async sync(){
+      if (this.syncing || !this.online) return;
+      const fila = this.outbox.filter(o=>o.status!=='synced');
+      if (!fila.length) return;
+      this.syncing = true;
+      let ok=0;
+      for (const item of fila){
+        try {
+          const r = await this.api('POST', item.endpoint, item.payload);
+          item.status='synced'; item.result=r; ok++;
+        } catch(e){ item.status='error'; item.err=String(e.message||e); }
+      }
+      this.persist();
+      this.syncing=false;
+      // limpa os já sincronizados (mantém os com erro p/ nova tentativa)
+      this.outbox = this.outbox.filter(o=>o.status!=='synced');
+      this.persist();
+      if (ok && this.cliente){ await this.refresh(); }
+      if (ok) this.flash(ok+' registro(s) sincronizado(s)');
+    },
+
+    async refresh(){
+      try {
+        this.resumo = await this.api('GET','/api/campo/resumo?cliente_id='+this.cliente);
+        this.clientes = await this.api('GET','/api/campo/clientes');
+        await this.carregaAnimais();
+        await this.carregaAgenda();
+        await this.carregaMovimentacoes();
+      } catch(e){}
+    },
+
+    // ---------- fazenda ----------
+    async onCliente(){ if(!this.cliente) return; this.grupos=[]; this.grupo=0; await this.refresh(); this.grupos = await this.api('GET','/api/campo/grupos?cliente_id='+this.cliente); },
+    async criarCliente(){
+      if(!this.novoCli.razao_social){ this.flash('Informe o nome da fazenda'); return; }
+      try{
+        const r = await this.api('POST','/api/campo/cliente', this.novoCli);
+        this.clientes = await this.api('GET','/api/campo/clientes');
+        this.cliente = r.id; this.novoCli={razao_social:'',uf:'',municipio:''};
+        await this.onCliente(); this.flash(r.novo?'Fazenda criada':'Fazenda já existia — selecionada');
+      }catch(e){ this.flash('Erro: precisa de conexão p/ criar fazenda'); }
+    },
+    async criarGrupo(){
+      if(!this.novoGrupo || !this.cliente) return;
+      try{
+        const r = await this.api('POST','/api/campo/grupo', {cliente_id:this.cliente, nome:this.novoGrupo, tipo:'contemporaneo'});
+        this.grupos = await this.api('GET','/api/campo/grupos?cliente_id='+this.cliente);
+        this.grupo = r.id; this.novoGrupo=''; this.flash('Lote criado');
+      }catch(e){ this.flash('Erro ao criar lote (precisa de conexão)'); }
+    },
+
+    // ---------- curral ----------
+    cadastrar(){
+      if(!this.cliente){ this.flash('Selecione a fazenda'); return; }
+      const p = {uuid:this.uuid(), cliente_id:this.cliente, grupo_id:this.grupo||null, ...this.novo};
+      // tira campos vazios numéricos
+      ['peso_kg','escore_corporal','iqgg','gpd','aol'].forEach(k=>{ if(p[k]===''||p[k]===undefined) p[k]=null; });
+      this.enqueue('/api/campo/animal', p);
+      this.flash((p.sexo==='F'?'Fêmea':'Macho')+' '+(p.nome||p.brinco||'')+' salvo'+(this.online?'':' (offline)'));
+      this.novo = this.animalVazio();
+    },
+    async carregaAnimais(){ if(!this.cliente) return; try{ this.animais = await this.api('GET','/api/campo/animais?cliente_id='+this.cliente); }catch(e){} },
+
+    // ---------- rebanho: pesagem / sanitário ----------
+    animalLabel(a){ return a.nome || a.brinco || ('#'+a.id); },
+    pesar(a){
+      this.psheet = {open:true, animal:a, nome:this.animalLabel(a), peso_kg:a.peso_atual_kg||null, escore_corporal:a.escore_corporal||null, altura_cm:null, obs:''};
+      this.$nextTick(()=>{ if(this.$refs.pesoInput) this.$refs.pesoInput.focus(); });
+    },
+    salvarPesagem(){
+      const s=this.psheet, a=s.animal;
+      if((s.peso_kg===null||s.peso_kg==='') && (s.escore_corporal===null||s.escore_corporal==='')){
+        this.flash('Informe peso ou escore'); return;
+      }
+      this.enqueue('/api/campo/pesagem', {uuid:this.uuid(), animal_id:a.id,
+        peso_kg:s.peso_kg ?? null, escore_corporal:s.escore_corporal ?? null, altura_cm:s.altura_cm ?? null,
+        grupo_id:this.grupo||null, origem:'manual', obs:s.obs||null});
+      if(s.peso_kg!=null && s.peso_kg!=='') a.peso_atual_kg=s.peso_kg;
+      if(s.escore_corporal!=null) a.escore_corporal=s.escore_corporal;
+      s.open=false;
+      this.flash('Pesagem de '+s.nome+' registrada'+(this.online?'':' (offline)'));
+    },
+    sanitar(a){
+      this.ssheet = {open:true, animal:a, nome:this.animalLabel(a), tipo:'vacina', produto:'', dose:'', via:'', proxima_dose:'', responsavel:'', obs:'', origem_lembrete_id:null};
+      this.$nextTick(()=>{ if(this.$refs.prodInput) this.$refs.prodInput.focus(); });
+    },
+    salvarSanitario(){
+      const s=this.ssheet, a=s.animal;
+      if(!s.produto){ this.flash('Informe o produto/vacina'); return; }
+      this.enqueue('/api/campo/sanitario', {uuid:this.uuid(), animal_id:a.id, tipo:s.tipo,
+        produto:s.produto, dose:s.dose||null, via:s.via||null, proxima_dose:s.proxima_dose||null,
+        responsavel:s.responsavel||null, obs:s.obs||null, origem_lembrete_id:s.origem_lembrete_id||null});
+      const veioDaAgenda = !!s.origem_lembrete_id;
+      s.open=false;
+      this.flash(s.tipo+' em '+s.nome+' registrado'+(this.online?'':' (offline)'));
+      if(veioDaAgenda && this.online) setTimeout(()=>this.carregaAgenda(), 800);
+    },
+
+    // ---------- agenda sanitária ----------
+    async carregaAgenda(){
+      if(!this.cliente) return;
+      this.agenda.loading=true;
+      try{
+        const r = await this.api('GET','/api/campo/agenda?cliente_id='+this.cliente+'&dias='+this.agenda.dias);
+        this.agenda.itens = r.itens||[]; this.agenda.resumo = r.resumo||{};
+      }catch(e){}
+      this.agenda.loading=false;
+    },
+    agendaUrgentes(){ return (this.agenda.resumo.atrasado||0) + (this.agenda.resumo.hoje||0); },
+
+    // ---------- auditoria genética ----------
+    async carregaAuditoria(){
+      if(!this.cliente || this.audit.loading) return;
+      this.audit.loading=true;
+      try{
+        this.audit.data = await this.api('GET','/api/campo/auditoria?cliente_id='+this.cliente);
+        this.audit.loaded=true;
+      }catch(e){ this.flash('Erro: auditoria exige conexão'); }
+      this.audit.loading=false;
+    },
+    cruzarDoAudit(r){
+      if(!r.reprodutor_espelho_id) return;
+      this.tab='cruzar';
+      this.cruza={dam:null, prioridade:'geral', recs:[], loading:true, rid:r.reprodutor_espelho_id};
+      this.acasalarRun();
+    },
+
+    // ---------- movimentação / GTA ----------
+    async carregaMovimentacoes(){
+      if(!this.cliente) return;
+      try{ this.mov.lista = await this.api('GET','/api/campo/movimentacoes?cliente_id='+this.cliente); }catch(e){}
+    },
+    salvarMov(){
+      if(!this.cliente){ this.flash('Selecione a fazenda'); return; }
+      const p = {uuid:this.uuid(), cliente_id:this.cliente, tipo:this.mov.tipo,
+        data_evento:this.mov.data_evento||null, gta_numero:this.mov.gta_numero||null,
+        origem:this.mov.origem||null, destino:this.mov.destino||null,
+        finalidade:this.mov.finalidade||null, quantidade:this.mov.quantidade||null, obs:this.mov.obs||null};
+      this.enqueue('/api/campo/movimentacao', p);
+      this.flash('Movimentação registrada'+(this.online?'':' (offline)'));
+      this.mov.gta_numero=''; this.mov.origem=''; this.mov.destino=''; this.mov.finalidade='';
+      this.mov.quantidade=null; this.mov.obs='';
+      if(this.online) setTimeout(()=>this.carregaMovimentacoes(), 900);
+    },
+    lembreteLabel(it){
+      const d = it.dias;
+      if(d < 0)  return 'atrasado '+(-d)+(d===-1?' dia':' dias');
+      if(d === 0) return 'vence hoje';
+      if(d === 1) return 'amanhã';
+      return 'em '+d+' dias';
+    },
+    aplicarLembrete(it){
+      if(!it.animal_id){ this.flash('Lembrete de lote — aplique por animal no Rebanho'); return; }
+      // pré-preenche a tela de sanitário com a mesma vacina/produto e amarra o lembrete de origem
+      this.ssheet = {open:true, animal:{id:it.animal_id}, nome:it.alvo, tipo:it.tipo||'vacina',
+        produto:it.produto||'', dose:it.dose||'', via:it.via||'', proxima_dose:'', responsavel:'', obs:'',
+        origem_lembrete_id:it.id};
+      this.$nextTick(()=>{ if(this.$refs.prodInput) this.$refs.prodInput.focus(); });
+    },
+    async concluirLembrete(it){
+      // remoção otimista da lista; persiste no servidor
+      this.agenda.itens = this.agenda.itens.filter(x=>x.id!==it.id);
+      if(it.status==='atrasado') this.agenda.resumo.atrasado--;
+      else if(it.status==='hoje') this.agenda.resumo.hoje--;
+      else this.agenda.resumo.proximo--;
+      try{ await this.api('POST','/api/campo/agenda/concluir', {id:it.id}); this.flash('Lembrete dispensado'); }
+      catch(e){ this.flash('Erro — precisa de conexão p/ dispensar'); this.carregaAgenda(); }
+    },
+
+    // ---------- acasalamento ----------
+    async acasalar(a){
+      if(!a.reprodutor_espelho_id){ this.flash('Sincronize a fêmea primeiro'); return; }
+      this.tab='cruzar';
+      this.cruza={dam:null, prioridade:'geral', recs:[], loading:true, rid:a.reprodutor_espelho_id};
+      await this.acasalarRun();
+    },
+    async acasalarRun(){
+      if(!this.cruza.rid) return;
+      this.cruza.loading=true; this.cruza.recs=[];
+      try{
+        const r = await this.api('GET','/api/acasalamento/'+this.cruza.rid+'?prioridade='+this.cruza.prioridade+'&top=8');
+        this.cruza.dam = r.matriz; this.cruza.recs = r.recomendacoes||[];
+      }catch(e){ this.flash('Erro: acasalamento exige conexão'); }
+      this.cruza.loading=false;
+    },
+    cotacaoUrl(){
+      return '/api/campo/cotacao/pdf?matriz_id='+this.cruza.rid+'&prioridade='+this.cruza.prioridade
+             +'&top=8'+(this.cliente?'&cliente_id='+this.cliente:'');
+    },
+    async _gerarCotacaoBlob(){
+      const res = await fetch(this.cotacaoUrl(), {credentials:'same-origin'});
+      if(res.status===401){ location.href='/login'; throw new Error('auth'); }
+      if(!res.ok) throw new Error('falha ao gerar');
+      return res.blob();
+    },
+    cotaNome(){ return (this.cruza.dam && (this.cruza.dam.nome||this.cruza.dam.registro)) || 'matriz'; },
+    async baixarCotacao(){
+      if(!this.cruza.rid || this.cota.busy) return;
+      this.cota.busy=true; this.flash('Gerando cotação…');
+      try{
+        const blob = await this._gerarCotacaoBlob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href=url; a.download='cotacao_semen_'+this.cotaNome()+'.pdf';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(()=>URL.revokeObjectURL(url), 5000);
+        this.flash('Cotação baixada');
+      }catch(e){ this.flash('Erro ao gerar (precisa de conexão)'); }
+      this.cota.busy=false;
+    },
+    async enviarWhatsapp(){
+      if(!this.cruza.rid || this.cota.busy) return;
+      this.cota.busy=true; this.flash('Gerando cotação…');
+      try{
+        const blob = await this._gerarCotacaoBlob();
+        const nome = this.cotaNome();
+        const file = new File([blob], 'cotacao_semen_'+nome+'.pdf', {type:'application/pdf'});
+        const texto = 'Cotação de sêmen — '+nome+' · WiNS Hub Agro';
+        if(navigator.canShare && navigator.canShare({files:[file]})){
+          await navigator.share({files:[file], title:'Cotação de sêmen', text:texto});
+          this.flash('Compartilhado');
+        } else {
+          // fallback: baixa o PDF e abre o WhatsApp com a mensagem (anexar manualmente)
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a'); a.href=url; a.download=file.name;
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(()=>URL.revokeObjectURL(url), 5000);
+          window.open('https://wa.me/?text='+encodeURIComponent(texto+' — PDF baixado, anexe na conversa.'), '_blank');
+        }
+      }catch(e){ this.flash('Erro ao compartilhar cotação'); }
+      this.cota.busy=false;
+    },
+  };
+}
+</script>
+</body>
+</html>
