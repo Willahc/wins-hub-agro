@@ -582,6 +582,7 @@ function campo() {
       return j;
     },
     uuid(){ return (crypto.randomUUID ? crypto.randomUUID() : 'u'+Date.now()+Math.random().toString(16).slice(2)); },
+    isApp(){ return /WiNSCampoApp/.test(navigator.userAgent); },  // dentro do APK (WebView)
     persist(){ localStorage.setItem('wins_outbox', JSON.stringify(this.outbox)); },
     pendentes(){ return this.outbox.filter(o=>o.status!=='synced').length; },
     flash(m){ this.toast=m; setTimeout(()=>{ if(this.toast===m) this.toast=''; }, 2600); },
@@ -765,6 +766,7 @@ function campo() {
       try{ this.mov.lista = await this.api('GET','/api/campo/movimentacoes?cliente_id='+this.cliente); }catch(e){}
     },
     async briefingChegada(m){
+      if(this.isApp()){ this.flash('Baixando briefing…'); window.location.href = '/api/campo/briefing/pdf?movimentacao_id='+m.id; return; }
       this.flash('Gerando briefing…');
       try{
         const res = await fetch('/api/campo/briefing/pdf?movimentacao_id='+m.id, {credentials:'same-origin'});
@@ -849,6 +851,8 @@ function campo() {
     cotaNome(){ return (this.cruza.dam && (this.cruza.dam.nome||this.cruza.dam.registro)) || 'matriz'; },
     async baixarCotacao(){
       if(!this.cruza.rid || this.cota.busy) return;
+      // no APK, o WebView não baixa blob -> aciona a URL e o download nativo (DownloadManager) assume
+      if(this.isApp()){ this.flash('Baixando cotação…'); window.location.href = this.cotacaoUrl(); return; }
       this.cota.busy=true; this.flash('Gerando cotação…');
       try{
         const blob = await this._gerarCotacaoBlob();
@@ -862,6 +866,8 @@ function campo() {
     },
     async enviarWhatsapp(){
       if(!this.cruza.rid || this.cota.busy) return;
+      // no APK não há Web Share de arquivo -> baixa o PDF; o usuário compartilha pelo Downloads
+      if(this.isApp()){ this.flash('Baixando cotação — compartilhe pela pasta Downloads'); window.location.href = this.cotacaoUrl(); return; }
       this.cota.busy=true; this.flash('Gerando cotação…');
       try{
         const blob = await this._gerarCotacaoBlob();
