@@ -7,8 +7,16 @@ Dois pareceres compartilham o mesmo CSS base (_BASE_CSS) para consistência:
   - gerar_parecer_matching    -> recomendação de reprodutores (matching)
 """
 from datetime import datetime
+from html import escape as _html_escape
 from weasyprint import HTML
 from pdf_generator import LABEL_FINALIDADE, LABEL_PRIORIDADE, _num  # reusa labels/coerção
+
+
+def _esc(v):
+    """Escapa texto vindo do usuário (nome de fazenda/animal, obs, GTA…) antes de
+    interpolar no HTML do PDF. Sem isso, '&', '<' ou tags quebram a renderização
+    (WeasyPrint parseia XML) ou injetam conteúdo. None -> string vazia."""
+    return _html_escape(str(v)) if v is not None else ""
 
 # --- paleta (mesma do front) ---
 VERDE_ESCURO = "#1a3a1a"
@@ -255,8 +263,8 @@ def _ficha_touro_html(t: dict) -> str:
     central = next((o.get("central") for o in ofertas if o.get("central")), None) or "—"
     dados = [
         ("IQGg genômico", _f(t.get("iqg_genomico"), 1)),
-        ("Fazenda de origem", t.get("fazenda_origem") or "—"),
-        ("Nascimento", t.get("data_nascimento") or "—"),
+        ("Fazenda de origem", _esc(t.get("fazenda_origem") or "—")),
+        ("Nascimento", _esc(t.get("data_nascimento") or "—")),
         ("Genotipado", "Sim" if t.get("genotipado") else "Não"),
         ("CEIP", "Sim" if t.get("ceip") else "Não"),
         ("Consanguinidade", f"{_num(t.get('consanguinidade')):.2f}%" if _num(t.get("consanguinidade")) is not None else "—"),
@@ -289,7 +297,7 @@ def _ficha_touro_html(t: dict) -> str:
     <div class="ficha">
       <div class="section-head">
         <div class="st">{_cattle_svg('#7fc77f', horns=True)} &nbsp;Ficha do Touro (pai)</div>
-        <div class="ss">{t.get('nome','—')} · {t.get('raca','')} · Reg. {t.get('registro','—')} · {central}</div>
+        <div class="ss">{_esc(t.get('nome','—'))} · {_esc(t.get('raca',''))} · Reg. {_esc(t.get('registro','—'))} · {_esc(central)}</div>
       </div>
       <div class="cols2">
         <div><div class="colh">Dados do reprodutor</div>
@@ -304,9 +312,9 @@ def _ficha_touro_html(t: dict) -> str:
 def _ficha_matriz_html(m: dict) -> str:
     if not m or m.get("error"):
         return ""
-    pai = m.get("pai_nome") or "—"
+    pai = _esc(m.get("pai_nome") or "—")
     if m.get("pai_registro"):
-        pai += f" (Reg. {m.get('pai_registro')})"
+        pai += f" (Reg. {_esc(m.get('pai_registro'))})"
     dados = [
         ("Mérito materno (IQGg)", _f(m.get("merito_iqgg"), 2)),
         ("Pai (avô materno)", pai),
@@ -314,14 +322,14 @@ def _ficha_matriz_html(m: dict) -> str:
         ("Filhos avaliados", str(m.get("filhos_avaliados") if m.get("filhos_avaliados") is not None else "—")),
         ("IQGg médio dos filhos", _f(m.get("iqgg_medio_filhos"), 2)),
         ("Melhor filho (IQGg)", _f(m.get("iqgg_melhor_filho"), 2)),
-        ("Fazenda de origem", m.get("fazenda_origem") or "—"),
+        ("Fazenda de origem", _esc(m.get("fazenda_origem") or "—")),
     ]
     kv = "".join(f"<tr><td class='k'>{k}</td><td class='v'>{v}</td></tr>" for k, v in dados)
     filhos = m.get("filhos") or []
     if filhos:
         frows = "".join(
-            f"<tr><td class='nome'>{f.get('nome','—')}</td>"
-            f"<td class='l'>{f.get('registro','—')}</td>"
+            f"<tr><td class='nome'>{_esc(f.get('nome','—'))}</td>"
+            f"<td class='l'>{_esc(f.get('registro','—'))}</td>"
             f"<td class='cria'>{_f(f.get('iqgg'), 2)}</td></tr>"
             for f in filhos
         )
@@ -335,7 +343,7 @@ def _ficha_matriz_html(m: dict) -> str:
     <div class="ficha">
       <div class="section-head">
         <div class="st">{_cattle_svg('#e6c98a', horns=False)} &nbsp;Ficha da Matriz (mãe)</div>
-        <div class="ss">{m.get('nome','—')} · {m.get('raca_sigla','')} · Reg. {m.get('registro','—')} · ♀ matriz</div>
+        <div class="ss">{_esc(m.get('nome','—'))} · {_esc(m.get('raca_sigla',''))} · Reg. {_esc(m.get('registro','—'))} · ♀ matriz</div>
       </div>
       <h2>Mérito materno</h2><div class="rule"></div>
       <table class="kv">{kv}</table>
@@ -422,14 +430,14 @@ def gerar_parecer_cruzamento(cruz: dict, touro_ficha: dict = None, matriz_ficha:
     <table class="cross"><tr>
       <td style="width:30%"><div class="card c-bull">
         <div class="role">{ico_bull} Touro (pai)</div>
-        <div class="nome">{touro.get('nome','—')}</div>
-        <div class="meta">{touro.get('raca_sigla','')} · {touro.get('registro','—')}</div>
+        <div class="nome">{_esc(touro.get('nome','—'))}</div>
+        <div class="meta">{_esc(touro.get('raca_sigla',''))} · {_esc(touro.get('registro','—'))}</div>
         <div class="iq">IQGg {_f(touro.get('iqgg'))}</div></div></td>
       <td class="op">×</td>
       <td style="width:30%"><div class="card c-cow">
         <div class="role">{ico_cow} Vaca (mãe)</div>
-        <div class="nome">{vaca.get('nome','—')}</div>
-        <div class="meta">{vaca.get('raca_sigla','')} · {vaca.get('registro','—')}</div>
+        <div class="nome">{_esc(vaca.get('nome','—'))}</div>
+        <div class="meta">{_esc(vaca.get('raca_sigla',''))} · {_esc(vaca.get('registro','—'))}</div>
         <div class="iq">IQGg {_f(vaca.get('iqgg'))}</div></div></td>
       <td class="op">=</td>
       <td style="width:32%"><div class="card c-calf">
@@ -466,8 +474,8 @@ def gerar_parecer_matching(perfil: dict, touros: list) -> bytes:
     fin = perfil.get("finalidade", "") or ""
     fin_label = LABEL_FINALIDADE.get(fin, fin or "Não informada")
     prio_label = LABEL_PRIORIDADE.get(perfil.get("prioridade", "geral"), "Geral (IQGg)")
-    uf_label = perfil.get("uf") or "Todos os estados"
-    raca_label = perfil.get("raca_nome") or "Todas as raças"
+    uf_label = _esc(perfil.get("uf") or "Todos os estados")
+    raca_label = _esc(perfil.get("raca_nome") or "Todas as raças")
     orc = _num(perfil.get("orcamento_max"))
     orc_label = f"R$ {orc:.0f}/dose" if orc else "Sem limite"
     semen_label = "Sexado" if perfil.get("sexado") else "Convencional"
@@ -507,8 +515,8 @@ def gerar_parecer_matching(perfil: dict, touros: list) -> bytes:
 
     # --- hero do #1 ---
     t1 = top10[0]
-    nome1 = t1.get("nome") or "—"
-    central1 = t1.get("central") or "central não informada"
+    nome1 = _esc(t1.get("nome") or "—")
+    central1 = _esc(t1.get("central") or "central não informada")
     iqgg1, dep1 = _num(t1.get("iqgg")), _num(t1.get("dep_prioritaria"))
     preco1, ganho1, roi1 = _num(t1.get("preco_dose")), ganho_of(t1), _num(t1.get("roi_dose"))
     lucro1 = _num(t1.get("lucro_bezerro"))
@@ -522,7 +530,7 @@ def gerar_parecer_matching(perfil: dict, touros: list) -> bytes:
     <div class="hero">
       <span class="rank">&#9733; #1 Recomendado</span>
       <div class="hn">{nome1}</div>
-      <div class="hc">{central1} · {t1.get('raca','')} · Reg. {t1.get('registro','—')}</div>
+      <div class="hc">{central1} · {_esc(t1.get('raca',''))} · Reg. {_esc(t1.get('registro','—'))}</div>
       <div class="stat-row">
         <div class="stat"><div class="sl">IQGg</div><div class="sv">{_f(iqgg1,1)}</div></div>
         <div class="stat"><div class="sl">{ganho_label}</div><div class="sv{cls_ganho}">{sv_ganho}</div></div>
@@ -551,8 +559,8 @@ def gerar_parecer_matching(perfil: dict, touros: list) -> bytes:
     sem_preco = True
     rows = ""
     for i, td in enumerate(top10, 1):
-        nome = td.get("nome") or "—"
-        central = td.get("central") or "—"
+        nome = _esc(td.get("nome") or "—")
+        central = _esc(td.get("central") or "—")
         iq = _num(td.get("iqgg")); dp = _num(td.get("dep_prioritaria"))
         pr = _num(td.get("preco_dose")); gh = ganho_of(td); ro = _num(td.get("roi_dose"))
         if pr:
@@ -613,18 +621,18 @@ def gerar_cotacao_acasalamento(matriz: dict, recomendacoes: list, cliente: dict 
                                prioridade_label: str = "Geral", n_doses: int = None) -> bytes:
     cliente = cliente or {}
     recs = recomendacoes or []
-    vaca_nome = matriz.get("nome") or matriz.get("registro") or "Matriz"
-    faz = cliente.get("razao_social") or matriz.get("fazenda_origem") or "—"
-    local = " · ".join([x for x in [cliente.get("municipio") or matriz.get("municipio"),
-                                    cliente.get("uf") or matriz.get("uf")] if x]) or "—"
+    vaca_nome = _esc(matriz.get("nome") or matriz.get("registro") or "Matriz")
+    faz = _esc(cliente.get("razao_social") or matriz.get("fazenda_origem") or "—")
+    local = _esc(" · ".join([x for x in [cliente.get("municipio") or matriz.get("municipio"),
+                                         cliente.get("uf") or matriz.get("uf")] if x]) or "—")
 
     # perfil da matriz
     pcards = [
-        ("Raça", matriz.get("raca") or matriz.get("raca_sigla") or "—"),
+        ("Raça", _esc(matriz.get("raca") or matriz.get("raca_sigla") or "—")),
         ("Mérito materno (IQGg)", _f(matriz.get("iqgg"), 2)),
-        ("Registro", matriz.get("registro") or "—"),
+        ("Registro", _esc(matriz.get("registro") or "—")),
         ("Filhos no catálogo", str(matriz.get("n_filhos") if matriz.get("n_filhos") is not None else "—")),
-        ("Critério da cotação", prioridade_label),
+        ("Critério da cotação", _esc(prioridade_label)),
     ]
     profile = "".join(f"<div class='pcard'><div class='pl'>{l}</div><div class='pv'>{v}</div></div>"
                       for l, v in pcards)
@@ -635,13 +643,13 @@ def gerar_cotacao_acasalamento(matriz: dict, recomendacoes: list, cliente: dict 
     for i, r in enumerate(recs):
         preco = _num(r.get("preco_dose"))
         cls = "top1" if i == 0 else ""
-        parent = ("<span class='d-neg'>⚠ " + (r.get("parentesco") or "parente") + "</span>") if r.get("parente") else "—"
-        central = r.get("central") or "—"
+        parent = ("<span class='d-neg'>⚠ " + _esc(r.get("parentesco") or "parente") + "</span>") if r.get("parente") else "—"
+        central = _esc(r.get("central") or "—")
         preco_txt = _brl(preco) if preco is not None else "<span class='nd'>sob consulta</span>"
         rows += (
             f"<tr class='{cls}'><td>{i+1}</td>"
-            f"<td class='nome'>{r.get('nome') or '—'}</td>"
-            f"<td>{r.get('raca_sigla') or '—'}</td>"
+            f"<td class='nome'>{_esc(r.get('nome') or '—')}</td>"
+            f"<td>{_esc(r.get('raca_sigla') or '—')}</td>"
             f"<td class='l'>{central}</td>"
             f"<td class='cria'>{_f(r.get('prog_iqgg'), 2)}</td>"
             f"<td>{preco_txt}</td>"
@@ -710,8 +718,8 @@ _PROTOCOLO_CHEGADA = [
 
 def gerar_briefing_chegada(mov: dict, cliente: dict = None) -> bytes:
     cliente = cliente or {}
-    faz = cliente.get("razao_social") or "—"
-    local = " · ".join([x for x in [cliente.get("municipio"), cliente.get("uf")] if x]) or "—"
+    faz = _esc(cliente.get("razao_social") or "—")
+    local = _esc(" · ".join([x for x in [cliente.get("municipio"), cliente.get("uf")] if x]) or "—")
     data = mov.get("data_evento")
     data = data.strftime("%d/%m/%Y") if hasattr(data, "strftime") else (str(data) if data else "—")
     qtd = mov.get("quantidade")
@@ -723,7 +731,8 @@ def gerar_briefing_chegada(mov: dict, cliente: dict = None) -> bytes:
         ("Quantidade", f"{qtd} cabeça(s)" if qtd else "—"),
         ("Data de chegada", data),
     ]
-    kv = "".join(f"<tr><td class='k'>{k}</td><td class='v'>{v}</td></tr>" for k, v in dados)
+    # k é rótulo fixo; v vem do usuário (GTA/origem/finalidade) -> escapa
+    kv = "".join(f"<tr><td class='k'>{k}</td><td class='v'>{_esc(v)}</td></tr>" for k, v in dados)
 
     passos = "".join(
         f"<tr><td style='width:26px; text-align:center; font-size:13pt; color:#2d5a2d'>&#9744;</td>"
@@ -733,7 +742,7 @@ def gerar_briefing_chegada(mov: dict, cliente: dict = None) -> bytes:
 
     obs_html = ""
     if mov.get("obs"):
-        obs_html = f"<div class='banner bn-warn'><b>Observação do lote:</b> {mov.get('obs')}</div>"
+        obs_html = f"<div class='banner bn-warn'><b>Observação do lote:</b> {_esc(mov.get('obs'))}</div>"
 
     body = f"""
     <h2>Lote recebido</h2><div class="rule"></div>
