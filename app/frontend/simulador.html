@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simulador de Retorno — WiNS Hub Agro</title>
+  <link rel="icon" href="/static/vendor/icon-192.png">
+  <style>
+    :root { --verde:#2d5a2d; --verde2:#4a9e4a; --linha:#e3e8e3; --cinza:#6b7a6b; }
+    * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:#f3f6f3; color:#1a2a1a; }
+    .top { background:var(--verde); color:#fff; padding:16px 18px; }
+    .brand { font-size:18px; font-weight:800; } .brand span { color:#bfe3bf; }
+    .sub { font-size:12px; opacity:.85; margin-top:2px; }
+    .wrap { max-width:640px; margin:0 auto; padding:16px; }
+    .card { background:#fff; border:1px solid var(--linha); border-radius:14px; padding:16px; margin-bottom:14px; box-shadow:0 1px 3px rgba(0,0,0,.04); }
+    h3 { font-size:14px; margin:0 0 12px; color:var(--verde); }
+    label { display:block; font-size:12px; font-weight:600; color:var(--cinza); margin:10px 0 4px; }
+    input[type=number], select { width:100%; padding:12px; border:1px solid var(--linha); border-radius:10px; font-size:16px; background:#fff; }
+    input[type=range] { width:100%; accent-color:var(--verde2); }
+    .slider-val { font-weight:800; color:var(--verde); font-size:15px; }
+    .hero { background:linear-gradient(135deg,#2d5a2d,#4a9e4a); color:#fff; border:none; }
+    .hero .big { font-size:30px; font-weight:800; line-height:1.1; margin:6px 0; }
+    .hero .lbl { font-size:13px; opacity:.9; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .kpi { background:#f6faf6; border:1px solid var(--linha); border-radius:12px; padding:12px; text-align:center; }
+    .kpi .v { font-size:22px; font-weight:800; color:var(--verde); }
+    .kpi .l { font-size:11px; color:var(--cinza); margin-top:2px; }
+    .muted { color:var(--cinza); font-size:12px; }
+    .btn { width:100%; padding:14px; border:none; border-radius:11px; background:var(--verde); color:#fff; font-size:15px; font-weight:700; cursor:pointer; margin-top:8px; }
+    .btn.sec { background:#fff; color:var(--verde); border:1.5px solid var(--verde2); }
+    .foot { text-align:center; font-size:11px; color:var(--cinza); padding:10px 0 24px; }
+  </style>
+</head>
+<body x-data="simulador()" x-init="init()">
+  <div class="top">
+    <div class="brand">WiNS <span>Hub Agro</span> · Simulador</div>
+    <div class="sub">Quanto sua fazenda ganha com a genética Monte Sião</div>
+  </div>
+
+  <div class="wrap">
+    <!-- HERO: resultado principal -->
+    <div class="card hero">
+      <div class="lbl">Ganho genético estimado por safra</div>
+      <div class="big">+R$ <span x-text="fmt(ganhoGeneticoSafra)"></span></div>
+      <div class="lbl">com <b x-text="matrizes"></b> matrizes usando <b x-text="touroSel ? touroSel.nome : '—'"></b>
+        · <b x-text="bezerrosAdicionais"></b> bezerros a mais/safra</div>
+    </div>
+
+    <!-- INPUTS -->
+    <div class="card">
+      <h3>Dados da fazenda</h3>
+      <label>Número de matrizes</label>
+      <input type="number" min="1" max="100000" x-model.number="matrizes" @input="syncURL()">
+
+      <label>Taxa de prenhez atual: <span class="slider-val" x-text="prenhezAtual + '%'"></span></label>
+      <input type="range" min="30" max="95" x-model.number="prenhezAtual" @input="syncURL()">
+
+      <label>Preço da arroba (@) hoje</label>
+      <input type="number" min="100" max="1000" x-model.number="arroba" @input="syncURL()">
+
+      <label>Touro Monte Sião</label>
+      <select x-model.number="touroId" @change="syncURL()">
+        <option :value="0">— escolha o touro —</option>
+        <template x-for="t in touros" :key="t.id">
+          <option :value="t.id" x-text="t.nome + (t.raca_sigla ? ' ('+t.raca_sigla+')' : '')"></option>
+        </template>
+      </select>
+      <p class="muted" x-show="touroSel" style="margin-top:8px">
+        <b x-text="touroSel && touroSel.nome"></b>: +R$ <b x-text="fmt(ganhoCria)"></b>/cria ·
+        prenhez esperada <b x-text="touroSel && touroSel.prenhez_est ? '~'+touroSel.prenhez_est+'%' : '—'"></b>
+        <span x-show="touroSel && touroSel.preco_dose"> · dose R$ <b x-text="touroSel && touroSel.preco_dose"></b></span>
+      </p>
+    </div>
+
+    <!-- OUTPUTS -->
+    <div class="card">
+      <h3>Retorno estimado</h3>
+      <div class="grid">
+        <div class="kpi"><div class="v"><span x-text="bezerrosAdicionais"></span></div><div class="l">bezerros a mais/safra</div></div>
+        <div class="kpi"><div class="v">+R$ <span x-text="fmt(ganhoCria)"></span></div><div class="l">ganho genético/cria</div></div>
+        <div class="kpi"><div class="v"><span x-text="totalBezerros"></span></div><div class="l">bezerros/safra (esperado)</div></div>
+        <div class="kpi"><div class="v" x-text="equilibrio ? equilibrio+' crias' : '—'"></div><div class="l">a dose se paga em</div></div>
+      </div>
+      <p class="muted" style="margin-top:12px">Estimativas para orientar a conversa. O ganho genético/cria é o quanto
+        o touro agrega por bezerro vs. um touro médio da raça (DEP de peso × arroba ÷ 30). A prenhez é estimativa
+        (proxy de perímetro escrotal). Calibrar com o zootecnista.</p>
+    </div>
+
+    <button class="btn" @click="gerarProposta()">📄 Gerar proposta (PDF)</button>
+    <button class="btn sec" @click="compartilhar()">🔗 Copiar link desta simulação</button>
+
+    <div class="foot">WiNS Hub Agro · Genética Monte Sião · simulação sem compromisso</div>
+  </div>
+
+  <script src="/static/vendor/alpine.min.js" defer></script>
+  <script>
+    function simulador() {
+      return {
+        touros: [], touroId: 0, arroba: 320, matrizes: 100, prenhezAtual: 60,
+        async init() {
+          // lê params da URL (link compartilhável)
+          const q = new URLSearchParams(location.search);
+          if (q.get('m')) this.matrizes = +q.get('m');
+          if (q.get('p')) this.prenhezAtual = +q.get('p');
+          if (q.get('a')) this.arroba = +q.get('a');
+          try {
+            const r = await (await fetch('/api/simulador/touros')).json();
+            this.touros = r.touros || [];
+            if (r.arroba && !q.get('a')) this.arroba = Math.round(r.arroba);
+            // touro do link, ou o 1º (melhor IQGg) como default
+            this.touroId = +q.get('t') || (this.touros[0] ? this.touros[0].id : 0);
+          } catch (e) { /* offline: mantém defaults */ }
+        },
+        get touroSel() { return this.touros.find(t => t.id === this.touroId) || null; },
+        get ganhoCria() {
+          const t = this.touroSel;
+          if (!t || t.pd == null || !this.arroba || t.pd <= 0) return 0;
+          return Math.round(t.pd * this.arroba / 30);   // mesma fórmula do App/Hub (F1)
+        },
+        get prenhezEsperada() { return (this.touroSel && this.touroSel.prenhez_est) || this.prenhezAtual; },
+        get totalBezerros() { return Math.round((this.matrizes || 0) * this.prenhezEsperada / 100); },
+        get bezerrosAdicionais() {
+          return Math.max(0, Math.round((this.matrizes || 0) * (this.prenhezEsperada - this.prenhezAtual) / 100));
+        },
+        get ganhoGeneticoSafra() { return this.totalBezerros * this.ganhoCria; },
+        get equilibrio() {
+          const t = this.touroSel;
+          if (!t || !t.preco_dose || this.ganhoCria <= 0) return 0;
+          return Math.ceil(t.preco_dose / this.ganhoCria);
+        },
+        fmt(n) { return (Math.round(n || 0)).toLocaleString('pt-BR'); },
+        syncURL() {
+          const q = new URLSearchParams({ m: this.matrizes, p: this.prenhezAtual, a: this.arroba, t: this.touroId });
+          history.replaceState(null, '', '?' + q.toString());
+        },
+        compartilhar() {
+          this.syncURL();
+          navigator.clipboard?.writeText(location.href);
+          alert('Link copiado! Envie ao produtor pelo WhatsApp.');
+        },
+        gerarProposta() {
+          if (!this.touroId) { alert('Escolha um touro primeiro.'); return; }
+          const q = new URLSearchParams({ t: this.touroId, m: this.matrizes, p: this.prenhezAtual, a: this.arroba });
+          window.open('/api/simulador/proposta?' + q.toString(), '_blank');
+        },
+      };
+    }
+  </script>
+</body>
+</html>

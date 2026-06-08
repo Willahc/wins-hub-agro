@@ -762,3 +762,47 @@ def gerar_briefing_chegada(mov: dict, cliente: dict = None) -> bytes:
     return _render("Briefing de chegada", "Briefing de Chegada",
                    f"{faz} · {qtd or '—'} cab. · Chegada {data}",
                    body)
+
+
+# ===========================================================================
+# Feature 5 — Proposta do simulador (artefato que a Mari deixa com o produtor)
+# ===========================================================================
+def gerar_proposta_simulador(d: dict) -> bytes:
+    """Proposta comercial de 1 página a partir da simulação de retorno. `d` traz os
+    números já calculados no backend (mesma fórmula do simulador/App)."""
+    def _i(v):
+        return f"{int(round(v)):,}".replace(",", ".") if v is not None else "—"
+    touro = _esc(d.get("touro_nome") or "—")
+    raca = _esc(d.get("raca") or "")
+    equil = d.get("equilibrio")
+    prenhez_esp = d.get("prenhez_esperada")
+    body = f"""
+      <h2>Proposta de retorno — Genética Monte Sião</h2><div class="rule"></div>
+      <div class="hero">
+        <span class="rank">Ganho estimado por safra</span>
+        <div class="hn">+R$ {_i(d.get('ganho_genetico_safra'))}</div>
+        <div class="hc">com <b>{_i(d.get('matrizes'))}</b> matrizes usando <b>{touro}</b> ·
+            <b>{_i(d.get('bezerros_adicionais'))}</b> bezerros a mais por safra</div>
+        <div class="stat-row">
+          <div class="stat"><div class="sl">Bezerros a mais/safra</div><div class="sv">{_i(d.get('bezerros_adicionais'))}</div></div>
+          <div class="stat"><div class="sl">Ganho genético/cria</div><div class="sv">+R$ {_i(d.get('ganho_cria'))}</div></div>
+          <div class="stat"><div class="sl">Bezerros/safra</div><div class="sv">{_i(d.get('total_bezerros'))}</div></div>
+          <div class="stat"><div class="sl">A dose se paga em</div><div class="sv">{(str(equil) + ' crias') if equil else '—'}</div></div>
+        </div>
+      </div>
+      <h2>Premissas da simulação</h2><div class="rule"></div>
+      <div class="profile">
+        <div class="pcard"><div class="pl">Touro Monte Sião</div><div class="pv">{touro}{(' (' + raca + ')') if raca else ''}</div></div>
+        <div class="pcard"><div class="pl">Matrizes</div><div class="pv">{_i(d.get('matrizes'))}</div></div>
+        <div class="pcard"><div class="pl">Prenhez atual</div><div class="pv">{_i(d.get('prenhez_atual'))}%</div></div>
+        <div class="pcard"><div class="pl">Prenhez esperada</div><div class="pv">{('~' + str(prenhez_esp) + '%') if prenhez_esp else '—'}</div></div>
+        <div class="pcard"><div class="pl">Preço da arroba (@)</div><div class="pv">R$ {_i(d.get('arroba'))}</div></div>
+        <div class="pcard"><div class="pl">Preço da dose</div><div class="pv">{('R$ ' + _i(d.get('preco_dose'))) if d.get('preco_dose') else '—'}</div></div>
+      </div>
+      <div class="note">O <b>ganho genético por cria</b> é o quanto o touro agrega por bezerro vs. um touro médio
+        da raça (DEP de peso à desmama × arroba ÷ 30). A <b>taxa de prenhez</b> é estimativa (proxy de perímetro
+        escrotal). Valores são estimativas para orientar a decisão — resultados reais variam com manejo, nutrição
+        e sanidade.{(' Gerado em ' + _esc(d.get('data_str')) + '.') if d.get('data_str') else ''}</div>
+    """
+    return _render("Proposta · Simulador", "Proposta de Retorno",
+                   "Genética Monte Sião · WiNS Hub Agro", body)

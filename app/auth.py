@@ -4,7 +4,15 @@ import hmac
 import bcrypt
 import os
 
-SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE-ME-set-SECRET_KEY-in-env")
+_DEFAULT_SECRET = "CHANGE-ME-set-SECRET_KEY-in-env"
+SECRET_KEY = os.getenv("SECRET_KEY", _DEFAULT_SECRET)
+# Falha cedo se a chave não foi configurada: assinar JWT com uma string pública
+# permitiria forjar sessões. Defina SECRET_KEY no .env (64+ chars aleatórios).
+if SECRET_KEY == _DEFAULT_SECRET:
+    raise RuntimeError(
+        "SECRET_KEY não configurada — defina a variável de ambiente SECRET_KEY "
+        "(ex.: openssl rand -hex 32) antes de subir a aplicação."
+    )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8  # 8 horas
 

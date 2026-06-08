@@ -86,6 +86,13 @@
       <span class="dot" :class="{off:!online}"></span>
       <span x-text="online ? 'Online (Starlink)' : 'Offline — capturando local'"></span>
       <span class="pill" x-text="pendentes()+' na fila'"></span>
+      <button x-show="falhados()>0" @click="retentarFalhados()"
+              style="background:#c0392b; color:#fff; border:none; border-radius:9px; padding:2px 8px; font-size:11px; font-weight:800; cursor:pointer"
+              x-text="'⚠ '+falhados()+' falha(s) — tentar de novo'"></button>
+    </div>
+    <div x-show="armazenamentoCheio"
+         style="background:#c0392b; color:#fff; padding:6px 10px; border-radius:8px; margin-top:6px; font-size:12px; font-weight:700">
+      ⚠ Memória do aparelho cheia — sincronize agora antes de capturar mais (risco de perder dados).
     </div>
   </div>
 
@@ -250,6 +257,18 @@
       <div class="card" x-show="cliente">
         <h3>Cadastrar animal no curral</h3>
 
+        <!-- Brief A/F1: vincular o nascimento a um cruzamento prenhe (fecha o loop) -->
+        <div x-show="nascimentos.length" style="margin-bottom:12px; padding:10px 12px; background:#eef7ea; border:1px solid #4a9e4a; border-radius:10px;">
+          <label style="margin-top:0">🐮 Nasceu de um cruzamento registrado?</label>
+          <select x-model.number="novo.cruzamento_id">
+            <option :value="null">— não / animal avulso —</option>
+            <template x-for="c in nascimentos" :key="c.id">
+              <option :value="c.id" x-text="(c.vaca_nome||c.brinco||'vaca')+' × '+(c.touro_nome||'touro')"></option>
+            </template>
+          </select>
+          <div class="muted" style="margin-top:4px">Liga o bezerro ao touro (pedigree automático) e ao aprendizado de peso.</div>
+        </div>
+
         <!-- ===== PONTE: busca no catálogo da plataforma (104 mil) ===== -->
         <label>🔎 Buscar na base WiNS — por nome ou registro</label>
         <input x-model="cat.q" @input.debounce.400ms="buscarCatalogo()"
@@ -391,6 +410,24 @@
 
     <!-- ====================== ACASALAMENTO ====================== -->
     <div x-show="tab==='cruzar'">
+      <!-- Brief A: diagnóstico de gestação — captura o REALIZADO (ensina o motor) -->
+      <div class="card" x-show="dg.pendentes.length" style="border:1.5px solid #4a9e4a;">
+        <h3 x-text="'🔬 Diagnóstico de gestação ('+dg.pendentes.length+')'"></h3>
+        <p class="muted" style="margin:0 0 8px">Confirme o resultado dos cruzamentos — é o que faz o motor aprender.</p>
+        <template x-for="d in dg.pendentes" :key="d.id">
+          <div class="rec" style="display:flex; align-items:center; gap:10px; justify-content:space-between;">
+            <div style="min-width:0;">
+              <div style="font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                   x-text="(d.vaca_nome||d.brinco||'vaca')+' × '+(d.touro_nome||'touro')"></div>
+              <div class="muted" x-text="d.dias+' dias do cruzamento'"></div>
+            </div>
+            <div style="display:flex; gap:6px; flex:none;">
+              <button class="mini" style="background:#2d5a2d; color:#fff; border-color:#2d5a2d" @click="marcarDG(d,'prenhe')">Prenhe</button>
+              <button class="mini" @click="marcarDG(d,'vazia')">Vazia</button>
+            </div>
+          </div>
+        </template>
+      </div>
       <div class="card">
         <h3>Acasalamento ao vivo</h3>
         <div class="empty" x-show="!cruza.dam">Na aba <b>Rebanho</b>, toque <b>♥ Cruzar</b> numa fêmea.</div>
@@ -423,10 +460,29 @@
               <span x-show="r.preco_dose">Dose <b x-text="'R$ '+r.preco_dose"></b></span>
               <span>Score <b x-text="r.score"></b></span>
             </div>
+            <!-- Feature 1: ganho financeiro estimado por cria (vs. touro médio da raça) -->
+            <div x-show="r.ganho_cria != null" style="margin-top:5px; font-size:14px; color:#2d5a2d; font-weight:800">
+              +R$ <span x-text="r.ganho_cria"></span>/cria
+              <span style="font-weight:500; color:#6b7a6b; font-size:12px">vs. média da raça<span x-show="r.roi_cria"> · ROI <b x-text="r.roi_cria+'×'"></b></span></span>
+            </div>
+            <!-- Feature 3: taxa de prenhez estimada (proxy PES) -->
+            <div x-show="r.prenhez_est != null" style="margin-top:2px; font-size:12px; color:#5a675a">
+              Prenhez esperada: <b style="color:#1a3a1a" x-text="'~'+r.prenhez_est+'%'"></b>
+            </div>
             <div class="warn" x-show="r.parente" x-text="r.nota"></div>
             <div class="pick" x-text="(cruza.chosen && cruza.chosen.id===r.id) ? '✓ Touro escolhido' : 'Tocar p/ escolher este touro'"></div>
           </div>
         </template>
+      </div>
+      <!-- Feature 2: registrar o cruzamento (3 toques: vaca -> #1 já pré-escolhido -> confirmar) -->
+      <div class="card" x-show="cruza.recs.length && cruza.chosen && cruza.vacaId">
+        <h3>Registrar cruzamento</h3>
+        <p class="muted" style="margin:0 0 8px">
+          <b x-text="cruza.dam && cruza.dam.nome"></b> × <b x-text="cruza.chosen && cruza.chosen.nome"></b>
+          <span x-show="cruza.chosen && cruza.chosen.ganho_cria != null"> · +R$ <span x-text="cruza.chosen.ganho_cria"></span>/cria</span>
+        </p>
+        <button class="btn" :disabled="cruza.registrando || cruza.registrado" @click="registrarCruzamento()"
+                x-text="cruza.registrado ? '✓ Cruzamento registrado' : (cruza.registrando ? 'Registrando…' : '✓ Confirmar cruzamento')"></button>
       </div>
       <div class="card" x-show="cruza.recs.length">
         <h3>Cotação de sêmen</h3>
@@ -435,6 +491,25 @@
         <button class="btn" :disabled="cota.busy" @click="enviarWhatsapp()"
                 x-text="cota.busy ? 'Gerando…' : '📲 Enviar cotação no WhatsApp'"></button>
         <button class="btn sec" :disabled="cota.busy" @click="baixarCotacao()">📄 Baixar PDF</button>
+      </div>
+      <!-- Feature 4: registrar venda fechada (offline/outbox) -->
+      <div class="card" x-show="cruza.recs.length">
+        <h3>Registrar venda</h3>
+        <div class="row">
+          <div><label>Tipo</label>
+            <select x-model="venda.tipo">
+              <option value="semen">Sêmen (dose)</option>
+              <option value="embriao">Embrião</option>
+              <option value="animal">Animal</option>
+            </select>
+          </div>
+          <div><label>Quantidade</label><input type="number" min="1" x-model.number="venda.quantidade" inputmode="numeric"></div>
+        </div>
+        <label>Valor unitário (R$)</label>
+        <input type="number" min="0" x-model.number="venda.valor_unitario" inputmode="decimal" placeholder="0">
+        <p class="muted" style="margin:6px 0" x-show="cruza.chosen">Touro: <b x-text="cruza.chosen && cruza.chosen.nome"></b></p>
+        <button class="btn" :disabled="venda.salvando" @click="salvarVenda()"
+                x-text="venda.salvando ? 'Registrando…' : '💰 Registrar venda'"></button>
       </div>
     </div>
 
@@ -587,20 +662,90 @@
     </div>
   </div>
 
+    <!-- ====================== ESTAÇÃO DE MONTA (Brief B) ====================== -->
+    <div x-show="tab==='monta'">
+      <div class="card">
+        <h3>🔁 Estação de monta</h3>
+        <div class="empty" x-show="!cliente">Selecione a fazenda na aba <b>Fazenda</b>.</div>
+        <div x-show="cliente">
+          <template x-for="e in monta.estacoes" :key="e.id">
+            <div class="rec pickable" :class="{sel: monta.sel && monta.sel.id===e.id}" role="button" tabindex="0"
+                 @click="selecionarEstacao(e)">
+              <div style="font-weight:700" x-text="e.nome"></div>
+              <div class="muted" x-text="(e.protocolo||e.tipo)+' · '+e.inseminadas+' inseminadas'"></div>
+            </div>
+          </template>
+          <div x-show="!monta.estacoes.length" class="muted" style="margin:6px 0">Nenhuma estação ainda.</div>
+          <label style="margin-top:12px">Nova estação</label>
+          <input x-model="monta.novo.nome" placeholder="Ex: Estação 2026/1">
+          <button class="btn sec" style="margin-top:8px" @click="criarEstacao()">+ Criar estação</button>
+        </div>
+      </div>
+
+      <div class="card" x-show="monta.sel">
+        <h3 x-text="'💉 IATF em lote'"></h3>
+        <p class="muted" style="margin:0 0 8px">Insemina o lote inteiro com um touro de uma vez — cada matriz vira um cruzamento (entra no DG e no aprendizado).</p>
+        <label>Lote</label>
+        <select x-model.number="monta.grupo">
+          <option :value="0">Todas as matrizes ativas</option>
+          <template x-for="g in grupos" :key="g.id"><option :value="g.id" x-text="g.nome"></option></template>
+        </select>
+        <label style="margin-top:10px">Touro</label>
+        <input x-model="monta.touroQ" @input.debounce.400ms="buscarTouroMonta()" placeholder="buscar touro do catálogo">
+        <template x-for="t in monta.touroRes" :key="t.id">
+          <div class="rec pickable" role="button" tabindex="0" @click="pickTouroMonta(t)"
+               x-text="t.nome+(t.raca_sigla?' · '+t.raca_sigla:'')"></div>
+        </template>
+        <div class="muted" x-show="monta.touro" style="margin-top:6px">Touro escolhido: <b x-text="monta.touro && monta.touro.nome"></b></div>
+        <button class="btn" :disabled="!monta.touro || monta.inseminando" style="margin-top:10px"
+                @click="inseminarLote()" x-text="monta.inseminando ? 'Inseminando…' : '💉 Inseminar lote'"></button>
+      </div>
+
+      <!-- Brief B/F1: protocolo IATF vira agenda automática (D0 → DG) -->
+      <div class="card" x-show="monta.sel">
+        <h3>📋 Protocolo IATF</h3>
+        <p class="muted" style="margin:0 0 8px">Gera os passos na agenda do lote: <b>D0</b> implante → <b>D8</b> retira+PGF → <b>D11</b> IATF → <b>DG</b> aos 30 dias.</p>
+        <div class="muted" x-show="!monta.grupo" style="color:#b8860b; margin-bottom:6px">Escolha um <b>lote específico</b> acima (não "todas as matrizes") para aplicar o protocolo.</div>
+        <label>Data do D0 (início)</label>
+        <input type="date" x-model="monta.d0">
+        <button class="btn sec" :disabled="!monta.grupo" style="margin-top:10px" @click="aplicarProtocolo()">🗓 Gerar agenda do protocolo</button>
+      </div>
+
+      <div class="card" x-show="monta.sel">
+        <h3>Resumo da estação</h3>
+        <div class="stat">
+          <div><div class="v" x-text="monta.resumo.inseminadas||0"></div><div class="l">inseminadas</div></div>
+          <div><div class="v" x-text="monta.resumo.prenhes||0"></div><div class="l">prenhes</div></div>
+          <div><div class="v" x-text="monta.resumo.prenhez_real!=null ? monta.resumo.prenhez_real+'%' : '—'"></div><div class="l">prenhez</div></div>
+        </div>
+        <div class="muted" style="margin:8px 0 4px" x-show="monta.resumo.inseminadas">
+          DG: <b x-text="(monta.resumo.diagnosticadas||0)+' de '+(monta.resumo.inseminadas||0)"></b> diagnosticadas
+          <span x-show="(monta.resumo.diagnosticadas||0) < (monta.resumo.inseminadas||0)"> · faça os pendentes na aba <b>Cruzar</b></span>
+        </div>
+        <template x-for="(t,i) in monta.por_touro" :key="i">
+          <div class="rec" style="display:flex; justify-content:space-between;">
+            <span x-text="t.touro_nome||'—'"></span>
+            <span class="muted"><b x-text="t.inseminadas"></b> doses · <b x-text="t.prenhes"></b> prenhes</span>
+          </div>
+        </template>
+      </div>
+    </div>
+
   <!-- toast -->
   <div class="toast" x-show="toast" x-transition x-text="toast" @click="toast=''"></div>
 
   <!-- nav -->
   <div class="tabs">
     <button :class="{on:tab==='fazenda'}" @click="tab='fazenda'"><span class="ic">🏠</span>Fazenda</button>
-    <button :class="{on:tab==='curral'}"  @click="tab='curral'"><span class="ic">➕</span>Curral</button>
+    <button :class="{on:tab==='curral'}"  @click="tab='curral'; if(cliente) carregaNascimentos()"><span class="ic">➕</span>Curral</button>
     <button :class="{on:tab==='rebanho'}" @click="tab='rebanho'; if(cliente) carregaAnimais()"><span class="ic">🐂</span>Rebanho</button>
     <button :class="{on:tab==='agenda'}"  @click="tab='agenda'; if(cliente) carregaAgenda()" style="position:relative">
       <span class="ic">🗓</span>Agenda
       <span x-show="agendaUrgentes()>0" x-text="agendaUrgentes()"
             style="position:absolute; top:4px; right:50%; transform:translateX(20px); background:#c0392b; color:#fff; font-size:10px; font-weight:800; min-width:16px; height:16px; line-height:16px; border-radius:9px; padding:0 4px"></span>
     </button>
-    <button :class="{on:tab==='cruzar'}"  @click="tab='cruzar'"><span class="ic">♥</span>Cruzar</button>
+    <button :class="{on:tab==='cruzar'}"  @click="tab='cruzar'; if(cliente) carregaDG()"><span class="ic">♥</span>Cruzar</button>
+    <button :class="{on:tab==='monta'}"   @click="tab='monta'; if(cliente) carregaEstacoes()"><span class="ic">🔁</span>Monta</button>
   </div>
 
 <script>
@@ -615,7 +760,13 @@ function campo() {
     pai:{q:'', results:[], loading:false, vinculado:null},
     ocr:{loading:false, cands:[]},
     outbox:[],
-    cruza:{dam:null, prioridade:'geral', recs:[], loading:false, chosen:null},
+    MAX_TRIES:5,  // após N tentativas falhas, vira dead-letter (não some, exige atenção)
+    armazenamentoCheio:false,  // localStorage estourou a quota -> trava capturas
+    cruza:{dam:null, prioridade:'geral', recs:[], loading:false, chosen:null, vacaId:null, registrando:false, registrado:false},
+    venda:{tipo:'semen', quantidade:1, valor_unitario:null, salvando:false},
+    dg:{pendentes:[]},
+    nascimentos:[],   // Brief A/F1: cruzamentos prenhes p/ vincular no cadastro do bezerro
+    monta:{ estacoes:[], sel:null, resumo:{}, por_touro:[], novo:{nome:''}, grupo:0, d0:'', touroQ:'', touroRes:[], touro:null, inseminando:false },
     psheet:{open:false, animal:null, nome:'', peso_kg:null, escore_corporal:null, altura_cm:null, obs:''},
     ssheet:{open:false, animal:null, nome:'', tipo:'vacina', produto:'', dose:'', via:'', proxima_dose:'', responsavel:'', obs:'', origem_lembrete_id:null},
     agenda:{itens:[], resumo:{}, dias:30, loading:false},
@@ -625,13 +776,15 @@ function campo() {
     rebFiltro:'ativos',
     stsheet:{open:false, animal:null, nome:'', status:'ativo', eh_doadora:false, motivo_descarte:'', data_saida:''},
 
-    animalVazio(){ return {sexo:'F', brinco:'', eid:'', sisbov:'', nome:'', registro:'', raca_id:null, categoria:'', peso_kg:null, escore_corporal:null, iqgg:null, gpd:null, aol:null, catalogo_id:null, pai_catalogo_id:null}; },
+    animalVazio(){ return {sexo:'F', brinco:'', eid:'', sisbov:'', nome:'', registro:'', raca_id:null, categoria:'', peso_kg:null, escore_corporal:null, iqgg:null, gpd:null, aol:null, catalogo_id:null, pai_catalogo_id:null, cruzamento_id:null}; },
 
     async init(){
       this.outbox = JSON.parse(localStorage.getItem('wins_outbox')||'[]');
       this.tab = localStorage.getItem('wins_tab') || 'fazenda';
       window.addEventListener('online', ()=>{ this.online=true; this.sync(); });
       window.addEventListener('offline', ()=>{ this.online=false; });
+      // retry periódico: itens em backoff (error) voltam a tentar mesmo sem nova captura
+      setInterval(()=>{ if(this.online) this.sync(); }, 30000);
       if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
       // reabre onde parou: persiste fazenda + aba
       this.$watch('cliente', v=>localStorage.setItem('wins_cliente', v||0));
@@ -650,19 +803,44 @@ function campo() {
     },
 
     // ---------- infra ----------
-    async api(method, path, body){
+    async api(method, path, body, timeout=20000){
       const opt = {method, headers:{'Content-Type':'application/json'}, credentials:'same-origin'};
       if (body) opt.body = JSON.stringify(body);
-      const res = await fetch(path, opt);
-      if (res.status===401){ location.href='/login'; throw new Error('auth'); }
+      // timeout obrigatório: navigator.onLine mente atrás de AP morto/captive portal;
+      // sem isto o fetch fica pendurado p/ sempre e trava o sync (botão "sincronizando…").
+      const ctrl = new AbortController();
+      const t = setTimeout(()=>ctrl.abort(), timeout);
+      opt.signal = ctrl.signal;
+      let res;
+      try { res = await fetch(path, opt); }
+      catch(e){ const er=new Error('sem resposta (rede/timeout)'); er.transient=true; throw er; }
+      finally { clearTimeout(t); }
+      if (res.status===401){ location.href='/login'; const er=new Error('Sessão expirada'); er.auth=true; throw er; }
+      if (!res.ok){
+        const er=new Error('HTTP '+res.status); er.http=res.status;
+        // 5xx/408/429 = transitório (vale retentar); demais 4xx = permanente (não adianta).
+        er.transient = res.status>=500 || res.status===408 || res.status===429;
+        throw er;
+      }
       const j = await res.json();
       if (j && j.error) throw new Error(j.error);
       return j;
     },
     uuid(){ return (crypto.randomUUID ? crypto.randomUUID() : 'u'+Date.now()+Math.random().toString(16).slice(2)); },
     isApp(){ return /WiNSCampoApp/.test(navigator.userAgent); },  // dentro do APK (WebView)
-    persist(){ localStorage.setItem('wins_outbox', JSON.stringify(this.outbox)); },
-    pendentes(){ return this.outbox.filter(o=>o.status!=='synced').length; },
+    persist(){
+      try { localStorage.setItem('wins_outbox', JSON.stringify(this.outbox)); this.armazenamentoCheio=false; }
+      catch(e){
+        // QuotaExceededError: storage cheio. NÃO some silenciosamente — avisa e trava
+        // novas capturas até sincronizar (senão o usuário acha que salvou e perde dado).
+        this.armazenamentoCheio=true;
+        this.flash('⚠ Memória cheia — sincronize AGORA antes de capturar mais');
+      }
+    },
+    // 'pending'/'error' = ainda na fila p/ tentar; 'failed' = dead-letter (esgotou retries,
+    // precisa de atenção); 'synced' = enviado. pendentes() só conta o que ainda vai tentar.
+    pendentes(){ return this.outbox.filter(o=>o.status==='pending'||o.status==='error').length; },
+    falhados(){ return this.outbox.filter(o=>o.status==='failed').length; },
     flash(m){ this.toast=m; setTimeout(()=>{ if(this.toast===m) this.toast=''; }, 2600); },
     clienteNome(){ const c=this.clientes.find(c=>c.id===this.cliente); return c? c.razao_social : ''; },
 
@@ -674,26 +852,54 @@ function campo() {
 
     async sync(){
       if (this.syncing || !this.online) return;
-      const fila = this.outbox.filter(o=>o.status!=='synced');
+      const agora = Date.now();
+      // retentável = pending, ou error cujo backoff já venceu (nextTry no passado)
+      const fila = this.outbox.filter(o=>o.status==='pending'
+                     || (o.status==='error' && (o.nextTry||0)<=agora));
       if (!fila.length) return;
       this.syncing = true;
-      let ok=0;
-      for (const item of fila){
-        try {
-          const r = await this.api('POST', item.endpoint, item.payload);
-          item.status='synced'; item.result=r; ok++;
-        } catch(e){ item.status='error'; item.err=String(e.message||e); }
+      let ok=0, novosFalhados=0;
+      try {
+        for (const item of fila){
+          try {
+            const r = await this.api('POST', item.endpoint, item.payload);
+            item.status='synced'; item.result=r; ok++;
+          } catch(e){
+            // 401/sessão expirada: NÃO marca erro — deixa pending e para o loop.
+            // A api() já redirecionou p/ /login; o outbox persiste e sincroniza após relogar.
+            if (e && e.auth){ break; }
+            item.tries=(item.tries||0)+1;
+            item.err=String(e.message||e);
+            const permanente = e.http && !e.transient;   // 4xx (≠408/429): retentar não adianta
+            if (permanente || item.tries>=this.MAX_TRIES){ item.status='failed'; novosFalhados++; }
+            else {
+              item.status='error';
+              // backoff exponencial 2s,4s,8s,16s (teto 60s) — não queima as 5 tentativas em segundos
+              item.nextTry = Date.now() + Math.min(60000, 2000 * Math.pow(2, item.tries-1));
+            }
+          }
+        }
+      } finally {
+        // syncing SEMPRE volta a false (mesmo em erro inesperado) -> nunca trava o botão
+        this.persist();
+        this.syncing=false;
       }
-      this.persist();
-      this.syncing=false;
-      // limpa os já sincronizados (mantém os com erro p/ nova tentativa)
+      // limpa os já sincronizados (mantém error p/ retry e failed p/ atenção do usuário)
       this.outbox = this.outbox.filter(o=>o.status!=='synced');
       this.persist();
       if (ok && this.cliente){ await this.refresh(); }
       if (ok) this.flash(ok+' registro(s) sincronizado(s)');
+      if (novosFalhados) this.flash('⚠ '+novosFalhados+' registro(s) NÃO salvaram — toque em "Falhas"');
       // itens enfileirados DURANTE este sync (ex.: descarte em lote) ficam fora da
-      // fila inicial; drena numa nova passada. 'error' != 'pending' -> sem loop infinito.
+      // fila inicial; drena numa nova passada. 'error'/'failed' != 'pending' -> sem loop infinito.
       if (this.online && this.outbox.some(o=>o.status==='pending')) setTimeout(()=>this.sync(), 60);
+    },
+
+    // Reenfileira os dead-letter (failed) p/ nova tentativa manual (zera o contador).
+    retentarFalhados(){
+      this.outbox.forEach(o=>{ if(o.status==='failed'){ o.status='pending'; o.tries=0; } });
+      this.persist();
+      this.sync();
     },
 
     async refresh(){
@@ -775,15 +981,35 @@ function campo() {
       this.flash('Pai vinculado: '+(r.nome||r.registro||'touro')); },
     limparPai(){ this.novo.pai_catalogo_id = null; this.pai.vinculado = null; this.pai.q=''; this.pai.results=[]; },
     // ---------- OCR do brinco por foto (Fase 2) ----------
+    // Reduz a foto da câmera (3-12MB) p/ ~1024px JPEG q0.7 ANTES de subir — no campo
+    // a uplink é fraca (celular/Starlink), e o servidor só precisa ler o número do brinco.
+    async _comprimeImagem(file, max=1024, q=0.7){
+      try{
+        // imageOrientation:'from-image' aplica a rotação EXIF — sem isso a foto do
+        // celular (orientação 6 = 90°) sobe deitada e o OCR não lê o brinco.
+        const bitmap = await createImageBitmap(file, {imageOrientation:'from-image'});
+        const escala = Math.min(1, max/Math.max(bitmap.width, bitmap.height));
+        const w = Math.round(bitmap.width*escala), h = Math.round(bitmap.height*escala);
+        const canvas = document.createElement('canvas'); canvas.width=w; canvas.height=h;
+        canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+        const blob = await new Promise(r=>canvas.toBlob(r, 'image/jpeg', q));
+        // se por algum motivo ficou maior que o original, manda o original
+        return (blob && blob.size < file.size) ? blob : file;
+      }catch(e){ return file; }  // navegador sem createImageBitmap/canvas: sobe original
+    },
     async ocrBrinco(ev){
       const f = ev.target.files && ev.target.files[0];
       ev.target.value = '';  // permite tirar outra foto do mesmo brinco
       if(!f) return;
+      // leitura por foto depende do modelo no servidor — sem conexão, oriente a digitar
+      if(!this.online){ this.flash('Leitura por foto exige conexão — digite o brinco'); return; }
       this.ocr.loading=true; this.ocr.cands=[];
       try{
-        const fd = new FormData(); fd.append('foto', f);
+        const img = await this._comprimeImagem(f);
+        const fd = new FormData(); fd.append('foto', img, 'brinco.jpg');
         const res = await fetch('/api/campo/ocr/brinco', {method:'POST', body:fd, credentials:'same-origin'});
         if(res.status===401){ location.href='/login'; return; }
+        if(!res.ok){ this.flash('Falha ao ler a foto (servidor) — digite o brinco'); this.ocr.loading=false; return; }
         const j = await res.json();
         this.ocr.cands = (j && j.candidatos) || [];
         this.flash(this.ocr.cands.length ? 'Toque no número certo' : 'Não consegui ler — digite o brinco');
@@ -876,7 +1102,9 @@ function campo() {
     cruzarDoAudit(r){
       if(!r.reprodutor_espelho_id) return;
       this.tab='cruzar';
-      this.cruza={dam:null, prioridade:'geral', recs:[], loading:true, rid:r.reprodutor_espelho_id};
+      // sem vacaId aqui (vem do catálogo, não do Rebanho) -> registro de cruzamento desabilitado
+      this.cruza={dam:null, prioridade:'geral', recs:[], loading:true, chosen:null,
+                  rid:r.reprodutor_espelho_id, vacaId:null, registrando:false, registrado:false};
       this.acasalarRun();
     },
     nCorretivas(){ return (this.audit.data.ranking||[]).filter(r=>r.prioridade_corretiva).length; },
@@ -944,31 +1172,126 @@ function campo() {
         origem_lembrete_id:it.id};
       this.$nextTick(()=>{ if(this.$refs.prodInput) this.$refs.prodInput.focus(); });
     },
-    async concluirLembrete(it){
-      // remoção otimista da lista; persiste no servidor
+    concluirLembrete(it){
+      // remoção otimista + dispensa via OUTBOX (sobrevive offline; idempotente por id no servidor)
       this.agenda.itens = this.agenda.itens.filter(x=>x.id!==it.id);
-      if(it.status==='atrasado') this.agenda.resumo.atrasado--;
-      else if(it.status==='hoje') this.agenda.resumo.hoje--;
-      else this.agenda.resumo.proximo--;
-      try{ await this.api('POST','/api/campo/agenda/concluir', {id:it.id}); this.flash('Lembrete dispensado'); }
-      catch(e){ this.flash('Erro — precisa de conexão p/ dispensar'); this.carregaAgenda(); }
+      const dec = k => { this.agenda.resumo[k] = Math.max(0, (this.agenda.resumo[k]||0) - 1); };
+      if(it.status==='atrasado') dec('atrasado');
+      else if(it.status==='hoje') dec('hoje');
+      else dec('proximo');
+      this.enqueue('/api/campo/agenda/concluir', {uuid:this.uuid(), id:it.id});
+      this.flash('Lembrete dispensado'+(this.online?'':' (offline)'));
     },
 
     // ---------- acasalamento ----------
     async acasalar(a){
       if(!a.reprodutor_espelho_id){ this.flash('Sincronize a fêmea primeiro'); return; }
       this.tab='cruzar';
-      this.cruza={dam:null, prioridade:'geral', recs:[], loading:true, chosen:null, rid:a.reprodutor_espelho_id};
+      // vacaId = fazenda.animal.id da matriz (necessário p/ registrar o cruzamento — Feature 2)
+      this.cruza={dam:null, prioridade:'geral', recs:[], loading:true, chosen:null,
+                  rid:a.reprodutor_espelho_id, vacaId:a.id, registrando:false, registrado:false};
       await this.acasalarRun();
     },
     async acasalarRun(){
       if(!this.cruza.rid) return;
-      this.cruza.loading=true; this.cruza.recs=[]; this.cruza.chosen=null;
+      this.cruza.loading=true; this.cruza.recs=[]; this.cruza.chosen=null; this.cruza.registrado=false;
       try{
         const r = await this.api('GET','/api/acasalamento/'+this.cruza.rid+'?prioridade='+this.cruza.prioridade+'&top=8');
         this.cruza.dam = r.matriz; this.cruza.recs = r.recomendacoes||[];
+        // Feature 2 (3 toques): o melhor touro já vem pré-selecionado; Mari só confirma
+        this.cruza.chosen = this.cruza.recs[0] || null;
       }catch(e){ this.flash('Erro: acasalamento exige conexão'); }
       this.cruza.loading=false;
+    },
+    registrarCruzamento(){
+      const c = this.cruza.chosen;
+      if(!c){ this.flash('Escolha um touro'); return; }
+      if(!this.cruza.vacaId){ this.flash('Abra o cruzamento pelo Rebanho p/ registrar'); return; }
+      if(!this.cliente){ this.flash('Selecione a fazenda'); return; }
+      this.cruza.registrando=true;
+      this.enqueue('/api/campo/cruzamento', {
+        uuid:this.uuid(), cliente_id:this.cliente, vaca_id:this.cruza.vacaId,
+        touro_id:c.id, touro_nome:c.nome||null,
+        ganho_cria:(c.ganho_cria ?? null), prog_iqgg:(c.prog_iqgg ?? null), prenhez_est:(c.prenhez_est ?? null),
+      });
+      this.cruza.registrando=false; this.cruza.registrado=true;
+      this.flash('Cruzamento registrado'+(this.online?'':' (offline)'));
+      if(this.online) setTimeout(()=>this.carregaDG(), 900);   // novo cruzamento -> entra na fila de DG
+    },
+    async carregaDG(){
+      if(!this.cliente){ this.dg.pendentes=[]; return; }
+      try{ const r = await this.api('GET','/api/campo/cruzamento/pendentes-dg?cliente_id='+this.cliente); this.dg.pendentes = r.pendentes||[]; }
+      catch(e){ /* offline: mantém o que tem */ }
+    },
+    async carregaNascimentos(){
+      if(!this.cliente){ this.nascimentos=[]; return; }
+      try{ const r = await this.api('GET','/api/campo/cruzamento/prenhes?cliente_id='+this.cliente); this.nascimentos = r.prenhes||[]; }
+      catch(e){ /* offline: mantém o que tem */ }
+    },
+    marcarDG(d, resultado){
+      this.dg.pendentes = this.dg.pendentes.filter(x=>x.id!==d.id);   // remoção otimista
+      this.enqueue('/api/campo/cruzamento/dg', {uuid:this.uuid(), cruzamento_id:d.id, resultado});
+      this.flash('DG: '+(resultado==='prenhe'?'prenhe ✓':'vazia')+(this.online?'':' (offline)'));
+    },
+    // ---------- estação de monta (Brief B) ----------
+    async carregaEstacoes(){
+      if(!this.cliente){ this.monta.estacoes=[]; return; }
+      try{ const r = await this.api('GET','/api/campo/estacoes?cliente_id='+this.cliente); this.monta.estacoes = r.estacoes||[]; }catch(e){}
+    },
+    async criarEstacao(){
+      if(!this.cliente){ this.flash('Selecione a fazenda'); return; }
+      if(!this.monta.novo.nome){ this.flash('Dê um nome à estação'); return; }
+      try{
+        const r = await this.api('POST','/api/campo/estacao', {uuid:this.uuid(), cliente_id:this.cliente, nome:this.monta.novo.nome, protocolo:'IATF 11 dias'});
+        this.monta.novo.nome='';
+        await this.carregaEstacoes();
+        const nova = this.monta.estacoes.find(e=>e.id===r.id);
+        if(nova) this.selecionarEstacao(nova);
+        this.flash('Estação criada');
+      }catch(e){ this.flash('Erro: criar estação exige conexão'); }
+    },
+    selecionarEstacao(e){ this.monta.sel=e; this.monta.touro=null; this.monta.touroQ=''; this.monta.touroRes=[]; this.carregaResumoEstacao(); },
+    async carregaResumoEstacao(){
+      if(!this.monta.sel) return;
+      try{ const r = await this.api('GET','/api/campo/estacao/'+this.monta.sel.id+'/resumo'); this.monta.resumo=r.resumo||{}; this.monta.por_touro=r.por_touro||[]; }catch(e){}
+    },
+    async buscarTouroMonta(){
+      const q=(this.monta.touroQ||'').trim();
+      if(q.length<2){ this.monta.touroRes=[]; return; }
+      try{ this.monta.touroRes = await this.api('GET','/api/campo/catalogo/busca?sexo=M&q='+encodeURIComponent(q)); }catch(e){ this.monta.touroRes=[]; }
+    },
+    pickTouroMonta(t){ this.monta.touro=t; this.monta.touroRes=[]; this.monta.touroQ=t.nome||''; },
+    async inseminarLote(){
+      if(!this.monta.sel || !this.monta.touro){ this.flash('Escolha estação e touro'); return; }
+      if(!this.online){ this.flash('IATF em lote exige conexão'); return; }
+      this.monta.inseminando=true;
+      try{
+        const r = await this.api('POST','/api/campo/estacao/iatf', {uuid:this.uuid(), estacao_id:this.monta.sel.id, cliente_id:this.cliente, touro_id:this.monta.touro.id, touro_nome:this.monta.touro.nome, grupo_id:this.monta.grupo||null});
+        this.flash((r.inseminadas||0)+' matriz(es) inseminada(s)');
+        this.monta.touro=null; this.monta.touroQ='';
+        await this.carregaResumoEstacao(); await this.carregaEstacoes();
+      }catch(e){ this.flash('Erro na IATF (exige conexão)'); }
+      this.monta.inseminando=false;
+    },
+    async aplicarProtocolo(){
+      if(!this.monta.sel){ this.flash('Selecione a estação'); return; }
+      if(!this.monta.grupo){ this.flash('Escolha um lote específico p/ o protocolo'); return; }
+      try{
+        const r = await this.api('POST','/api/campo/estacao/protocolo', {uuid:this.uuid(), estacao_id:this.monta.sel.id, cliente_id:this.cliente, grupo_id:this.monta.grupo, data_d0:this.monta.d0||null});
+        this.flash(r.ja_aplicado ? 'Protocolo já estava na agenda deste lote' : (r.passos+' passos adicionados à agenda ✓'));
+      }catch(e){ this.flash('Erro: protocolo exige conexão'); }
+    },
+    salvarVenda(){
+      if(!this.cliente){ this.flash('Selecione a fazenda'); return; }
+      const c = this.cruza.chosen;
+      this.enqueue('/api/campo/venda', {
+        uuid:this.uuid(), cliente_id:this.cliente,
+        touro_id:(c?c.id:null), touro_nome:(c?c.nome:null),
+        tipo:this.venda.tipo, quantidade:(this.venda.quantidade||1),
+        valor_unitario:(this.venda.valor_unitario||null),
+      });
+      this.flash('Venda registrada'+(this.online?'':' (offline)'));
+      this.venda={tipo:'semen', quantidade:1, valor_unitario:null, salvando:false};
     },
     escolherTouro(r){
       if(!r) return;

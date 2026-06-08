@@ -1,3 +1,6 @@
+# Rate-limit do login (anti força-bruta): ~10 tentativas/min por IP, com folga de burst.
+limit_req_zone $binary_remote_addr zone=login:10m rate=10r/m;
+
 server {
     listen 80;
     listen [::]:80;
@@ -20,6 +23,9 @@ server {
     ssl_certificate /etc/letsencrypt/live/winshubagro.cloud/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/winshubagro.cloud/privkey.pem;
 
+    # limite de upload coerente com o cap da app (OCR do brinco). Default do nginx é 1MB.
+    client_max_body_size 12m;
+
     # TLS: só 1.2/1.3
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers off;
@@ -41,6 +47,16 @@ server {
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     add_header Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=()" always;
     add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self'; font-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" always;
+
+    # Login com rate-limit (burst tolera recarga humana; bloqueia brute-force).
+    location = /login {
+        limit_req zone=login burst=8 nodelay;
+        proxy_pass http://api:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 
     location / {
         proxy_pass http://api:8000;

@@ -9,6 +9,7 @@ Fontes:
 Todas com cache em memória (TTL) porque são lentas e têm rate-limit.
 """
 import time
+import logging
 import httpx
 
 SIDRA = "https://apisidra.ibge.gov.br/values"
@@ -36,7 +37,10 @@ def _cached(key, ttl, fn):
     if hit and (now - hit[0]) < ttl:
         return hit[1]
     val = fn()
-    _CACHE[key] = (now, val)
+    # NÃO cacheia falhas: uma indisponibilidade transitória da API externa não pode
+    # ficar "grudada" pelo TTL (ex.: CNPJ válido com timeout ficaria 24h dando erro).
+    if not (isinstance(val, dict) and val.get("error")):
+        _CACHE[key] = (now, val)
     return val
 
 
@@ -285,8 +289,10 @@ def cnpj(numero):
             d = _get_json(f"{BRASILAPI}/cnpj/v1/{num}", timeout=15)
         except httpx.HTTPStatusError as e:
             return {"error": f"CNPJ não encontrado ({e.response.status_code})"}
-        except Exception as e:
-            return {"error": str(e)}
+        except Exception:
+            # não expõe str(e) (pode vazar URL/host do upstream); loga internamente
+            logging.getLogger("uvicorn.error").warning("Falha ao consultar CNPJ", exc_info=True)
+            return {"error": "Consulta de CNPJ indisponível no momento."}
         socios = [
             {"nome": s.get("nome_socio"), "qualificacao": s.get("qualificacao_socio")}
             for s in (d.get("qsa") or [])

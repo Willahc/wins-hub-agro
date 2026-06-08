@@ -11,18 +11,22 @@ from starlette.concurrency import run_in_threadpool
 from auth import authenticate_user, create_access_token, decode_token
 from pdf_generator import gerar_relatorio_territorial
 from pdf_html import (gerar_parecer_cruzamento, gerar_parecer_matching,  # HTML/CSS -> WeasyPrint
-                      gerar_cotacao_acasalamento, gerar_briefing_chegada)
+                      gerar_cotacao_acasalamento, gerar_briefing_chegada,
+                      gerar_proposta_simulador)
 import external_apis
 import psycopg2
 import psycopg2.extras
 from psycopg2 import pool as pgpool
+import asyncio
 import logging
 import io
 import os
 
 logger = logging.getLogger("wins_agro")
 
-app = FastAPI()
+# docs/openapi desligados: app single-tenant não deve expor o mapa de rotas/schemas
+# (incl. endpoints de PII/lead) a quem não está autenticado. O middleware só protege /api/*.
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 templates = Jinja2Templates(directory="frontend")
 
@@ -32,7 +36,21 @@ async def request_pipeline(request: Request, call_next):
     """Exige sessão válida em /api/* (dados sensíveis/PII) e aplica cache longo
     nos assets versionados de /static/vendor/."""
     path = request.url.path
-    if path.startswith("/api/"):
+    # CSRF defense-in-depth: requisições que mudam estado só são aceitas same-origin.
+    # SameSite=Lax já barra a maior parte; isto fecha o resto sem custo. Browsers
+    # mandam Sec-Fetch-Site/Origin; clientes legítimos same-origin passam.
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        sfs = request.headers.get("sec-fetch-site")
+        origin = request.headers.get("origin")
+        host = request.headers.get("host")
+        cross = (sfs in ("cross-site", "same-site")) or (
+            origin is not None and host is not None
+            and origin.split("://")[-1] != host)
+        if cross:
+            return JSONResponse({"error": "Origem não permitida"}, status_code=403)
+    # /api/simulador/* é PÚBLICO (Feature 5: simulador que a Mari abre na fazenda) — só
+    # devolve catálogo de touros + cálculo, ZERO PII. O resto de /api/* exige sessão.
+    if path.startswith("/api/") and not path.startswith("/api/simulador"):
         token = request.cookies.get("access_token")
         if not token or decode_token(token) is None:
             return JSONResponse({"error": "Não autenticado"}, status_code=401)
@@ -43,7 +61,7 @@ async def request_pipeline(request: Request, call_next):
 
 
 @app.get("/sw.js")
-async def service_worker():
+def service_worker():
     return FileResponse(
         "frontend/sw.js", media_type="application/javascript",
         headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
@@ -51,7 +69,7 @@ async def service_worker():
 
 
 @app.get("/manifest.webmanifest")
-async def manifest():
+def manifest():
     return FileResponse("frontend/manifest.webmanifest",
                         media_type="application/manifest+json")
 
@@ -72,6 +90,30 @@ DB_CONFIG = {
 
 # IQGg = Índice de Qualificação Genética Genômica (Básico) — catalogo.caracteristica.id = 20
 IQGG_ID = 20
+PD_ID = 5    # Peso à Desmama (210d) — DEP usada p/ o ganho financeiro por cria (R$/cria)
+PES_ID = 12  # Perímetro Escrotal ao Sobreano — proxy de fertilidade (taxa de prenhez)
+MONTE_SIAO_CENTRAL_ID = 24  # catalogo.central "Monte Sião Genética" (simulador é ferramenta de venda DELES)
+
+# Protocolo IATF 11 dias (Brief B/F1): (dias desde o D0, descrição do passo).
+# Vira agenda automática do lote — o "calendário" da estação de monta.
+PROTOCOLO_IATF = [
+    (0,  "Implante de progesterona + GnRH"),
+    (8,  "Retira implante + PGF2α + eCG"),
+    (11, "IATF + GnRH"),
+    (41, "Diagnóstico de gestação (DG)"),
+]
+
+# Heurística DEP(PES) -> % prenhez estimada (ANCP). base + DEP×coef, limitada a [50,90].
+# Coeficiente provisório — calibrar com zootecnista; SEMPRE exibir com "~" (estimativa).
+PRENHEZ_BASE = 65.0
+PRENHEZ_COEF = 0.3
+
+
+def _prenhez_est(pes_dep):
+    """Taxa de prenhez estimada (%) a partir do DEP de Perímetro Escrotal. None se sem dado."""
+    if pes_dep is None:
+        return None
+    return int(max(50, min(90, round(PRENHEZ_BASE + float(pes_dep) * PRENHEZ_COEF))))
 
 # Mapeamento prioridade -> caracteristica_id (IDs reais confirmados no B0 da Sessão 3).
 # Só usamos traços com objetivo_aumentar=TRUE (maior = melhor), pois o score normaliza
@@ -155,7 +197,7 @@ def get_current_user(request: Request):
 # Auth / pages
 # ---------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
-async def root(request: Request):
+def root(request: Request):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login")
@@ -163,12 +205,12 @@ async def root(request: Request):
 
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
+def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
 
 @app.post("/login")
-async def login(response: Response, email: str = Form(...), password: str = Form(...)):
+def login(response: Response, email: str = Form(...), password: str = Form(...)):
     user = authenticate_user(email, password)
     if not user:
         return RedirectResponse("/login?error=1", status_code=303)
@@ -183,17 +225,102 @@ async def login(response: Response, email: str = Form(...), password: str = Form
 
 
 @app.get("/logout")
-async def logout():
+def logout():
     resp = RedirectResponse("/login", status_code=303)
     resp.delete_cookie("access_token")
     return resp
 
 
 # ---------------------------------------------------------------------------
+# Feature 5 — Simulador público (Mari abre na fazenda; sem login; ZERO PII)
+# ---------------------------------------------------------------------------
+@app.get("/simulador", response_class=HTMLResponse)
+def simulador_page(request: Request):
+    return templates.TemplateResponse("simulador.html", {"request": request})
+
+
+@app.get("/api/simulador/touros")
+def simulador_touros():
+    """Catálogo público p/ o simulador: SÓ os touros do Monte Sião com preço de dose
+    (é ferramenta de venda DELES, não comparador de mercado). DEP de peso (ganho/cria) +
+    prenhez estimada. Sem PII — só genética + preço. O cálculo financeiro é feito no cliente."""
+    try:
+        rows = query(
+            f"""
+            SELECT r.id, r.nome, ra.sigla AS raca_sigla,
+                   MAX(a.valor) FILTER (WHERE a.caracteristica_id = {PD_ID})   AS pd,
+                   MAX(a.valor) FILTER (WHERE a.caracteristica_id = {PES_ID})  AS pes,
+                   MAX(a.valor) FILTER (WHERE a.caracteristica_id = {IQGG_ID}) AS iqgg,
+                   MIN(o.preco_dose_brl) AS preco_dose
+            FROM mercado.reprodutor r
+            JOIN catalogo.raca ra ON ra.id = r.raca_id
+            JOIN mercado.touro_oferta o ON o.reprodutor_id = r.id
+                 AND o.preco_dose_brl > 0 AND o.central_id = %(central)s
+            LEFT JOIN mercado.avaliacao a ON a.reprodutor_id = r.id
+                 AND a.caracteristica_id IN ({PD_ID}, {PES_ID}, {IQGG_ID})
+            WHERE r.sexo = 'M'
+            GROUP BY r.id, r.nome, ra.sigla
+            ORDER BY MAX(a.valor) FILTER (WHERE a.caracteristica_id = {IQGG_ID}) DESC NULLS LAST
+            """, {"central": MONTE_SIAO_CENTRAL_ID})
+        for t in rows:
+            t["prenhez_est"] = _prenhez_est(t.get("pes"))
+        arroba = (external_apis.boi_gordo() or {}).get("valor")
+        return {"touros": rows, "arroba": arroba}
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/simulador/proposta")
+async def simulador_proposta(t: int, m: int = 100, p: float = 60, a: float = None):
+    """PDF da proposta de retorno (Feature 5) — público, ZERO PII. `t`=touro Monte Sião,
+    `m`=matrizes, `p`=prenhez atual %, `a`=preço @ (default = boi gordo ao vivo)."""
+    try:
+        rows = query(
+            f"""SELECT r.id, r.nome, ra.nome AS raca,
+                       MAX(av.valor) FILTER (WHERE av.caracteristica_id = {PD_ID})  AS pd,
+                       MAX(av.valor) FILTER (WHERE av.caracteristica_id = {PES_ID}) AS pes,
+                       MIN(o.preco_dose_brl) AS preco_dose
+                FROM mercado.reprodutor r
+                JOIN catalogo.raca ra ON ra.id = r.raca_id
+                JOIN mercado.touro_oferta o ON o.reprodutor_id = r.id
+                     AND o.preco_dose_brl > 0 AND o.central_id = %(central)s
+                LEFT JOIN mercado.avaliacao av ON av.reprodutor_id = r.id
+                     AND av.caracteristica_id IN ({PD_ID}, {PES_ID})
+                WHERE r.id = %(id)s
+                GROUP BY r.id, r.nome, ra.nome""",
+            {"id": t, "central": MONTE_SIAO_CENTRAL_ID})
+        if not rows:
+            return JSONResponse({"error": "touro fora do catálogo Monte Sião"}, status_code=404)
+        b = rows[0]
+        arroba = a if (a and a > 0) else (external_apis.boi_gordo() or {}).get("valor")
+        pd, pes, preco_dose = b.get("pd"), b.get("pes"), b.get("preco_dose")
+        ganho_cria = round(pd * arroba / 30) if (pd and pd > 0 and arroba) else None
+        prenhez_esp = _prenhez_est(pes) or int(p)
+        matrizes = max(0, int(m))
+        total_bezerros = round(matrizes * prenhez_esp / 100)
+        bezerros_add = max(0, round(matrizes * max(0, prenhez_esp - p) / 100))
+        ganho_safra = (total_bezerros * ganho_cria) if ganho_cria else 0
+        equil = (-(-int(preco_dose) // ganho_cria)) if (preco_dose and ganho_cria and ganho_cria > 0) else None
+        dados = {
+            "touro_nome": b.get("nome"), "raca": b.get("raca"), "matrizes": matrizes,
+            "prenhez_atual": round(p), "prenhez_esperada": prenhez_esp, "arroba": round(arroba) if arroba else None,
+            "ganho_cria": ganho_cria, "total_bezerros": total_bezerros, "bezerros_adicionais": bezerros_add,
+            "ganho_genetico_safra": ganho_safra, "equilibrio": equil, "preco_dose": preco_dose,
+            "data_str": datetime.now().strftime("%d/%m/%Y"),
+        }
+        pdf = await run_in_threadpool(gerar_proposta_simulador, dados)
+        nome = (b.get("nome") or "touro").replace(" ", "_")[:30]
+        return Response(content=pdf, media_type="application/pdf",
+                        headers={"Content-Disposition": f'inline; filename="proposta_{nome}.pdf"'})
+    except Exception as e:
+        return _error(e)
+
+
+# ---------------------------------------------------------------------------
 # API — data endpoints
 # ---------------------------------------------------------------------------
 @app.get("/api/stats")
-async def stats():
+def stats():
     try:
         # uma única ida ao banco (era 6 conexões/queries separadas)
         return query(
@@ -298,7 +425,7 @@ def _racas_por_finalidade(fin):
 
 
 @app.get("/api/overview/racas")
-async def overview_racas():
+def overview_racas():
     """Top 8 raças por volume de reprodutores (barras da Visão Geral), com aptidão."""
     try:
         rows = query(
@@ -320,7 +447,7 @@ async def overview_racas():
 
 
 @app.get("/api/racas/aptidao")
-async def racas_aptidao():
+def racas_aptidao():
     """Catálogo de raças agrupado por aptidão (corte/leite/dupla) + equinos/búfalo,
     com nº de reprodutores de cada. Alimenta a seção 'Raças por aptidão' no front."""
     try:
@@ -348,7 +475,7 @@ async def racas_aptidao():
 
 
 @app.get("/api/overview/regioes")
-async def overview_regioes():
+def overview_regioes():
     """Top 6 UFs por rebanho com nº de Desertos Vet (genética × território)."""
     try:
         return query(
@@ -368,7 +495,7 @@ async def overview_regioes():
 
 
 @app.get("/api/ufs")
-async def ufs():
+def ufs():
     try:
         rows = query(
             "SELECT DISTINCT uf FROM prospeccao.v_white_space_pecuaria "
@@ -380,7 +507,7 @@ async def ufs():
 
 
 @app.get("/api/racas")
-async def racas():
+def racas():
     try:
         return query(
             """
@@ -397,7 +524,7 @@ async def racas():
 
 
 @app.get("/api/whitespace")
-async def whitespace(uf: str = None):
+def whitespace(uf: str = None):
     try:
         return query(
             """
@@ -416,7 +543,7 @@ async def whitespace(uf: str = None):
 
 
 @app.get("/api/arbitragem")
-async def arbitragem(raca: int = None, segmento: str = None, central: str = None):
+def arbitragem(raca: int = None, segmento: str = None, central: str = None):
     try:
         use_apt = segmento in ("corte", "leite", "dupla")
         racas_apt = _racas_por_finalidade(segmento) if use_apt else (0,)
@@ -456,7 +583,7 @@ async def arbitragem(raca: int = None, segmento: str = None, central: str = None
 
 
 @app.get("/api/centrais")
-async def centrais():
+def centrais():
     try:
         return query(
             """
@@ -478,7 +605,7 @@ async def centrais():
 
 
 @app.get("/api/fazendas")
-async def fazendas():
+def fazendas():
     try:
         return query(
             """
@@ -510,7 +637,7 @@ async def fazendas():
 
 
 @app.get("/api/caracteristicas")
-async def caracteristicas():
+def caracteristicas():
     try:
         return query(
             """
@@ -558,15 +685,22 @@ def _scorar_matching(rows):
     """
     if not rows:
         return rows
-    max_dep = {}          # melhor DEP prioritária por raça
+    dep_range = {}        # [min, max] da DEP prioritária por raça (normaliza no intervalo
+                          # OBSERVADO; DEP é desvio e pode ser negativa — dividir pelo max
+                          # zeraria o eixo genético inteiro quando o melhor touro tem DEP<=0)
     min_ppi = {}          # melhor (menor) R$/IQGg por raça
     max_bezerro = 0.0     # melhor valor/bezerro global (finalidade corte)
     max_filha = 0.0       # melhor valor/filha global (finalidade leite)
     for t in rows:
         r = t.get("raca")
-        dep = t.get("dep_prioritaria") or 0
-        if dep > max_dep.get(r, 0):
-            max_dep[r] = dep
+        dep = t.get("dep_prioritaria")
+        if dep is not None:
+            rng = dep_range.get(r)
+            if rng is None:
+                dep_range[r] = [dep, dep]
+            else:
+                if dep < rng[0]: rng[0] = dep
+                if dep > rng[1]: rng[1] = dep
         ppi = t.get("preco_por_iqgg")
         if ppi and (r not in min_ppi or ppi < min_ppi[r]):
             min_ppi[r] = ppi
@@ -577,8 +711,13 @@ def _scorar_matching(rows):
 
     for t in rows:
         r = t.get("raca")
-        dep = t.get("dep_prioritaria") or 0
-        g = dep / max_dep[r] if max_dep.get(r) else 0.0
+        dep = t.get("dep_prioritaria")
+        rng = dep_range.get(r)
+        if dep is None or rng is None:
+            g = 0.0
+        else:
+            lo, hi = rng
+            g = (dep - lo) / (hi - lo) if hi > lo else 0.5   # raça com 1 touro -> neutro
         # valor econômico (por finalidade; corte tem precedência se ambos)
         if t.get("valor_bezerro") and max_bezerro > 0:
             v = t["valor_bezerro"] / max_bezerro
@@ -611,7 +750,7 @@ async def matching(req: MatchingRequest):
             "uf": req.uf,
             "orcamento_max": req.orcamento_max,
             "sexado": bool(req.sexado),
-            "racas_apt": _racas_por_finalidade(req.finalidade),
+            "racas_apt": _racas_por_finalidade(req.finalidade) or (0,),  # nunca IN () -> erro SQL
         }
         # DISTINCT ON (r.id) -> um único registro por touro (touro_central pode
         # repetir o touro em várias centrais). O score é calculado em Python
@@ -778,7 +917,7 @@ async def matching_pdf(req: MatchingRequest):
 # Ficha completa do touro (pivot de DEPs)
 # ---------------------------------------------------------------------------
 @app.get("/api/touro/{touro_id}")
-async def touro_detalhe(touro_id: int):
+def touro_detalhe(touro_id: int):
     try:
         rows = query(
             "SELECT * FROM mercado.v_touros_nelore_pivot WHERE id = %(id)s",
@@ -830,6 +969,16 @@ async def touro_detalhe(touro_id: int):
             """,
             {"id": touro_id},
         )
+        touro["prenhez_est"] = _prenhez_est(touro.get("dep_pes"))   # Feature 3
+        # Brief A: prenhez REALIZADA deste touro nos cruzamentos com DG (previsto × realizado)
+        real = query(
+            """SELECT COUNT(*) AS n,
+                      ROUND(100.0*COUNT(*) FILTER (WHERE resultado='prenhe')/NULLIF(COUNT(*),0)) AS prenhez_real
+                 FROM fazenda.cruzamento
+                WHERE touro_id = %(id)s AND resultado IN ('prenhe','vazia')""",
+            {"id": touro_id})
+        touro["prenhez_real"] = (real[0]["prenhez_real"] if real and real[0]["n"] else None)
+        touro["dg_n"] = (real[0]["n"] if real else 0)
         return touro
     except Exception as e:
         return _error(e)
@@ -840,7 +989,7 @@ async def touro_detalhe(touro_id: int):
 # derivado do pedigree (mãe dos touros avaliados). Ver mercado.v_matriz.
 # ---------------------------------------------------------------------------
 @app.get("/api/matrizes")
-async def matrizes(raca: str | None = None, q: str | None = None, uf: str | None = None,
+def matrizes(raca: str | None = None, q: str | None = None, uf: str | None = None,
                    min_filhos: int = 1, limit: int = 50):
     """Lista matrizes rankeadas por performance da progênie (filhos touros avaliados)."""
     try:
@@ -876,7 +1025,7 @@ async def matrizes(raca: str | None = None, q: str | None = None, uf: str | None
 
 
 @app.get("/api/matriz/{matriz_id}")
-async def matriz_detalhe(matriz_id: int):
+def matriz_detalhe(matriz_id: int):
     """Ficha da matriz: dados, pai (avô materno) e a progênie com IQGg de cada filho."""
     try:
         rows = query(
@@ -980,14 +1129,15 @@ def _relacao(a, b):
 
 
 @app.get("/api/acasalamento/{matriz_id}")
-async def acasalamento(matriz_id: int, prioridade: str = "geral",
+def acasalamento(matriz_id: int, prioridade: str = "geral",
                        traits: str | None = None, raca: str | None = None,
                        tipo: str | None = None, uf: str | None = None,
                        orcamento: float | None = None, top: int = 10):
     try:
         keys = _trait_keys(traits, prioridade)
         trait_ids = [TRAIT_BY_KEY[k][0] for k in keys]
-        all_ids = list(dict.fromkeys([IQGG_ID] + trait_ids))   # iqgg + características
+        # PD_ID (ganho/cria) e PES_ID (prenhez) entram só p/ os indicadores — não pontuam no score
+        all_ids = list(dict.fromkeys([IQGG_ID, PD_ID, PES_ID] + trait_ids))
 
         # 1) matriz + dados de pedigree
         drow = query(
@@ -1092,7 +1242,11 @@ async def acasalamento(matriz_id: int, prioridade: str = "geral",
         #    escolhidas (normalizada no pool) + preço
         if pool:
             di = dam_iqgg
-            max_iqgg = max(0.5 * ((b.get(f"t_{IQGG_ID}") or 0) + di) for b in pool) or 1
+            # IQGg da cria (midparent) normalizado no intervalo OBSERVADO do pool — NÃO por
+            # /max: ~39% dos IQGg são negativos; dividir pelo max inverteria o ranking quando
+            # a matriz puxa a combinação p/ negativo (o melhor touro ficaria com o menor score).
+            _prog_vals = [0.5 * ((b.get(f"t_{IQGG_ID}") or 0) + di) for b in pool]
+            iqgg_lo, iqgg_hi = min(_prog_vals), max(_prog_vals)
             trait_mid, trait_rng = {}, {}
             for cid in trait_ids:
                 dv = dam_deps.get(cid)
@@ -1103,9 +1257,19 @@ async def acasalamento(matriz_id: int, prioridade: str = "geral",
                 trait_rng[cid] = (min(present), max(present)) if present else (0, 0)
             precos = [b["preco_dose"] for b in pool if b.get("preco_dose")]
             max_preco = max(precos) if precos else 0
+            # preço da arroba do boi gordo (cacheado) p/ o ganho financeiro/cria.
+            # MESMA fórmula do _monetizacao (PD x @ / 30) -> o número do App bate com o do Hub.
+            # (÷30 = 15kg carcaça/@ ÷ ~50% rendimento; NÃO ÷15, que ignoraria o rendimento.)
+            arroba = (external_apis.boi_gordo() or {}).get("valor")
             for i, b in enumerate(pool):
                 prog_iqgg = round(0.5 * ((b.get(f"t_{IQGG_ID}") or 0) + di), 2)
                 b["prog_iqgg"] = prog_iqgg
+                # ganho marginal por cria vs. touro médio da raça (DEP de peso já É o desvio)
+                _pd = b.get(f"t_{PD_ID}")
+                b["ganho_cria"] = (round(_pd * arroba / 30) if (_pd and _pd > 0 and arroba) else None)
+                b["roi_cria"] = (round(b["ganho_cria"] / b["preco_dose"], 1)
+                                 if (b.get("ganho_cria") and b.get("preco_dose")) else None)
+                b["prenhez_est"] = _prenhez_est(b.get(f"t_{PES_ID}"))   # Feature 3
                 calf, norms = {}, []
                 for k, cid in zip(keys, trait_ids):
                     mv = trait_mid[cid][i]
@@ -1114,7 +1278,7 @@ async def acasalamento(matriz_id: int, prioridade: str = "geral",
                     if mv is not None:
                         norms.append((mv - lo) / (hi - lo) if hi > lo else 0.5)
                 b["calf"] = calf
-                iqgg_norm = prog_iqgg / max_iqgg if max_iqgg else 0
+                iqgg_norm = (prog_iqgg - iqgg_lo) / (iqgg_hi - iqgg_lo) if iqgg_hi > iqgg_lo else 0.5
                 trait_norm = (sum(norms) / len(norms)) if norms else 0.5
                 preco_score = (1 - b["preco_dose"] / max_preco) if (b.get("preco_dose") and max_preco) else 0.3
                 score = 0.50 * iqgg_norm + 0.35 * trait_norm + 0.15 * preco_score
@@ -1140,6 +1304,7 @@ async def acasalamento(matriz_id: int, prioridade: str = "geral",
                        "n_filhos": dam["n_filhos"], "pai_nome": dam.get("pai_nome")},
             "traits": keys, "trait_labels": trait_labels, "trait_label": trait_labels[keys[0]],
             "candidatos": len(cands), "excluidos_parentesco": excluidos,
+            "arroba": (external_apis.boi_gordo() or {}).get("valor"),  # @ usada no ganho/cria
             "recomendacoes": pool[:max(1, min(top, 30))],
         }
     except Exception as e:
@@ -1150,7 +1315,7 @@ async def acasalamento(matriz_id: int, prioridade: str = "geral",
 # Busca de animais (touros/matrizes) para os seletores do cruzamento livre
 # ---------------------------------------------------------------------------
 @app.get("/api/animais/busca")
-async def animais_busca(sexo: str = "M", q: str | None = None, raca: str | None = None,
+def animais_busca(sexo: str = "M", q: str | None = None, raca: str | None = None,
                         tipo: str | None = None, uf: str | None = None, limit: int = 30):
     try:
         cond = ["r.sexo = %(sexo)s"]
@@ -1196,20 +1361,36 @@ def _num(v):
 _MEDIA_RACA_IQGG: dict = {}  # cache {raca_id: IQGg médio da raça} p/ o "lift" da matriz
 
 
-def _media_iqgg_raca(raca_id):
+def _media_iqgg_raca(raca_id, cur=None):
     """IQGg médio da raça (baseline p/ medir o quanto a matriz puxa a combinação).
-    Cacheado por raça — escala difere muito entre raças (Nelore ~50 vs Girolando ~2000)."""
+    Cacheado por raça — escala difere muito entre raças (Nelore ~50 vs Girolando ~2000).
+    `cur`: quando chamado de dentro de uma transação, passar o cursor dela evita pegar
+    uma 2ª conexão do pool (risco de deadlock/exaustão). Cache invalidado na escrita
+    via _invalida_media_raca()."""
     if raca_id not in _MEDIA_RACA_IQGG:
-        r = query(
-            """
+        sql = """
             SELECT ROUND(AVG(v)::numeric, 2) AS m FROM (
               SELECT MAX(a.valor) AS v FROM mercado.avaliacao a
               JOIN mercado.reprodutor rr ON rr.id = a.reprodutor_id
               WHERE a.caracteristica_id = %(iq)s AND rr.raca_id = %(rid)s
               GROUP BY a.reprodutor_id) s
-            """, {"iq": IQGG_ID, "rid": raca_id})
-        _MEDIA_RACA_IQGG[raca_id] = (r[0]["m"] if r and r[0]["m"] is not None else None)
+            """
+        params = {"iq": IQGG_ID, "rid": raca_id}
+        if cur is not None:
+            cur.execute(sql, params)
+            row = cur.fetchone()
+            m = row["m"] if row else None
+        else:
+            r = query(sql, params)
+            m = r[0]["m"] if r else None
+        _MEDIA_RACA_IQGG[raca_id] = float(m) if m is not None else None
     return _MEDIA_RACA_IQGG[raca_id]
+
+
+def _invalida_media_raca(raca_id):
+    """Esquece o baseline cacheado da raça após gravar avaliação nova (senão o 'lift'
+    e a estimativa de mérito da matriz usam média desatualizada)."""
+    _MEDIA_RACA_IQGG.pop(raca_id, None)
 
 
 async def _monetizacao(touro, vaca, calf):
@@ -1351,9 +1532,10 @@ async def cruzamento_pdf(touro_id: int, vaca_id: int, traits: str | None = None)
     cruz = await cruzamento(touro_id, vaca_id, traits)
     if "error" in cruz:
         return cruz
-    # fichas completas dos genitores p/ anexar ao parecer (reusa os endpoints existentes)
-    touro_ficha = await touro_detalhe(touro_id)
-    matriz_ficha = await matriz_detalhe(vaca_id)
+    # fichas completas dos genitores p/ anexar ao parecer (reusa os endpoints existentes).
+    # touro_detalhe/matriz_detalhe são def síncronas (rodam no threadpool) -> sem await.
+    touro_ficha = touro_detalhe(touro_id)
+    matriz_ficha = matriz_detalhe(vaca_id)
     pdf_bytes = await run_in_threadpool(
         gerar_parecer_cruzamento, cruz,
         touro_ficha if isinstance(touro_ficha, dict) and "error" not in touro_ficha else None,
@@ -1372,7 +1554,7 @@ async def cruzamento_pdf(touro_id: int, vaca_id: int, traits: str | None = None)
 # Multi-raça: todas as raças com reprodutores + flags de dado disponível
 # ---------------------------------------------------------------------------
 @app.get("/api/racas/todas")
-async def racas_todas():
+def racas_todas():
     try:
         # Pré-agrega cada contagem separadamente p/ evitar a explosão de linhas
         # do JOIN reprodutor×avaliacao×oferta (era ~989k linhas / 880ms -> ~10ms).
@@ -1412,7 +1594,7 @@ async def racas_todas():
 # Grupos de aptidão (corte / leite / reprodução) — quais têm dado real
 # ---------------------------------------------------------------------------
 @app.get("/api/grupos")
-async def grupos():
+def grupos():
     try:
         return query(
             """
@@ -1511,7 +1693,7 @@ def _leads_total(uf, segmento):
 
 
 @app.get("/api/leads")
-async def leads(uf: str = None, segmento: str = "corte", page: int = 1,
+def leads(uf: str = None, segmento: str = "corte", page: int = 1,
                 page_size: int = 100, sort: str = None, order: str = "asc"):
     """Compradores potenciais paginados (CNAE corte/leite) com contato.
     Paginação NO SERVIDOR (LIMIT/OFFSET) — a base tem ~180 mil criadores.
@@ -1535,7 +1717,7 @@ async def leads(uf: str = None, segmento: str = "corte", page: int = 1,
 
 
 @app.get("/api/marketplace")
-async def marketplace(uf: str = None, segmento: str = "corte"):
+def marketplace(uf: str = None, segmento: str = "corte"):
     """Painel oferta×demanda por UF: criadores (demanda), rebanho/desertos e melhores touros (oferta)."""
     try:
         cnae = SEGMENTO_CNAE.get(segmento, "0151201")
@@ -1599,7 +1781,7 @@ async def marketplace(uf: str = None, segmento: str = "corte"):
             ORDER BY iqgg DESC NULLS LAST
             LIMIT 10
             """,
-            {"iqgg": IQGG_ID, "racas_apt": _racas_por_finalidade(segmento)},
+            {"iqgg": IQGG_ID, "racas_apt": _racas_por_finalidade(segmento) or (0,)},  # nunca IN ()
         )
         return {
             "segmento": segmento,
@@ -1616,7 +1798,7 @@ async def marketplace(uf: str = None, segmento: str = "corte"):
 # Mapa — municípios georreferenciados (rebanho + cobertura vet)
 # ---------------------------------------------------------------------------
 @app.get("/api/map")
-async def mapa(uf: str = None, min_bovinos: int = 20000):
+def mapa(uf: str = None, min_bovinos: int = 20000):
     try:
         return query(
             """
@@ -1643,7 +1825,7 @@ async def mapa(uf: str = None, min_bovinos: int = 20000):
 #   CNPJ sócios                                   -> grandes grupos (multi-fazenda)
 # ---------------------------------------------------------------------------
 @app.get("/api/demanda/tendencia")
-async def demanda_tendencia(uf: str = None, limit: int = 200, min_reb: int = 30000):
+def demanda_tendencia(uf: str = None, limit: int = 200, min_reb: int = 30000):
     """Municípios por crescimento de rebanho bovino 2020->2023 (com lat/long p/ mapa)."""
     try:
         return query(
@@ -1674,7 +1856,7 @@ async def demanda_tendencia(uf: str = None, limit: int = 200, min_reb: int = 300
 
 
 @app.get("/api/demanda/lotacao")
-async def demanda_lotacao(uf: str = None, limit: int = 50,
+def demanda_lotacao(uf: str = None, limit: int = 50,
                           min_ha: int = 20000, min_cab: int = 20000):
     """Taxa de lotação (cabeças/ha) cruzando rebanho (PPM) x pastagem (MapBiomas).
     Menor lotação + muita pastagem = pasto ocioso -> potencial de expansão do rebanho."""
@@ -1726,11 +1908,14 @@ def _territorio_dados(uf):
           (SELECT COUNT(*) FROM prospeccao.v_white_space_pecuaria WHERE uf=%(uf)s) AS municipios,
           (SELECT COUNT(*) FROM prospeccao.v_white_space_pecuaria
              WHERE uf=%(uf)s AND classificacao_vet='DESERTO VET') AS desertos_vet,
-          (SELECT COUNT(*) FROM cnpj.estabelecimento_rural
+          -- COUNT(DISTINCT cnpj_basico): conta EMPRESAS, não filiais (um grupo com 30
+          -- filiais = 1 criador), igual à régua dos leads/marketplace. Senão o número
+          -- "criadores" do relatório territorial fica inflado vs. o resto da app.
+          (SELECT COUNT(DISTINCT cnpj_basico) FROM cnpj.estabelecimento_rural
              WHERE uf=%(uf)s AND situacao_cadastral='02' AND cnae_fiscal_principal='0151201') AS criadores_corte,
-          (SELECT COUNT(*) FROM cnpj.estabelecimento_rural
+          (SELECT COUNT(DISTINCT cnpj_basico) FROM cnpj.estabelecimento_rural
              WHERE uf=%(uf)s AND situacao_cadastral='02' AND cnae_fiscal_principal='0151202') AS criadores_leite,
-          (SELECT COUNT(*) FROM cnpj.estabelecimento_rural
+          (SELECT COUNT(DISTINCT cnpj_basico) FROM cnpj.estabelecimento_rural
              WHERE uf=%(uf)s AND situacao_cadastral='02'
                AND cnae_fiscal_principal IN ('0151201','0151202')
                AND (telefone_1 IS NOT NULL OR correio_eletronico IS NOT NULL)) AS com_contato
@@ -1762,7 +1947,7 @@ def _territorio_dados(uf):
 
 
 @app.get("/api/territorio")
-async def territorio(uf: str = "TO"):
+def territorio(uf: str = "TO"):
     """Relatório territorial de um estado para a prospecção (panorama + alvos)."""
     try:
         return _territorio_dados((uf or "TO").upper())
@@ -1791,7 +1976,7 @@ _WHALES_CACHE = {}
 
 
 @app.get("/api/demanda/whales")
-async def demanda_whales(uf: str = None, limit: int = 40):
+def demanda_whales(uf: str = None, limit: int = 40):
     """Sócios que controlam várias empresas rurais (grandes grupos = alvo B2B premium).
     Cacheado: a base CNPJ é estática entre ingestões."""
     try:
@@ -1959,7 +2144,7 @@ async def externo_valor_mapa(uf: str = None, min_valor: int = 10000):
 
 
 @app.get("/api/leads/csv")
-async def leads_csv(uf: str = None, segmento: str = "corte", limit: int = 10000):
+def leads_csv(uf: str = None, segmento: str = "corte", limit: int = 10000):
     """Exporta o CONJUNTO FILTRADO de leads (não só a página) em CSV para CRM.
     Cap de 10 mil linhas p/ não estourar memória (corte nacional tem ~180 mil)."""
     base = _leads_rows(uf, segmento, min(limit, 10000), 0)
@@ -1993,16 +2178,21 @@ async def leads_enriquecido(uf: str = None, segmento: str = "corte", top: int = 
         base = _leads_rows(uf, segmento, 50, 0)
         if isinstance(base, dict):  # erro
             return base
-        for lead in base[: min(top, 10)]:
-            if lead.get("cnpj"):
-                info = await run_in_threadpool(external_apis.cnpj, lead["cnpj"])
-                if not info.get("error"):
-                    lead["enriquecido"] = {
-                        "situacao": info.get("situacao"),
-                        "abertura": info.get("abertura"),
-                        "socios": len(info.get("socios") or []),
-                        "capital_social": info.get("capital_social"),
-                    }
+        # enriquecimento em PARALELO: cada CNPJ tem timeout de ~15s; em série isso
+        # somava até ~150s. Com gather roda tudo concorrente (no threadpool).
+        alvos = [l for l in base[: min(top, 10)] if l.get("cnpj")]
+        infos = await asyncio.gather(
+            *[run_in_threadpool(external_apis.cnpj, l["cnpj"]) for l in alvos],
+            return_exceptions=True,
+        )
+        for lead, info in zip(alvos, infos):
+            if isinstance(info, dict) and not info.get("error"):
+                lead["enriquecido"] = {
+                    "situacao": info.get("situacao"),
+                    "abertura": info.get("abertura"),
+                    "socios": len(info.get("socios") or []),
+                    "capital_social": info.get("capital_social"),
+                }
         return base
     except Exception as e:
         return _error(e)
@@ -2085,6 +2275,7 @@ class AnimalIn(BaseModel):
     mar: float | None = None
     catalogo_id: int | None = None      # ponte: vincula ao reprodutor REAL do catálogo
     pai_catalogo_id: int | None = None  # ponte pelo pai: vincula o touro real (genética + consanguinidade)
+    cruzamento_id: int | None = None    # Brief A/F1: bezerro nascido DESTE cruzamento (fecha o loop)
 
 
 class PesagemIn(BaseModel):
@@ -2117,6 +2308,68 @@ class SanitarioIn(BaseModel):
 
 class ConcluirLembreteIn(BaseModel):
     id: int
+
+
+class CruzamentoIn(BaseModel):                 # Feature 2/6
+    uuid: str
+    cliente_id: int
+    vaca_id: int
+    touro_id: int | None = None
+    touro_nome: str | None = None
+    data_cruzamento: str | None = None
+    ganho_cria: float | None = None
+    prog_iqgg: float | None = None
+    prenhez_est: int | None = None
+    registrado_por: str | None = "mari"
+
+
+class DGIn(BaseModel):                          # Brief A — diagnóstico de gestação
+    uuid: str                                   # plumbing do outbox (update é idempotente por natureza)
+    cruzamento_id: int
+    resultado: str                              # prenhe | vazia
+    data_dg: str | None = None
+    dg_por: str | None = "mari"
+
+
+class EstacaoIn(BaseModel):                     # Brief B — estação de monta
+    uuid: str
+    cliente_id: int
+    nome: str
+    tipo: str | None = "iatf"
+    protocolo: str | None = None
+    data_inicio: str | None = None
+
+
+class IatfLoteIn(BaseModel):                    # Brief B — IATF em lote
+    uuid: str                                   # uuid do lote (cada matriz vira uuid-{vaca_id})
+    estacao_id: int
+    cliente_id: int
+    touro_id: int
+    touro_nome: str | None = None
+    grupo_id: int | None = None                 # None = todas as matrizes ativas da fazenda
+    data: str | None = None
+
+
+class ProtocoloIn(BaseModel):                   # Brief B/F1 — protocolo IATF vira agenda
+    uuid: str
+    estacao_id: int
+    cliente_id: int
+    grupo_id: int                               # protocolo é aplicado a um LOTE específico
+    data_d0: str | None = None
+
+
+class VendaIn(BaseModel):                       # Feature 4
+    uuid: str
+    cliente_id: int | None = None
+    municipio: str | None = None
+    uf: str | None = None
+    touro_id: int | None = None
+    touro_nome: str | None = None
+    data_venda: str | None = None
+    tipo: str | None = "semen"                  # semen | embriao | animal
+    quantidade: int | None = 1
+    valor_unitario: float | None = None
+    registrado_por: str | None = "mari"
 
 
 class AnimalStatusIn(BaseModel):
@@ -2168,7 +2421,7 @@ def _valida_pesagem(req) -> str | None:
 
 
 @app.get("/campo", response_class=HTMLResponse)
-async def campo_page(request: Request):
+def campo_page(request: Request):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login")
@@ -2176,7 +2429,7 @@ async def campo_page(request: Request):
 
 
 @app.get("/baixar/campo.apk")
-async def baixar_apk():
+def baixar_apk():
     """Download público do APK (wrapper do app de campo) — alvo do QR code.
     Força o content-type de pacote Android e o download (em vez de exibir)."""
     return FileResponse(
@@ -2187,7 +2440,7 @@ async def baixar_apk():
 
 
 @app.get("/api/campo/racas")
-async def campo_racas():
+def campo_racas():
     try:
         return query("SELECT id, sigla, nome FROM catalogo.raca WHERE id IS NOT NULL ORDER BY nome")
     except Exception as e:
@@ -2195,7 +2448,7 @@ async def campo_racas():
 
 
 @app.get("/api/campo/clientes")
-async def campo_clientes():
+def campo_clientes():
     try:
         return query(
             """SELECT c.id, c.razao_social, c.uf, c.municipio,
@@ -2206,7 +2459,7 @@ async def campo_clientes():
 
 
 @app.get("/api/campo/catalogo/busca")
-async def campo_catalogo_busca(q: str, sexo: str | None = None, limit: int = 15):
+def campo_catalogo_busca(q: str, sexo: str | None = None, limit: int = 15):
     """Busca um animal nos 104k registros do catálogo (por nome OU registro) p/ a
     PONTE: ao cadastrar no campo, vincula a vaca ao registro real e traz pedigree/genética."""
     try:
@@ -2244,7 +2497,11 @@ def _ocr_brinco(image_bytes: bytes) -> list:
     import re as _re
     import pytesseract
     from PIL import Image, ImageOps
+    # trava contra "decompression bomb" (imagem pequena que expande p/ giga-pixels)
+    Image.MAX_IMAGE_PIXELS = 40_000_000   # ~40MP, folgado p/ foto de celular
     img = Image.open(io.BytesIO(image_bytes))
+    img.verify()                          # rejeita arquivo malformado antes de decodificar
+    img = Image.open(io.BytesIO(image_bytes))  # verify() consome o stream; reabre p/ usar
     if img.mode != "L":
         img = img.convert("L")
     w, h = img.size
@@ -2274,6 +2531,10 @@ def _ocr_brinco(image_bytes: bytes) -> list:
 async def campo_ocr_brinco(foto: UploadFile = File(...)):
     """Lê o número do brinco de uma foto (câmera do app). Retorna candidatos p/ o usuário escolher."""
     try:
+        # só aceita imagem (o cliente comprime p/ JPEG antes de enviar)
+        ctype = (foto.content_type or "").lower()
+        if ctype and not ctype.startswith("image/"):
+            return {"error": "envie uma imagem (JPEG/PNG)"}
         data = await foto.read()
         if not data:
             return {"error": "foto vazia"}
@@ -2286,7 +2547,7 @@ async def campo_ocr_brinco(foto: UploadFile = File(...)):
 
 
 @app.post("/api/campo/cliente")
-async def campo_cliente(req: ClienteIn):
+def campo_cliente(req: ClienteIn):
     try:
         with _tx() as conn:
             cur = _cur(conn)
@@ -2305,7 +2566,7 @@ async def campo_cliente(req: ClienteIn):
 
 
 @app.get("/api/campo/grupos")
-async def campo_grupos(cliente_id: int):
+def campo_grupos(cliente_id: int):
     try:
         return query(
             """SELECT id, nome, tipo, data_inicio FROM fazenda.grupo_manejo
@@ -2315,7 +2576,7 @@ async def campo_grupos(cliente_id: int):
 
 
 @app.post("/api/campo/grupo")
-async def campo_grupo(req: GrupoIn):
+def campo_grupo(req: GrupoIn):
     try:
         with _tx() as conn:
             cur = _cur(conn)
@@ -2329,7 +2590,7 @@ async def campo_grupo(req: GrupoIn):
 
 
 @app.get("/api/campo/resumo")
-async def campo_resumo(cliente_id: int):
+def campo_resumo(cliente_id: int):
     try:
         return query(
             """SELECT
@@ -2344,7 +2605,7 @@ async def campo_resumo(cliente_id: int):
 
 
 @app.get("/api/campo/animais")
-async def campo_animais(cliente_id: int):
+def campo_animais(cliente_id: int):
     try:
         return query(
             """SELECT a.id, a.nome, a.brinco, a.eid, a.sexo, a.peso_atual_kg, a.escore_corporal,
@@ -2360,7 +2621,7 @@ async def campo_animais(cliente_id: int):
 
 
 @app.post("/api/campo/animal/status")
-async def campo_animal_status(req: AnimalStatusIn):
+def campo_animal_status(req: AnimalStatusIn):
     """Marca descarte/venda/morte (ciclo de vida) e/ou doadora de uma fêmea.
     Reativar (status=ativo) limpa motivo/data de saída."""
     try:
@@ -2392,7 +2653,7 @@ async def campo_animal_status(req: AnimalStatusIn):
 
 
 @app.post("/api/campo/animal")
-async def campo_animal(req: AnimalIn):
+def campo_animal(req: AnimalIn):
     try:
         sexo = (req.sexo or "").upper()[:1]
         if sexo not in ("M", "F"):
@@ -2420,27 +2681,36 @@ async def campo_animal(req: AnimalIn):
                 """INSERT INTO fazenda.animal
                      (cliente_id, brinco, eid, sisbov, registro_associacao, nome, especie_codigo,
                       raca_id, composicao_racial, sexo, data_nascimento, categoria, status,
-                      grupo_id, peso_atual_kg, escore_corporal, obs, uuid, coletado_em)
+                      grupo_id, peso_atual_kg, escore_corporal, obs, uuid, cruzamento_id, coletado_em)
                    VALUES (%(cli)s,%(br)s,%(eid)s,%(sis)s,%(reg)s,%(nome)s,'BOV',
                       %(raca)s,%(comp)s,%(sexo)s,%(nasc)s,%(cat)s,'ativo',
-                      %(grp)s,%(peso)s,%(ecc)s,%(obs)s,%(uuid)s, now()) RETURNING id""",
+                      %(grp)s,%(peso)s,%(ecc)s,%(obs)s,%(uuid)s,%(cruz)s, now()) RETURNING id""",
                 {"cli": req.cliente_id, "br": req.brinco, "eid": req.eid, "sis": req.sisbov,
                  "reg": reg, "nome": req.nome, "raca": req.raca_id, "comp": req.composicao_racial,
                  "sexo": sexo, "nasc": req.data_nascimento or None, "cat": req.categoria,
                  "grp": req.grupo_id, "peso": req.peso_kg, "ecc": req.escore_corporal,
-                 "obs": req.obs, "uuid": req.uuid})
+                 "obs": req.obs, "uuid": req.uuid, "cruz": req.cruzamento_id})
             animal_id = cur.fetchone()["id"]
+
+            # Brief A/F1: bezerro de um cruzamento registrado herda o touro como pai (pedigree automático)
+            if req.cruzamento_id and not req.pai_catalogo_id:
+                cur.execute("SELECT touro_id FROM fazenda.cruzamento WHERE id = %(c)s", {"c": req.cruzamento_id})
+                crow = cur.fetchone()
+                if crow and crow.get("touro_id"):
+                    req.pai_catalogo_id = crow["touro_id"]
 
             # pai (touro) escolhido na busca -> vincula o pai REAL e guarda sua genética
             pai = None
             if req.pai_catalogo_id:
-                prow = query(
+                # lê com o cursor da própria transação (NÃO query(), que pegaria 2ª conexão do pool)
+                cur.execute(
                     """SELECT r.id, r.nome, r.registro,
                               MAX(CASE WHEN a.caracteristica_id = 20 THEN a.valor END) AS iqgg
                          FROM mercado.reprodutor r
                          LEFT JOIN mercado.avaliacao a ON a.reprodutor_id = r.id AND a.caracteristica_id = 20
                         WHERE r.id = %(id)s GROUP BY r.id, r.nome, r.registro""",
                     {"id": req.pai_catalogo_id})
+                prow = cur.fetchall()
                 pai = prow[0] if prow else None
                 if pai:
                     cur.execute(
@@ -2469,7 +2739,11 @@ async def campo_animal(req: AnimalIn):
                                 {"r": reprodutor_id, "a": animal_id})
             # 2) senão, espelha a fêmea no catálogo p/ entrar no acasalamento (igual ao loader)
             elif sexo == "F" and req.raca_id is not None:
-                registro_m = reg or (f"FZ{req.cliente_id}-{req.brinco}" if req.brinco
+                # sufixo do uuid no registro auto-gerado: dois animais distintos com o MESMO
+                # brinco+raça na mesma fazenda (erro de digitação / re-cadastro) ganham espelhos
+                # SEPARADOS em vez de o 2º sobrescrever a genética do 1º via ON CONFLICT.
+                # (replay do outbox já é deduplicado antes, pela checagem de uuid no topo.)
+                registro_m = reg or (f"FZ{req.cliente_id}-{req.brinco}-{req.uuid[:6]}" if req.brinco
                                      else f"FZ{req.cliente_id}-U{req.uuid[:8]}")
                 cur.execute("SELECT razao_social, uf, municipio FROM fazenda.cliente WHERE id = %(c)s",
                             {"c": req.cliente_id})
@@ -2508,7 +2782,7 @@ async def campo_animal(req: AnimalIn):
                 # mérito ESTIMADO pela média de parentesco (média da raça + metade do pai),
                 # quando a vaca não foi genotipada mas o pai é conhecido. eh_genomica=false (é estimativa).
                 elif pai and pai.get("iqgg") is not None:
-                    raca_mean = _media_iqgg_raca(req.raca_id) or 0
+                    raca_mean = _media_iqgg_raca(req.raca_id, cur=cur) or 0
                     dam_est = round(0.5 * float(raca_mean) + 0.5 * float(pai["iqgg"]), 2)
                     cur.execute("DELETE FROM mercado.avaliacao WHERE reprodutor_id=%(r)s AND caracteristica_id=20",
                                 {"r": reprodutor_id})
@@ -2516,6 +2790,10 @@ async def campo_animal(req: AnimalIn):
                         """INSERT INTO mercado.avaliacao (reprodutor_id, caracteristica_id, valor, eh_genomica, coletado_em)
                            VALUES (%(r)s, 20, %(v)s, false, now())""",
                         {"r": reprodutor_id, "v": dam_est})
+
+                # gravamos avaliação nova p/ esta raça -> baseline cacheado ficou velho
+                if idx or (pai and pai.get("iqgg") is not None):
+                    _invalida_media_raca(req.raca_id)
 
                 cur.execute("UPDATE fazenda.animal SET reprodutor_espelho_id=%(r)s WHERE id=%(a)s",
                             {"r": reprodutor_id, "a": animal_id})
@@ -2525,8 +2803,401 @@ async def campo_animal(req: AnimalIn):
         return _error(e)
 
 
+@app.post("/api/campo/cruzamento")
+def campo_cruzamento(req: CruzamentoIn):
+    """Registra um acasalamento efetivado no campo (Feature 2). Idempotente por uuid
+    (replay seguro do outbox). Alimenta o gráfico de evolução genética (Feature 6)."""
+    try:
+        with _tx() as conn:
+            cur = _cur(conn)
+            cur.execute("SELECT id, estacao_monta FROM fazenda.cruzamento WHERE uuid = %(u)s", {"u": req.uuid})
+            ex = cur.fetchone()
+            if ex:
+                return {"id": ex["id"], "estacao_monta": ex["estacao_monta"], "novo": False}
+            # espelho da vaca (liga o cruzamento à genética da matriz), se já espelhada
+            cur.execute("SELECT reprodutor_espelho_id FROM fazenda.animal WHERE id = %(a)s", {"a": req.vaca_id})
+            arow = cur.fetchone()
+            vaca_espelho = arow["reprodutor_espelho_id"] if arow else None
+            # data + estação de monta (semestre) calculadas no banco, num único INSERT
+            cur.execute(
+                """INSERT INTO fazenda.cruzamento
+                     (uuid, cliente_id, vaca_id, vaca_espelho_id, touro_id, touro_nome,
+                      data_cruzamento, estacao_monta, ganho_cria, prog_iqgg, prenhez_est,
+                      registrado_por, coletado_em)
+                   SELECT %(u)s,%(cli)s,%(v)s,%(ve)s,%(t)s,%(tn)s, d.dt,
+                          EXTRACT(YEAR FROM d.dt)::int || '-' ||
+                            CASE WHEN EXTRACT(MONTH FROM d.dt) <= 6 THEN '1' ELSE '2' END,
+                          %(g)s,%(pi)s,%(pe)s,%(rp)s, now()
+                     FROM (SELECT COALESCE(%(dt)s::date, current_date) AS dt) d
+                   RETURNING id, estacao_monta""",
+                {"u": req.uuid, "cli": req.cliente_id, "v": req.vaca_id, "ve": vaca_espelho,
+                 "t": req.touro_id, "tn": _cap(req.touro_nome, 120), "dt": req.data_cruzamento or None,
+                 "g": req.ganho_cria, "pi": req.prog_iqgg, "pe": req.prenhez_est,
+                 "rp": req.registrado_por or "mari"})
+            row = cur.fetchone()
+            return {"id": row["id"], "estacao_monta": row["estacao_monta"], "novo": True}
+    except Exception as e:
+        return _error(e)
+
+
+@app.post("/api/campo/cruzamento/dg")
+def campo_cruzamento_dg(req: DGIn):
+    """Registra o diagnóstico de gestação de um cruzamento (Brief A — o REALIZADO da
+    previsão de prenhez). UPDATE idempotente por natureza (regravar o mesmo valor é seguro)."""
+    try:
+        res = (req.resultado or "").lower()
+        if res not in ("prenhe", "vazia", "pendente"):
+            return {"error": "resultado deve ser 'prenhe' ou 'vazia'"}
+        with _tx() as conn:
+            cur = _cur(conn)
+            cur.execute(
+                """UPDATE fazenda.cruzamento
+                     SET resultado = %(r)s,
+                         data_dg = COALESCE(%(d)s::date, current_date),
+                         dg_por = %(por)s
+                   WHERE id = %(id)s RETURNING id, resultado""",
+                {"r": res, "d": req.data_dg or None, "por": req.dg_por or "mari", "id": req.cruzamento_id})
+            row = cur.fetchone()
+            if not row:
+                return {"error": "cruzamento não encontrado"}
+            return {"id": row["id"], "resultado": row["resultado"], "ok": True}
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/campo/cruzamento/pendentes-dg")
+def campo_dg_pendentes(cliente_id: int):
+    """Cruzamentos aguardando diagnóstico de gestação (resultado='pendente')."""
+    try:
+        rows = query(
+            """SELECT c.id, c.touro_nome, c.data_cruzamento,
+                      (current_date - c.data_cruzamento) AS dias,
+                      a.nome AS vaca_nome, a.brinco
+                 FROM fazenda.cruzamento c
+                 LEFT JOIN fazenda.animal a ON a.id = c.vaca_id
+                WHERE c.cliente_id = %(c)s AND COALESCE(c.resultado, 'pendente') = 'pendente'
+                ORDER BY c.data_cruzamento ASC""",
+            {"c": cliente_id})
+        return {"pendentes": rows}
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/campo/cruzamento/prenhes")
+def campo_cruzamento_prenhes(cliente_id: int):
+    """Cruzamentos confirmados PRENHE ainda sem bezerro registrado (Brief A/F1) — p/ vincular
+    o nascimento ao cruzamento no cadastro do animal."""
+    try:
+        rows = query(
+            """SELECT c.id, c.touro_nome, c.data_cruzamento,
+                      a.nome AS vaca_nome, a.brinco
+                 FROM fazenda.cruzamento c
+                 LEFT JOIN fazenda.animal a ON a.id = c.vaca_id
+                WHERE c.cliente_id = %(c)s AND c.resultado = 'prenhe'
+                  AND NOT EXISTS (SELECT 1 FROM fazenda.animal f WHERE f.cruzamento_id = c.id)
+                ORDER BY c.data_cruzamento ASC""",
+            {"c": cliente_id})
+        return {"prenhes": rows}
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/aprendizado/peso")
+def aprendizado_peso(cliente_id: int = None):
+    """Ganho REALIZADO (Brief A/F1): peso médio dos bezerros nascidos de cada touro
+    (ligados via cruzamento_id) — a 2ª dimensão do previsto × realizado."""
+    try:
+        cond = "f.peso_atual_kg IS NOT NULL"
+        p = {}
+        if cliente_id:
+            cond += " AND c.cliente_id = %(c)s"
+            p["c"] = cliente_id
+        por_touro = query(
+            f"""SELECT c.touro_id, c.touro_nome,
+                       COUNT(f.id) AS n_filhos,
+                       ROUND(AVG(f.peso_atual_kg)) AS peso_medio
+                 FROM fazenda.cruzamento c
+                 JOIN fazenda.animal f ON f.cruzamento_id = c.id
+                WHERE {cond}
+                GROUP BY c.touro_id, c.touro_nome
+                ORDER BY peso_medio DESC NULLS LAST""", p)
+        return {"por_touro": por_touro, "tem_dados": len(por_touro) > 0}
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/aprendizado/prenhez")
+def aprendizado_prenhez(cliente_id: int = None):
+    """Reconciliação previsto × realizado de prenhez (Brief A — o motor aprendendo).
+    Por touro + agregado, com sugestão de calibração do BASE via shrinkage p/ o prior."""
+    try:
+        cond = "c.resultado IN ('prenhe','vazia')"
+        p = {}
+        if cliente_id:
+            cond += " AND c.cliente_id = %(c)s"
+            p["c"] = cliente_id
+        por_touro = query(
+            f"""SELECT c.touro_id, c.touro_nome,
+                       COUNT(*) AS n,
+                       COUNT(*) FILTER (WHERE c.resultado='prenhe') AS prenhes,
+                       ROUND(100.0*COUNT(*) FILTER (WHERE c.resultado='prenhe')/NULLIF(COUNT(*),0)) AS prenhez_real,
+                       ROUND(AVG(c.prenhez_est)) AS prenhez_prev
+                 FROM fazenda.cruzamento c
+                WHERE {cond}
+                GROUP BY c.touro_id, c.touro_nome
+                ORDER BY n DESC, prenhez_real DESC NULLS LAST""", p)
+        overall = query(
+            f"""SELECT COUNT(*) AS n,
+                       ROUND(100.0*COUNT(*) FILTER (WHERE c.resultado='prenhe')/NULLIF(COUNT(*),0)) AS prenhez_real,
+                       ROUND(AVG(c.prenhez_est)) AS prenhez_prev
+                 FROM fazenda.cruzamento c WHERE {cond}""", p)
+        o = overall[0] if overall else {}
+        n = o.get("n") or 0
+        calib = None
+        if n and o.get("prenhez_real") is not None and o.get("prenhez_prev") is not None:
+            k = 20  # peso do prior: até ~20 DGs confia mais no chute (não persegue ruído)
+            ajuste = (o["prenhez_real"] - o["prenhez_prev"])
+            base_sugerida = round(PRENHEZ_BASE + (n / (n + k)) * ajuste)
+            calib = {"base_atual": PRENHEZ_BASE, "base_sugerida": base_sugerida,
+                     "confianca": "alta" if n >= 30 else ("média" if n >= 10 else "baixa")}
+        return {"por_touro": por_touro, "overall": o, "calibracao": calib}
+    except Exception as e:
+        return _error(e)
+
+
+@app.post("/api/campo/estacao")
+def campo_estacao(req: EstacaoIn):
+    """Cria uma estação de monta (Brief B). Idempotente por uuid."""
+    try:
+        with _tx() as conn:
+            cur = _cur(conn)
+            cur.execute("SELECT id FROM fazenda.estacao_monta WHERE uuid = %(u)s", {"u": req.uuid})
+            ex = cur.fetchone()
+            if ex:
+                return {"id": ex["id"], "novo": False}
+            cur.execute(
+                """INSERT INTO fazenda.estacao_monta (uuid, cliente_id, nome, tipo, protocolo, data_inicio, coletado_em)
+                   VALUES (%(u)s,%(c)s,%(n)s,%(t)s,%(p)s, COALESCE(%(d)s::date, current_date), now()) RETURNING id""",
+                {"u": req.uuid, "c": req.cliente_id, "n": _cap(req.nome, 80), "t": (req.tipo or "iatf"),
+                 "p": _cap(req.protocolo, 60), "d": req.data_inicio or None})
+            return {"id": cur.fetchone()["id"], "novo": True}
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/campo/estacoes")
+def campo_estacoes(cliente_id: int):
+    """Lista as estações de monta da fazenda + nº de matrizes já inseminadas em cada."""
+    try:
+        return {"estacoes": query(
+            """SELECT e.id, e.nome, e.tipo, e.protocolo, e.data_inicio, e.status,
+                      (SELECT COUNT(*) FROM fazenda.cruzamento c WHERE c.estacao_id = e.id) AS inseminadas
+                 FROM fazenda.estacao_monta e
+                WHERE e.cliente_id = %(c)s
+                ORDER BY e.data_inicio DESC NULLS LAST, e.id DESC""",
+            {"c": cliente_id})}
+    except Exception as e:
+        return _error(e)
+
+
+@app.post("/api/campo/estacao/iatf")
+def campo_estacao_iatf(req: IatfLoteIn):
+    """IATF em lote (Brief B): cria 1 cruzamento por matriz do lote × touro escolhido, num
+    único INSERT, com snapshot da previsão (= alimenta o flywheel em escala). Idempotente
+    (uuid por matriz = uuid_lote-vaca_id; ON CONFLICT não duplica em replay do outbox)."""
+    try:
+        with _tx() as conn:
+            cur = _cur(conn)
+            # genética do touro (1 query) -> ganho/cria e prenhez são touro-dirigidos
+            cur.execute(
+                f"""SELECT MAX(valor) FILTER (WHERE caracteristica_id={PD_ID})   AS pd,
+                           MAX(valor) FILTER (WHERE caracteristica_id={PES_ID})  AS pes,
+                           MAX(valor) FILTER (WHERE caracteristica_id={IQGG_ID}) AS iqgg
+                    FROM mercado.avaliacao WHERE reprodutor_id = %(t)s""", {"t": req.touro_id})
+            g = cur.fetchone() or {}
+            arroba = (external_apis.boi_gordo() or {}).get("valor")
+            pd, pes, tiqgg = g.get("pd"), g.get("pes"), g.get("iqgg")
+            ganho = round(float(pd) * arroba / 30) if (pd and pd > 0 and arroba) else None
+            prenhez = _prenhez_est(pes)
+            # prog_iqgg é midparent (precisa do IQGg de cada matriz) -> calculado no próprio INSERT
+            cur.execute(
+                """INSERT INTO fazenda.cruzamento
+                     (uuid, cliente_id, estacao_id, vaca_id, vaca_espelho_id, touro_id, touro_nome,
+                      data_cruzamento, estacao_monta, ganho_cria, prog_iqgg, prenhez_est, registrado_por, coletado_em)
+                   SELECT %(batch)s || '-' || a.id, %(cli)s, %(est)s, a.id, a.reprodutor_espelho_id,
+                          %(tid)s, %(tn)s, d.dt,
+                          EXTRACT(YEAR FROM d.dt)::int || '-' ||
+                            CASE WHEN EXTRACT(MONTH FROM d.dt) <= 6 THEN '1' ELSE '2' END,
+                          %(ganho)s,
+                          CASE WHEN %(tiqgg)s IS NOT NULL AND vi.iqgg IS NOT NULL
+                               THEN ROUND((0.5*(%(tiqgg)s + vi.iqgg))::numeric, 2) END,
+                          %(prenhez)s, 'mari', now()
+                     FROM fazenda.animal a
+                     LEFT JOIN LATERAL (
+                        SELECT MAX(av.valor) AS iqgg FROM mercado.avaliacao av
+                        WHERE av.reprodutor_id = a.reprodutor_espelho_id AND av.caracteristica_id = %(iq)s
+                     ) vi ON true
+                     CROSS JOIN (SELECT COALESCE(%(dt)s::date, current_date) AS dt) d
+                    WHERE a.cliente_id = %(cli)s AND a.sexo = 'F'
+                      AND COALESCE(a.status,'ativo') = 'ativo'
+                      AND (%(grupo)s IS NULL OR a.grupo_id = %(grupo)s)
+                   ON CONFLICT (uuid) DO NOTHING
+                   RETURNING id""",
+                {"batch": req.uuid, "cli": req.cliente_id, "est": req.estacao_id, "tid": req.touro_id,
+                 "tn": _cap(req.touro_nome, 120), "ganho": ganho, "tiqgg": tiqgg, "prenhez": prenhez,
+                 "iq": IQGG_ID, "dt": req.data or None, "grupo": req.grupo_id})
+            n = len(cur.fetchall())
+            return {"inseminadas": n, "ganho_cria": ganho, "prenhez_est": prenhez, "ok": True}
+    except Exception as e:
+        return _error(e)
+
+
+@app.post("/api/campo/estacao/protocolo")
+def campo_estacao_protocolo(req: ProtocoloIn):
+    """Brief B/F1: aplica o protocolo IATF a um lote, gerando os passos (D0→DG) como
+    eventos de agenda do lote (reusa fazenda.evento_sanitario). Idempotente por estação+lote."""
+    try:
+        if not req.grupo_id:
+            return {"error": "selecione um lote (grupo) para o protocolo"}
+        with _tx() as conn:
+            cur = _cur(conn)
+            # já aplicado a esta estação+lote? (não duplica a agenda)
+            cur.execute(
+                """SELECT COUNT(*) AS n FROM fazenda.evento_sanitario
+                    WHERE estacao_id = %(e)s AND grupo_id = %(g)s AND tipo = 'protocolo'""",
+                {"e": req.estacao_id, "g": req.grupo_id})
+            if (cur.fetchone() or {}).get("n"):
+                return {"ok": True, "passos": 0, "ja_aplicado": True}
+            n = 0
+            for dia, nome in PROTOCOLO_IATF:
+                cur.execute(
+                    """INSERT INTO fazenda.evento_sanitario
+                         (grupo_id, estacao_id, tipo, produto, data_evento, proxima_dose, uuid, registrado_em)
+                       SELECT %(g)s, %(e)s, 'protocolo', %(nome)s, current_date,
+                              (COALESCE(%(d0)s::date, current_date) + %(dia)s), gen_random_uuid(), now()""",
+                    {"g": req.grupo_id, "e": req.estacao_id, "nome": nome,
+                     "d0": req.data_d0 or None, "dia": dia})
+                n += 1
+            return {"ok": True, "passos": n, "ja_aplicado": False}
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/campo/estacao/{estacao_id}/resumo")
+def campo_estacao_resumo(estacao_id: int):
+    """Resumo da estação: matrizes inseminadas, touros usados, prenhez (quando houver DG)."""
+    try:
+        r = query(
+            """SELECT COUNT(*) AS inseminadas,
+                      COUNT(DISTINCT touro_id) AS touros,
+                      COUNT(*) FILTER (WHERE resultado IN ('prenhe','vazia')) AS diagnosticadas,
+                      COUNT(*) FILTER (WHERE resultado='prenhe') AS prenhes,
+                      ROUND(100.0*COUNT(*) FILTER (WHERE resultado='prenhe')
+                            / NULLIF(COUNT(*) FILTER (WHERE resultado IN ('prenhe','vazia')),0)) AS prenhez_real
+                 FROM fazenda.cruzamento WHERE estacao_id = %(e)s""", {"e": estacao_id})
+        por_touro = query(
+            """SELECT touro_nome, COUNT(*) AS inseminadas,
+                      COUNT(*) FILTER (WHERE resultado='prenhe') AS prenhes
+                 FROM fazenda.cruzamento WHERE estacao_id = %(e)s
+                GROUP BY touro_nome ORDER BY inseminadas DESC""", {"e": estacao_id})
+        return {"resumo": (r[0] if r else {}), "por_touro": por_touro}
+    except Exception as e:
+        return _error(e)
+
+
+@app.post("/api/campo/venda")
+def campo_venda(req: VendaIn):
+    """Registra uma venda de genética (Feature 4). Idempotente por uuid. Município/UF
+    herdados do cadastro da fazenda quando não informados."""
+    try:
+        with _tx() as conn:
+            cur = _cur(conn)
+            cur.execute("SELECT id FROM fazenda.venda WHERE uuid = %(u)s", {"u": req.uuid})
+            ex = cur.fetchone()
+            if ex:
+                return {"id": ex["id"], "novo": False}
+            mun, uf = req.municipio, (req.uf or "").upper()[:2] or None
+            if req.cliente_id and not (mun and uf):
+                cur.execute("SELECT municipio, uf FROM fazenda.cliente WHERE id = %(c)s", {"c": req.cliente_id})
+                c = cur.fetchone() or {}
+                mun = mun or c.get("municipio")
+                uf = uf or c.get("uf")
+            cur.execute(
+                """INSERT INTO fazenda.venda
+                     (uuid, cliente_id, municipio, uf, touro_id, touro_nome, data_venda,
+                      tipo, quantidade, valor_unitario, registrado_por, coletado_em)
+                   VALUES (%(u)s,%(cli)s,%(mun)s,%(uf)s,%(t)s,%(tn)s,
+                      COALESCE(%(dt)s::date, current_date),
+                      %(tipo)s,%(q)s,%(vu)s,%(rp)s, now()) RETURNING id""",
+                {"u": req.uuid, "cli": req.cliente_id, "mun": _cap(mun, 100), "uf": uf,
+                 "t": req.touro_id, "tn": _cap(req.touro_nome, 120), "dt": req.data_venda or None,
+                 "tipo": (req.tipo or "semen"), "q": req.quantidade or 1,
+                 "vu": req.valor_unitario, "rp": req.registrado_por or "mari"})
+            return {"id": cur.fetchone()["id"], "novo": True}
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/painel-vendas")
+def painel_vendas(uf: str = None, touro_id: int = None, desde: str = None, ate: str = None):
+    """Inteligência de território de vendas (Feature 4, Hub admin): resumo + ranking por
+    município e por touro. Filtros: uf, touro_id, período (desde/ate)."""
+    try:
+        cond = ["1=1"]
+        p = {}
+        if uf:
+            cond.append("UPPER(uf) = %(uf)s"); p["uf"] = uf.upper()
+        if touro_id:
+            cond.append("touro_id = %(t)s"); p["t"] = touro_id
+        if desde:
+            cond.append("data_venda >= %(d)s"); p["d"] = desde
+        if ate:
+            cond.append("data_venda <= %(a)s"); p["a"] = ate
+        w = " AND ".join(cond)
+        resumo = query(
+            f"""SELECT COALESCE(SUM(quantidade),0) AS unidades,
+                       COALESCE(SUM(quantidade*COALESCE(valor_unitario,0)),0) AS receita,
+                       COUNT(DISTINCT (uf||'|'||COALESCE(municipio,''))) AS municipios,
+                       COUNT(*) AS transacoes
+                FROM fazenda.venda WHERE {w}""", p)
+        por_municipio = query(
+            f"""SELECT municipio, uf, SUM(quantidade) AS unidades,
+                       SUM(quantidade*COALESCE(valor_unitario,0)) AS receita
+                FROM fazenda.venda WHERE {w}
+                GROUP BY municipio, uf ORDER BY unidades DESC NULLS LAST LIMIT 50""", p)
+        por_touro = query(
+            f"""SELECT touro_nome, SUM(quantidade) AS unidades,
+                       SUM(quantidade*COALESCE(valor_unitario,0)) AS receita
+                FROM fazenda.venda WHERE {w}
+                GROUP BY touro_nome ORDER BY unidades DESC NULLS LAST LIMIT 50""", p)
+        return {"resumo": (resumo[0] if resumo else {}),
+                "por_municipio": por_municipio, "por_touro": por_touro}
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/fazenda/{cliente_id}/evolucao-genetica")
+def fazenda_evolucao_genetica(cliente_id: int):
+    """Série temporal do IQGg/ganho médio das progênies por estação de monta (Feature 6).
+    Prova visual da melhora genética do rebanho. Vazio até a 1ª safra registrada."""
+    try:
+        rows = query(
+            """SELECT estacao_monta,
+                      COUNT(*) AS n,
+                      ROUND(AVG(prog_iqgg)::numeric, 1)  AS iqgg_medio,
+                      ROUND(AVG(ganho_cria)::numeric, 0) AS ganho_medio
+                 FROM fazenda.cruzamento
+                WHERE cliente_id = %(c)s AND prog_iqgg IS NOT NULL
+                GROUP BY estacao_monta
+                ORDER BY estacao_monta""",
+            {"c": cliente_id})
+        return {"serie": rows, "tem_dados": len(rows) > 0}
+    except Exception as e:
+        return _error(e)
+
+
 @app.post("/api/campo/pesagem")
-async def campo_pesagem(req: PesagemIn):
+def campo_pesagem(req: PesagemIn):
     try:
         err = _valida_pesagem(req)
         if err:
@@ -2560,7 +3231,7 @@ async def campo_pesagem(req: PesagemIn):
 
 
 @app.post("/api/campo/sanitario")
-async def campo_sanitario(req: SanitarioIn):
+def campo_sanitario(req: SanitarioIn):
     try:
         if not req.animal_id and not req.grupo_id:
             return {"error": "informe animal_id ou grupo_id"}
@@ -2600,13 +3271,12 @@ async def campo_sanitario(req: SanitarioIn):
 
 
 @app.get("/api/campo/agenda")
-async def campo_agenda(cliente_id: int, dias: int = 30):
+def campo_agenda(cliente_id: int, dias: int = 30):
     """Lembretes sanitários pendentes (proxima_dose definida, ainda não cumprida).
     Inclui TODOS os atrasados + os que vencem nos próximos `dias`. Ordenado por urgência."""
     try:
-        with _tx() as conn:
-            cur = _cur(conn)
-            cur.execute(
+        # leitura pura -> usa o caminho autocommit (query), não a transação de escrita
+        rows = query(
                 """SELECT e.id, e.animal_id, e.grupo_id, e.tipo, e.produto, e.dose, e.via,
                           e.proxima_dose, (e.proxima_dose - current_date) AS dias,
                           a.nome AS animal_nome, a.brinco, ra.sigla AS raca_sigla,
@@ -2621,9 +3291,9 @@ async def campo_agenda(cliente_id: int, dias: int = 30):
                       AND e.proxima_dose <= current_date + %(d)s
                     ORDER BY e.proxima_dose ASC, e.id ASC""",
                 {"c": cliente_id, "d": dias})
-            itens = []
-            n_atrasado = n_hoje = n_prox = 0
-            for r in cur.fetchall():
+        itens = []
+        n_atrasado = n_hoje = n_prox = 0
+        for r in rows:
                 d = r["dias"]
                 status = "atrasado" if d < 0 else ("hoje" if d == 0 else "proximo")
                 if status == "atrasado": n_atrasado += 1
@@ -2639,14 +3309,14 @@ async def campo_agenda(cliente_id: int, dias: int = 30):
                     "proxima_dose": r["proxima_dose"].isoformat() if r["proxima_dose"] else None,
                     "dias": d, "status": status,
                 })
-            return {"itens": itens, "resumo": {"atrasado": n_atrasado, "hoje": n_hoje,
-                    "proximo": n_prox, "total": len(itens)}}
+        return {"itens": itens, "resumo": {"atrasado": n_atrasado, "hoje": n_hoje,
+                "proximo": n_prox, "total": len(itens)}}
     except Exception as e:
         return _error(e)
 
 
 @app.post("/api/campo/agenda/concluir")
-async def campo_agenda_concluir(req: ConcluirLembreteIn):
+def campo_agenda_concluir(req: ConcluirLembreteIn):
     """Dispensa um lembrete sem registrar nova aplicação (some da agenda)."""
     try:
         with _tx() as conn:
@@ -2676,7 +3346,7 @@ async def campo_cotacao_pdf(matriz_id: int, prioridade: str = "geral",
     Reusa a lógica de /api/acasalamento e renderiza um documento comercial p/ o produtor.
     Se `touro_id` (touro escolhido na tela), a cotação lidera por ele e mantém os demais como alternativas."""
     try:
-        res = await acasalamento(matriz_id, prioridade=prioridade, top=top)
+        res = acasalamento(matriz_id, prioridade=prioridade, top=top)  # def síncrona -> sem await
         if not res or res.get("error"):
             return JSONResponse({"error": (res or {}).get("error", "matriz não encontrada")}, status_code=404)
         if touro_id:
@@ -2703,7 +3373,7 @@ async def campo_cotacao_pdf(matriz_id: int, prioridade: str = "geral",
 
 
 @app.get("/api/campo/auditoria")
-async def campo_auditoria(cliente_id: int):
+def campo_auditoria(cliente_id: int):
     """Auditoria genética do rebanho: fêmeas do cliente avaliadas (via espelho no
     catálogo) contra a média da própria raça. Aponta gargalos, ranking e quem genotipar."""
     try:
@@ -2796,7 +3466,7 @@ async def campo_auditoria(cliente_id: int):
 
 
 @app.post("/api/campo/movimentacao")
-async def campo_movimentacao(req: MovimentacaoIn):
+def campo_movimentacao(req: MovimentacaoIn):
     """Registra movimentação/GTA (entrada, saída, transferência…). Idempotente por uuid."""
     try:
         if (req.tipo or "").lower() not in _TIPO_MOV_OK:
@@ -2849,7 +3519,7 @@ async def campo_briefing_pdf(movimentacao_id: int):
 
 
 @app.get("/api/campo/movimentacoes")
-async def campo_movimentacoes(cliente_id: int, limit: int = 50):
+def campo_movimentacoes(cliente_id: int, limit: int = 50):
     try:
         return query(
             """SELECT id, tipo, data_evento, gta_numero, origem, destino, finalidade,

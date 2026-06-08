@@ -143,6 +143,14 @@
         }
         .run-btn:hover { background: #1a3a1a; }
         .run-btn:disabled { opacity: .6; cursor: default; }
+        /* inputs de formulário (filtros + modal de venda) */
+        .field input, .field select { padding: 9px 12px; border: 2px solid #e0e0e0; border-radius: 8px;
+            font-size: 14px; outline: none; background: #fff; width: 100%; }
+        .field input:focus, .field select:focus { border-color: #4a9e4a; }
+        .field > label { font-size: 12px; font-weight: 600; color: #6b7a6b; }
+        /* vendas: tabelas lado a lado */
+        .vendas-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+        @media (max-width: 900px) { .vendas-cols { grid-template-columns: 1fr; } }
         .badge.score-high { background: #e8f5e9; color: #2e7d32; }
         .badge.score-mid  { background: #fff8e1; color: #b8860b; }
         .badge.score-low  { background: #eceff1; color: #607d8b; }
@@ -406,6 +414,10 @@
     </style>
 </head>
 <body x-data="hub()" x-init="init()">
+    <!-- banner de erro de carregamento (some sozinho; aparece em falha de rede/servidor) -->
+    <div x-show="erro" x-text="erro" @click="erro=''"
+         style="position:fixed; top:0; left:0; right:0; z-index:9999; background:#c0392b; color:#fff;
+                padding:10px 16px; text-align:center; font-weight:600; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.2)"></div>
     <header>
         <div style="display:flex;align-items:center;gap:14px;">
             <button class="hamburger" @click="mobileNav = !mobileNav" aria-label="Abrir menu">☰</button>
@@ -458,6 +470,15 @@
             </div>
             <div class="nav-item" :class="{active: section==='mapa'}" @click="go('mapa')">
                 <span class="ico">🗺️</span> Mapa
+            </div>
+            <div class="nav-item" :class="{active: section==='vendas'}" @click="go('vendas')">
+                <span class="ico">💰</span> Vendas
+            </div>
+            <div class="nav-item" :class="{active: section==='evolucao'}" @click="go('evolucao')">
+                <span class="ico">📈</span> Evolução
+            </div>
+            <div class="nav-item" :class="{active: section==='aprendizado'}" @click="go('aprendizado')">
+                <span class="ico">🧠</span> Aprendizado
             </div>
         </nav>
 
@@ -553,7 +574,7 @@
                             <thead><tr><th>UF</th><th class="num">Rebanho</th><th class="num">Desertos Vet</th></tr></thead>
                             <tbody>
                                 <template x-for="g in ovRegioes" :key="g.uf">
-                                    <tr class="clickable" style="cursor:pointer" @click="terUf = g.uf; loaded.territorio = true; go('territorio'); loadTerritorio()">
+                                    <tr class="clickable" style="cursor:pointer" @click="terUf = g.uf; loaded.territorio = false; go('territorio')">
                                         <td class="reg-uf" x-text="g.uf"></td>
                                         <td class="num" x-text="fmt(g.rebanho)"></td>
                                         <td class="num reg-des" x-text="fmt(g.desertos)"></td>
@@ -697,8 +718,8 @@
                                     <th class="num sortable" @click="setSort('arb','preco_por_iqgg','num')">R$/IQGg<span x-text="sortArrow('arb','preco_por_iqgg')"></span></th>
                                 </tr></thead>
                                 <tbody>
-                                    <template x-for="(row, i) in page(sorted(arbitragem, 'arb'), 'arbitragem')" :key="row.registro + row.central + i">
-                                        <tr :class="{best: row.preco_por_iqgg !== null && pageIdx.arbitragem===0 && i<3}" style="cursor:pointer" @click="abrirTouro(row.id)" title="Ver ficha completa">
+                                    <template x-for="(row, i) in page(sorted(arbitragem, 'arb'), 'arbitragem')" :key="row.registro + '|' + row.central">
+                                        <tr :class="{best: row._best}" style="cursor:pointer" @click="abrirTouro(row.id)" title="Ver ficha completa">
                                             <td data-label="Touro" x-text="row.nome_touro"></td>
                                             <td data-label="Raça" x-text="row.raca"></td>
                                             <td data-label="Central" x-text="row.central"></td>
@@ -1329,7 +1350,7 @@
                                     <th>Telefone</th><th>E-mail</th>
                                     <th class="sortable" @click="setLeadsSort('porte')">Porte<span x-text="leadsArrow('porte')"></span></th><th></th></tr></thead>
                                 <tbody>
-                                    <template x-for="(l, i) in leads" :key="i">
+                                    <template x-for="(l, i) in leads" :key="l.cnpj || i">
                                         <tr>
                                             <td data-label="Empresa / Produtor">
                                                 <span x-text="l.nome"></span>
@@ -1624,10 +1645,183 @@
                     </div>
                 </template>
             </section>
+
+            <!-- ============ VENDAS (Feature 4) ============ -->
+            <section x-show="section==='vendas'">
+                <!-- header: título + ação no canto direito -->
+                <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+                    <div>
+                        <h2>💰 Painel de vendas</h2>
+                        <p class="subtitle" style="margin-bottom:0;">Doses, embriões e animais vendidos por município e por touro.</p>
+                    </div>
+                    <button class="run-btn" @click="abrirVendaModal()" style="white-space:nowrap;">+ Registrar venda</button>
+                </div>
+
+                <!-- filtros: barra horizontal compacta -->
+                <div class="toolbar" style="margin:22px 0 20px; align-items:flex-end;">
+                    <div class="field" style="width:110px;"><label>UF</label>
+                        <input x-model="vendas.uf" maxlength="2" placeholder="todas" style="text-transform:uppercase;" @keydown.enter="loadVendas()"></div>
+                    <div class="field"><label>De</label><input type="date" x-model="vendas.desde"></div>
+                    <div class="field"><label>Até</label><input type="date" x-model="vendas.ate"></div>
+                    <button class="run-btn" @click="loadVendas()">Filtrar</button>
+                    <button class="lookup-btn" @click="vendas.uf=''; vendas.desde=''; vendas.ate=''; loadVendas()">Limpar</button>
+                </div>
+
+                <!-- KPIs: 4 cards lado a lado -->
+                <div class="kpi-grid">
+                    <div class="kpi"><div class="value" x-text="(vendas.resumo.unidades||0).toLocaleString('pt-BR')"></div><div class="label">Unidades vendidas</div></div>
+                    <div class="kpi"><div class="value" x-text="brl(vendas.resumo.receita||0)"></div><div class="label">Receita total</div></div>
+                    <div class="kpi"><div class="value" x-text="(vendas.resumo.municipios||0)"></div><div class="label">Municípios atendidos</div></div>
+                    <div class="kpi"><div class="value" x-text="(vendas.resumo.transacoes||0)"></div><div class="label">Transações</div></div>
+                </div>
+
+                <!-- tabelas lado a lado -->
+                <div class="vendas-cols">
+                    <div>
+                        <h2 style="font-size:17px;">🏙️ Por município</h2>
+                        <div class="card" style="margin-top:12px; padding:0; overflow:hidden;">
+                            <table x-show="vendas.por_municipio.length">
+                                <thead><tr><th>Município</th><th class="num">Unidades</th><th class="num">Receita</th></tr></thead>
+                                <tbody>
+                                    <template x-for="(m,i) in vendas.por_municipio" :key="i">
+                                        <tr><td x-text="(m.municipio||'—')+(m.uf?' / '+m.uf:'')"></td><td class="num" x-text="fmt(m.unidades)"></td><td class="num" x-text="brl(m.receita)"></td></tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                            <div class="empty" x-show="!vendas.por_municipio.length"><div style="font-size:34px; margin-bottom:6px;">📍</div>Nenhuma venda registrada ainda</div>
+                        </div>
+                    </div>
+                    <div>
+                        <h2 style="font-size:17px;">🐂 Por touro</h2>
+                        <div class="card" style="margin-top:12px; padding:0; overflow:hidden;">
+                            <table x-show="vendas.por_touro.length">
+                                <thead><tr><th>Touro</th><th class="num">Unidades</th><th class="num">Receita</th></tr></thead>
+                                <tbody>
+                                    <template x-for="(t,i) in vendas.por_touro" :key="i">
+                                        <tr><td x-text="t.touro_nome||'—'"></td><td class="num" x-text="fmt(t.unidades)"></td><td class="num" x-text="brl(t.receita)"></td></tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                            <div class="empty" x-show="!vendas.por_touro.length"><div style="font-size:34px; margin-bottom:6px;">🐂</div>Nenhuma venda registrada ainda</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============ EVOLUÇÃO GENÉTICA (Feature 6) ============ -->
+            <section x-show="section==='evolucao'">
+                <h2>📈 Evolução genética por fazenda</h2>
+                <p class="subtitle">DEP/IQGg médio das progênies por estação de monta — prova visual da melhora do rebanho.</p>
+                <div class="card" style="margin:14px 0;">
+                    <label class="subtitle">Fazenda</label>
+                    <select x-model.number="evoCliente" @change="loadEvolucao()" style="max-width:360px;">
+                        <option :value="0">— escolha a fazenda —</option>
+                        <template x-for="c in evoClientes" :key="c.id">
+                            <option :value="c.id" x-text="c.razao_social + (c.uf?' · '+c.uf:'')"></option>
+                        </template>
+                    </select>
+                    <label style="margin-left:14px;font-size:13px;"><input type="checkbox" x-model="evoDemo" @change="loadEvolucao()"> mostrar exemplo (demo)</label>
+                </div>
+                <div class="card">
+                    <div x-show="!evoTemDados && !evoDemo" style="color:#777;padding:20px;text-align:center;">
+                        Histórico disponível após a 1ª safra registrada nesta fazenda.
+                    </div>
+                    <div x-show="evoTemDados || evoDemo"><canvas id="chartEvo" height="110"></canvas></div>
+                </div>
+            </section>
+
+            <!-- ============ APRENDIZADO — previsto × realizado (Brief A) ============ -->
+            <section x-show="section==='aprendizado'">
+                <h2>🧠 Aprendizado — previsto × realizado</h2>
+                <p class="subtitle">O motor compara a prenhez que previu com o diagnóstico de gestação real do campo. Quanto mais DGs, mais o sistema calibra com os dados do seu rebanho.</p>
+
+                <!-- estado vazio -->
+                <div class="card" x-show="!apr.overall.n && !apr.peso.length" style="text-align:center; padding:40px;">
+                    <div style="font-size:38px; margin-bottom:8px;">🔬</div>
+                    <div style="font-weight:700; color:#1a3a1a;">Ainda sem diagnósticos de gestação</div>
+                    <p class="subtitle" style="margin-top:6px;">Conforme a Mari confirma prenhe/vazia no campo, o previsto × realizado aparece aqui.</p>
+                </div>
+
+                <div x-show="apr.overall.n">
+                    <!-- KPIs previsto × realizado -->
+                    <div class="kpi-grid">
+                        <div class="kpi"><div class="value" x-text="(apr.overall.prenhez_prev||0)+'%'"></div><div class="label">Prenhez prevista (média)</div></div>
+                        <div class="kpi"><div class="value" x-text="(apr.overall.prenhez_real||0)+'%'"></div><div class="label">Prenhez realizada (DG)</div></div>
+                        <div class="kpi"><div class="value" x-text="apr.overall.n"></div><div class="label">Diagnósticos registrados</div></div>
+                        <div class="kpi" x-show="apr.calibracao">
+                            <div class="value" x-text="(apr.calibracao ? apr.calibracao.base_sugerida : '—')+'%'"></div>
+                            <div class="label">Base sugerida (era <span x-text="apr.calibracao && apr.calibracao.base_atual"></span>%) · confiança <span x-text="apr.calibracao && apr.calibracao.confianca"></span></div>
+                        </div>
+                    </div>
+
+                    <h2 style="font-size:17px;">🐂 Por touro</h2>
+                    <div class="card" style="margin-top:12px; padding:0; overflow:hidden;">
+                        <table>
+                            <thead><tr><th>Touro</th><th class="num">DGs</th><th class="num">Prenhes</th><th class="num">Realizado</th><th class="num">Previsto</th><th class="num">Δ</th></tr></thead>
+                            <tbody>
+                                <template x-for="(t,i) in apr.por_touro" :key="i">
+                                    <tr>
+                                        <td x-text="t.touro_nome||'—'"></td>
+                                        <td class="num" x-text="t.n"></td>
+                                        <td class="num" x-text="t.prenhes"></td>
+                                        <td class="num" style="font-weight:700;color:#2d5a2d" x-text="(t.prenhez_real??'—')+'%'"></td>
+                                        <td class="num" x-text="(t.prenhez_prev??'—')+'%'"></td>
+                                        <td class="num" :style="(t.prenhez_real-t.prenhez_prev)>=0?'color:#2d7d2d;font-weight:700':'color:#c0392b;font-weight:700'"
+                                            x-text="(t.prenhez_real!=null&&t.prenhez_prev!=null)?((t.prenhez_real-t.prenhez_prev>=0?'+':'')+(t.prenhez_real-t.prenhez_prev)+'pp'):'—'"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="subtitle" style="margin-top:12px;">A calibração é uma <b>sugestão</b> (encolhimento para o valor atual enquanto há poucos dados) — a Mari decide quando ajustar. Δ em pontos percentuais (realizado − previsto).</p>
+                </div>
+
+                <!-- Brief A/F1: ganho realizado (peso dos filhos à desmama) -->
+                <div x-show="apr.peso.length" style="margin-top:18px;">
+                    <h2 style="font-size:17px;">⚖️ Ganho realizado — peso dos filhos</h2>
+                    <p class="subtitle">Peso médio dos bezerros já nascidos de cada touro (ligados ao cruzamento). A prova real do mérito, não só a DEP.</p>
+                    <div class="card" style="margin-top:12px; padding:0; overflow:hidden;">
+                        <table>
+                            <thead><tr><th>Touro</th><th class="num">Filhos pesados</th><th class="num">Peso médio</th></tr></thead>
+                            <tbody>
+                                <template x-for="(t,i) in apr.peso" :key="i">
+                                    <tr><td x-text="t.touro_nome||'—'"></td><td class="num" x-text="t.n_filhos"></td>
+                                        <td class="num" style="font-weight:700;color:#2d5a2d" x-text="(t.peso_medio??'—')+' kg'"></td></tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
         </main>
     </div>
 
     <!-- ============ MODAL CNPJ (BrasilAPI) ============ -->
+    <!-- Modal: Registrar venda (Feature 4) -->
+    <div class="modal-overlay" x-show="vModal" @click="vModal=false" style="display:none;">
+        <div class="modal" @click.stop style="max-width:520px;">
+            <div class="modal-head">
+                <h2 style="font-size:18px;">💰 Registrar venda</h2>
+                <span class="modal-close" @click="vModal=false">✕</span>
+            </div>
+            <div class="modal-body">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                    <div class="field" style="grid-column:1/-1;"><label>Touro</label><input x-model="vForm.touro_nome" placeholder="nome do touro"></div>
+                    <div class="field"><label>Município</label><input x-model="vForm.municipio" placeholder="Porto Nacional"></div>
+                    <div class="field"><label>UF</label><input x-model="vForm.uf" maxlength="2" style="text-transform:uppercase;" placeholder="TO"></div>
+                    <div class="field"><label>Tipo</label><select x-model="vForm.tipo"><option value="semen">Sêmen (dose)</option><option value="embriao">Embrião</option><option value="animal">Animal</option></select></div>
+                    <div class="field"><label>Quantidade</label><input type="number" min="1" x-model.number="vForm.quantidade"></div>
+                    <div class="field" style="grid-column:1/-1;"><label>Valor unitário (R$)</label><input type="number" min="0" x-model.number="vForm.valor_unitario" placeholder="0"></div>
+                </div>
+                <p class="subtitle" style="margin:14px 0 0; font-size:12px;">Informe ao menos o município ou o touro. Vínculo automático ao cadastro da fazenda quando o município coincide.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="lookup-btn" @click="vModal=false">Cancelar</button>
+                <button class="run-btn" :disabled="vForm.salvando" @click="registrarVendaAdmin()" x-text="vForm.salvando ? 'Salvando…' : 'Registrar venda'"></button>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay" x-show="cnpjModal" @click="cnpjModal=false" style="display:none;">
         <div class="modal" @click.stop style="max-width:560px;">
             <div class="modal-head">
@@ -1687,6 +1881,8 @@
                                 <table class="mini">
                                     <tbody>
                                         <tr><td>IQGg genômico</td><td class="num" x-text="depVal(touro.iqg_genomico ?? touro.iqgg)"></td></tr>
+                                        <tr x-show="touro.prenhez_est != null"><td>Prenhez esperada</td><td class="num" style="color:#2d5a2d;font-weight:700" x-text="'~' + touro.prenhez_est + '%'"></td></tr>
+                                        <tr x-show="touro.prenhez_real != null"><td>Prenhez realizada (DG)</td><td class="num" style="color:#1a3a1a;font-weight:700" x-text="touro.prenhez_real + '% (n=' + touro.dg_n + ')'"></td></tr>
                                         <tr><td>Fazenda origem</td><td class="num" x-text="touro.fazenda_origem || '—'"></td></tr>
                                         <tr><td>Genotipado</td><td class="num" x-text="touro.genotipado ? 'Sim' : 'Não'"></td></tr>
                                         <tr><td>CEIP</td><td class="num" x-text="touro.ceip ? 'Sim' : 'Não'"></td></tr>
@@ -1815,7 +2011,8 @@
                             </div>
                         </div>
                         <div x-show="filhote.monetizacao" style="margin-top:20px;">
-                            <h3 style="font-size:14px;margin:0 0 8px;color:#1a3a1a;">💰 Como monetizar esta genética</h3>
+                            <h3 style="font-size:14px;margin:0 0 4px;color:#1a3a1a;">💰 Como monetizar esta genética</h3>
+                            <p style="font-size:11px;color:#6b7a6b;margin:0 0 8px;">O <b>+R$/cria</b> é o <b>ganho do touro</b> por bezerro vs. um touro médio da raça — não o valor total do bezerro (esse está na previsão acima).</p>
                             <div class="mon-row">
                                 <template x-for="ch in (filhote.monetizacao ? filhote.monetizacao.canais : [])" :key="ch.tipo">
                                     <div class="mon-card" :class="{rec: ch.tipo===filhote.monetizacao.recomendado}">
@@ -1877,6 +2074,7 @@
                 pageSize: 20,
                 loading: { whitespace: false, arbitragem: false, centrais: false, fazendas: false, matching: false, marketplace: false, mercado: false, demanda: false, territorio: false },
                 loaded: {},
+                erro: '',
                 match: { finalidade: 'corte', prioridade: 'geral', uf: '', orcamento_max: null, raca_id: null, sexado: false },
                 matchResult: [], matchRan: false, boiArroba: null, leiteLitro: null,
                 perfilAtual: null, exportando: false,
@@ -1907,6 +2105,12 @@
                 filhoteModal: false, filhote: null, _fchart: null,
                 mercado: null, _chLeite: null, _chRebanho: null, _chAbate: null,
                 cnpjModal: false, cnpjData: null, cnpjLoading: false,
+                // Feature 4 (vendas) + Feature 6 (evolução)
+                vendas: { resumo:{}, por_municipio:[], por_touro:[], uf:'', desde:'', ate:'' },
+                vForm: { municipio:'', uf:'', touro_nome:'', tipo:'semen', quantidade:1, valor_unitario:null, salvando:false },
+                vModal: false,
+                evoClientes: [], evoCliente: 0, evoTemDados: false, evoDemo: false, evoLoaded: false, _evoChart: null,
+                apr: { overall: {}, por_touro: [], calibracao: null, peso: [] },   // Brief A: previsto × realizado
 
                 init() {
                     this.loadStats();
@@ -1926,13 +2130,37 @@
                 },
                 _secValida(s) {
                     const ok = ['visao', 'whitespace', 'arbitragem', 'rankings', 'matching',
-                                'matrizes', 'acasalamento', 'marketplace', 'demanda', 'territorio', 'mapa', 'mercado'];
+                                'matrizes', 'acasalamento', 'marketplace', 'demanda', 'territorio', 'mapa', 'mercado',
+                                'vendas', 'evolucao', 'aprendizado'];
                     return ok.includes(s) ? s : 'visao';
                 },
+                // GET JSON com checagem de status: se a resposta não for 2xx (500, 502,
+                // HTML de erro do nginx), lança em vez de quebrar no .json() — assim o
+                // finally do loader reseta o spinner e o usuário vê o erro, não fica travado.
+                async jget(url, opts = {}) {
+                    const res = await fetch(url, { credentials: 'same-origin', ...opts });
+                    if (!res.ok) throw new Error('HTTP ' + res.status + ' em ' + url);
+                    return res.json();
+                },
+                setErr(e) {
+                    console.error(e);
+                    this.erro = 'Falha ao carregar dados. Verifique a conexão e tente de novo.';
+                    setTimeout(() => { this.erro = ''; }, 6000);
+                },
+                // escapa texto vindo do banco antes de injetar como HTML (ex.: popups do Leaflet)
+                esc(s) {
+                    return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+                        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+                },
                 async loadOverview() {
-                    this.ovRacas = await (await fetch('/api/overview/racas')).json();
-                    this.ovRegioes = await (await fetch('/api/overview/regioes')).json();
-                    this.ovAptidao = await (await fetch('/api/racas/aptidao')).json();
+                    try {
+                        const [r, reg, ap] = await Promise.all([
+                            this.jget('/api/overview/racas'),
+                            this.jget('/api/overview/regioes'),
+                            this.jget('/api/racas/aptidao'),
+                        ]);
+                        this.ovRacas = r; this.ovRegioes = reg; this.ovAptidao = ap;
+                    } catch (e) { this.setErr(e); }
                 },
                 aptLabel(ap) {
                     return ({ corte: 'Corte', leite: 'Leite', dupla: 'Dupla aptidão',
@@ -1949,55 +2177,84 @@
                     this.section = s;
                     this.mobileNav = false;
                     // navegar entre seções fecha qualquer modal aberto
-                    this.touroModal = false; this.matrizModal = false; this.acasalModal = false; this.cnpjModal = false; this.filhoteModal = false;
-                    if (s === 'acasalamento' && !this.loaded.acasalamento) { this.loadAcList(); this.loaded.acasalamento = true; }
+                    this.touroModal = false; this.matrizModal = false; this.acasalModal = false; this.cnpjModal = false; this.filhoteModal = false; this.vModal = false;
+                    // cada loader marca loaded.X só APÓS sucesso (no try) — assim uma falha
+                    // transitória não deixa a seção vazia pra sempre; revisitar re-tenta.
+                    if (s === 'acasalamento' && !this.loaded.acasalamento) this.loadAcList();
                     if (s === 'whitespace' && !this.loaded.whitespace) this.loadWhitespace();
                     if (s === 'arbitragem' && !this.loaded.arbitragem) this.loadArbitragem();
-                    if (s === 'rankings' && !this.loaded.rankings) { this.loadCentrais(); this.loadFazendas(); this.loaded.rankings = true; }
-                    if (s === 'matrizes' && !this.loaded.matrizes) { this.loadMatrizes(); this.loaded.matrizes = true; }
-                    if (s === 'marketplace' && !this.loaded.marketplace) { this.loadMarketplace(); this.loaded.marketplace = true; }
-                    if (s === 'demanda' && !this.loaded.demanda) { this.loadDemanda(); this.loaded.demanda = true; }
+                    if (s === 'rankings' && !this.loaded.rankings) this.loadRankings();
+                    if (s === 'matrizes' && !this.loaded.matrizes) this.loadMatrizes();
+                    if (s === 'marketplace' && !this.loaded.marketplace) this.loadMarketplace();
+                    if (s === 'demanda' && !this.loaded.demanda) this.loadDemanda();
                     if (s === 'territorio') {
-                        if (!this.loaded.territorio) { this.loadTerritorio(); this.loaded.territorio = true; }
+                        if (!this.loaded.territorio) this.loadTerritorio();
                         this.$nextTick(() => { if (this.$refs.terUfSel) this.$refs.terUfSel.value = this.terUf; });
                     }
                     if (s === 'mapa') { this.$nextTick(() => this.loadMapa()); }
-                    if (s === 'mercado' && !this.loaded.mercado) { this.loadMercado(); this.loaded.mercado = true; }
+                    if (s === 'mercado' && !this.loaded.mercado) this.loadMercado();
+                    if (s === 'vendas') this.loadVendas();
+                    if (s === 'evolucao' && !this.evoLoaded) this.loadFazendasEvo();
+                    if (s === 'aprendizado') this.loadAprendizado();
                 },
 
-                async loadStats() { this.stats = await (await fetch('/api/stats')).json(); },
-                async loadUfs() { this.ufs = await (await fetch('/api/ufs')).json(); },
-                async loadRacas() { this.racas = await (await fetch('/api/racas')).json(); },
-                async loadRacasTodas() { this.racasTodas = await (await fetch('/api/racas/todas')).json(); },
+                async loadStats() { try { this.stats = await this.jget('/api/stats'); } catch (e) { this.setErr(e); } },
+                async loadUfs() { try { this.ufs = await this.jget('/api/ufs'); } catch (e) { this.setErr(e); } },
+                async loadRacas() { try { this.racas = await this.jget('/api/racas'); } catch (e) { this.setErr(e); } },
+                async loadRacasTodas() { try { this.racasTodas = await this.jget('/api/racas/todas'); } catch (e) { this.setErr(e); } },
 
                 async loadWhitespace() {
                     this.loading.whitespace = true; this.pageIdx.whitespace = 0;
                     const q = this.ufFilter ? ('?uf=' + this.ufFilter) : '';
-                    this.whitespace = await (await fetch('/api/whitespace' + q)).json();
-                    this.loaded.whitespace = true; this.loading.whitespace = false;
+                    try {
+                        this.whitespace = await this.jget('/api/whitespace' + q);
+                        this.loaded.whitespace = true;
+                    } catch (e) { this.setErr(e); }
+                    finally { this.loading.whitespace = false; }
                 },
                 async loadArbitragem() {
                     this.loading.arbitragem = true; this.pageIdx.arbitragem = 0;
-                    if (!this.centrais.length) await this.loadCentrais();   // p/ o filtro de central
-                    const p = [];
-                    if (this.racaFilter) p.push('raca=' + this.racaFilter);
-                    if (this.arbSegmento) p.push('segmento=' + this.arbSegmento);
-                    if (this.arbCentral) p.push('central=' + encodeURIComponent(this.arbCentral));
-                    const q = p.length ? ('?' + p.join('&')) : '';
-                    this.arbitragem = await (await fetch('/api/arbitragem' + q)).json();
-                    this.loaded.arbitragem = true; this.loading.arbitragem = false;
-                    // sincroniza o <select> de central (Alpine não reflete valor setado via código)
-                    this.$nextTick(() => { if (this.$refs.arbCentralSel) this.$refs.arbCentralSel.value = this.arbCentral; });
+                    try {
+                        if (!this.centrais.length) await this.loadCentrais();   // p/ o filtro de central
+                        const p = [];
+                        if (this.racaFilter) p.push('raca=' + this.racaFilter);
+                        if (this.arbSegmento) p.push('segmento=' + this.arbSegmento);
+                        if (this.arbCentral) p.push('central=' + encodeURIComponent(this.arbCentral));
+                        const q = p.length ? ('?' + p.join('&')) : '';
+                        this.arbitragem = await this.jget('/api/arbitragem' + q);
+                        // marca os 3 melhores deals (menor R$/IQGg) NO DADO — independe de
+                        // ordenação/página da tabela (estrela fica no touro certo, não no topo visual)
+                        const ranked = this.arbitragem
+                            .filter(r => r.preco_por_iqgg !== null && r.preco_por_iqgg !== undefined)
+                            .sort((a, b) => a.preco_por_iqgg - b.preco_por_iqgg);
+                        this.arbitragem.forEach(r => { r._best = false; });
+                        ranked.slice(0, 3).forEach(r => { r._best = true; });
+                        this.loaded.arbitragem = true;
+                        // sincroniza o <select> de central (Alpine não reflete valor setado via código)
+                        this.$nextTick(() => { if (this.$refs.arbCentralSel) this.$refs.arbCentralSel.value = this.arbCentral; });
+                    } catch (e) { this.setErr(e); }
+                    finally { this.loading.arbitragem = false; }
                 },
                 async loadCentrais() {
                     this.loading.centrais = true;
-                    this.centrais = await (await fetch('/api/centrais')).json();
-                    this.loading.centrais = false;
+                    try { this.centrais = await this.jget('/api/centrais'); }
+                    catch (e) { this.setErr(e); }
+                    finally { this.loading.centrais = false; }
                 },
                 async loadFazendas() {
                     this.loading.fazendas = true;
-                    this.fazendas = await (await fetch('/api/fazendas')).json();
-                    this.loading.fazendas = false;
+                    try { this.fazendas = await this.jget('/api/fazendas'); }
+                    catch (e) { this.setErr(e); }
+                    finally { this.loading.fazendas = false; }
+                },
+                async loadRankings() {
+                    this.loading.centrais = true; this.loading.fazendas = true;
+                    try {
+                        const [c, f] = await Promise.all([this.jget('/api/centrais'), this.jget('/api/fazendas')]);
+                        this.centrais = c; this.fazendas = f;
+                        this.loaded.rankings = true;   // marca só no sucesso
+                    } catch (e) { this.setErr(e); }
+                    finally { this.loading.centrais = false; this.loading.fazendas = false; }
                 },
                 async runMatching() {
                     this.loading.matching = true; this.matchRan = true;
@@ -2011,16 +2268,17 @@
                     };
                     // salva o perfil exato desta busca para reuso no export PDF
                     this.perfilAtual = { ...body };
-                    const res = await fetch('/api/matching', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(body),
-                    });
-                    const data = await res.json();
-                    this.matchResult = data.touros || [];
-                    this.boiArroba = data.boi_arroba || null;
-                    this.leiteLitro = data.leite_litro || null;
-                    this.loading.matching = false;
+                    try {
+                        const data = await this.jget('/api/matching', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body),
+                        });
+                        this.matchResult = data.touros || [];
+                        this.boiArroba = data.boi_arroba || null;
+                        this.leiteLitro = data.leite_litro || null;
+                    } catch (e) { this.setErr(e); }
+                    finally { this.loading.matching = false; }
                 },
                 valorAgregado(r) {
                     if (r.valor_bezerro != null) return this.brl(r.valor_bezerro) + ' /bz';
@@ -2060,9 +2318,9 @@
                 async loadMarketplace() {
                     this.loading.marketplace = true;
                     const qs = `?segmento=${this.mkt.segmento}` + (this.mkt.uf ? `&uf=${this.mkt.uf}` : '');
-                    const mk = await fetch('/api/marketplace' + qs).then(r => r.json());
-                    this.marketplace = mk;
-                    this.loading.marketplace = false;
+                    try { this.marketplace = await this.jget('/api/marketplace' + qs); this.loaded.marketplace = true; }
+                    catch (e) { this.setErr(e); }
+                    finally { this.loading.marketplace = false; }
                     // troca de filtro (segmento/UF) reseta a paginação dos leads p/ a página 1
                     this.leadsPage = 1;
                     this.loadLeads();
@@ -2072,11 +2330,13 @@
                     const qs = `?segmento=${this.mkt.segmento}` + (this.mkt.uf ? `&uf=${this.mkt.uf}` : '')
                              + `&page=${this.leadsPage}&page_size=100`
                              + (this.leadsSort ? `&sort=${this.leadsSort}&order=${this.leadsOrder}` : '');
-                    const d = await fetch('/api/leads' + qs).then(r => r.json());
-                    this.leads = d.leads || [];
-                    this.leadsTotal = d.total || 0;
-                    this.leadsPages = d.total_pages || 1;
-                    this.leadsLoading = false;
+                    try {
+                        const d = await this.jget('/api/leads' + qs);
+                        this.leads = d.leads || [];
+                        this.leadsTotal = d.total || 0;
+                        this.leadsPages = d.total_pages || 1;
+                    } catch (e) { this.setErr(e); }
+                    finally { this.leadsLoading = false; }
                 },
                 irLeads(delta) {
                     const nova = this.leadsPage + delta;
@@ -2095,6 +2355,10 @@
                         // texto começa A→Z; número começa maior→menor
                         this.sortState[id] = { col, type, dir: type === 'num' ? 'desc' : 'asc' };
                     }
+                    // tabelas paginadas: reordenar volta p/ a página 1 (senão fica numa
+                    // página que pode não existir mais na nova ordem -> tabela vazia)
+                    const pgKey = { ws: 'whitespace', arb: 'arbitragem' }[id];
+                    if (pgKey) this.pageIdx[pgKey] = 0;
                 },
                 sortArrow(id, col) {
                     const s = this.sortState[id];
@@ -2111,13 +2375,20 @@
                     }
                     return row[col];
                 },
+                // memo: chamado DENTRO do x-for, então roda a cada tick reativo do Alpine.
+                // Sem cache, reordena o dataset inteiro toda vez. Recalcula só quando o array
+                // (nova referência ao recarregar) ou o estado de ordenação mudam.
+                _sortCache: {},
                 sorted(rows, id) {
                     const s = this.sortState[id];
                     if (!s || !Array.isArray(rows)) return rows;
+                    const sig = s.col + ':' + s.dir + ':' + s.type;
+                    const c = this._sortCache[id];
+                    if (c && c.rows === rows && c.sig === sig) return c.out;
                     const { col, type, dir } = s;
                     const mul = dir === 'asc' ? 1 : -1;
                     const isNull = v => v === null || v === undefined || v === '' || v === '—';
-                    return [...rows].sort((a, b) => {
+                    const out = [...rows].sort((a, b) => {
                         const va = this._sortVal(a, col), vb = this._sortVal(b, col);
                         const na = isNull(va), nb = isNull(vb);
                         if (na && nb) return 0;
@@ -2128,6 +2399,8 @@
                         else r = String(va).localeCompare(String(vb), 'pt-BR');
                         return r * mul;
                     });
+                    this._sortCache[id] = { rows, sig, out };
+                    return out;
                 },
                 // --- ordenação SERVER-SIDE (lista de leads paginada) ---
                 leadsSort: '', leadsOrder: 'asc',
@@ -2160,22 +2433,26 @@
                 async loadDemanda() {
                     this.loading.demanda = true;
                     const q = this.demUf ? ('?uf=' + this.demUf) : '';
-                    const [t, l, w] = await Promise.all([
-                        fetch('/api/demanda/tendencia' + q).then(r => r.json()),
-                        fetch('/api/demanda/lotacao' + q).then(r => r.json()),
-                        fetch('/api/demanda/whales' + q).then(r => r.json()),
-                    ]);
-                    this.tendencia = Array.isArray(t) ? t : [];
-                    this.lotacao = Array.isArray(l) ? l : [];
-                    this.whales = Array.isArray(w) ? w : [];
-                    this.loading.demanda = false;
+                    try {
+                        const [t, l, w] = await Promise.all([
+                            this.jget('/api/demanda/tendencia' + q),
+                            this.jget('/api/demanda/lotacao' + q),
+                            this.jget('/api/demanda/whales' + q),
+                        ]);
+                        this.tendencia = Array.isArray(t) ? t : [];
+                        this.lotacao = Array.isArray(l) ? l : [];
+                        this.whales = Array.isArray(w) ? w : [];
+                        this.loaded.demanda = true;
+                    } catch (e) { this.setErr(e); }
+                    finally { this.loading.demanda = false; }
                 },
 
                 // ---- Território ----
                 async loadTerritorio() {
                     this.loading.territorio = true;
-                    this.territorio = await fetch('/api/territorio?uf=' + this.terUf).then(r => r.json());
-                    this.loading.territorio = false;
+                    try { this.territorio = await this.jget('/api/territorio?uf=' + this.terUf); this.loaded.territorio = true; }
+                    catch (e) { this.setErr(e); }
+                    finally { this.loading.territorio = false; }
                 },
                 terCrescimento() {
                     const p = this.territorio?.panorama;
@@ -2190,6 +2467,9 @@
                 // ---- Mapa (Leaflet) ----
                 async loadMapa() {
                     if (typeof L === 'undefined') return;
+                    // token anti-corrida: trocar camada/UF rápido dispara loadMapa de novo;
+                    // a resposta antiga não pode sobrescrever a nova nem vazar uma layer órfã.
+                    const tok = (this._mapTok = (this._mapTok || 0) + 1);
                     if (!this._map) {
                         this._map = L.map('map').setView([-15.0, -55.0], 4);
                         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -2202,36 +2482,36 @@
                     // Revalida sempre, com um tick extra de folga pós-layout.
                     this._map.invalidateSize();
                     setTimeout(() => { if (this._map) this._map.invalidateSize(); }, 250);
-                    if (this._mapLayer) { this._map.removeLayer(this._mapLayer); }
+                    try {
                     const group = L.layerGroup();
                     let pts = [];
                     if (this.mapLayer === 'leite') {
                         const qs = (this.mapUf ? `?uf=${this.mapUf}&` : '?') + `min_litros=5000`;
-                        pts = await (await fetch('/api/externo/leite/mapa' + qs)).json();
+                        pts = await this.jget('/api/externo/leite/mapa' + qs);
                         (Array.isArray(pts) ? pts : []).forEach(p => {
                             if (p.lat == null || p.lng == null) return;
                             const r = Math.max(4, Math.min(20, Math.sqrt(p.leite_mil_litros) / 30));
                             L.circleMarker([p.lat, p.lng], {
                                 radius: r, color: '#1565c0', fillColor: '#1976d2', fillOpacity: 0.55, weight: 1
                             }).bindPopup(
-                                `<b>${p.municipio} (${p.uf})</b><br>Leite: ${Number(p.leite_mil_litros).toLocaleString('pt-BR')} mil L/ano`
+                                `<b>${this.esc(p.municipio)} (${this.esc(p.uf)})</b><br>Leite: ${Number(p.leite_mil_litros).toLocaleString('pt-BR')} mil L/ano`
                             ).addTo(group);
                         });
                     } else if (this.mapLayer === 'valor') {
                         const qs = (this.mapUf ? `?uf=${this.mapUf}&` : '?') + `min_valor=10000`;
-                        pts = await (await fetch('/api/externo/valor/mapa' + qs)).json();
+                        pts = await this.jget('/api/externo/valor/mapa' + qs);
                         (Array.isArray(pts) ? pts : []).forEach(p => {
                             if (p.lat == null || p.lng == null) return;
                             const r = Math.max(4, Math.min(20, Math.sqrt(p.valor_mil_reais) / 60));
                             L.circleMarker([p.lat, p.lng], {
                                 radius: r, color: '#b8860b', fillColor: '#d4a017', fillOpacity: 0.55, weight: 1
                             }).bindPopup(
-                                `<b>${p.municipio} (${p.uf})</b><br>Valor produção: R$ ${Number(p.valor_mil_reais).toLocaleString('pt-BR')} mil/ano`
+                                `<b>${this.esc(p.municipio)} (${this.esc(p.uf)})</b><br>Valor produção: R$ ${Number(p.valor_mil_reais).toLocaleString('pt-BR')} mil/ano`
                             ).addTo(group);
                         });
                     } else if (this.mapLayer === 'tendencia') {
                         const qs = (this.mapUf ? `?uf=${this.mapUf}&` : '?') + `min_reb=30000`;
-                        pts = await (await fetch('/api/demanda/tendencia' + qs)).json();
+                        pts = await this.jget('/api/demanda/tendencia' + qs);
                         (Array.isArray(pts) ? pts : []).forEach(p => {
                             if (p.lat == null || p.lng == null) return;
                             const g = Number(p.crescimento_pct);
@@ -2240,13 +2520,13 @@
                             L.circleMarker([p.lat, p.lng], {
                                 radius: r, color, fillColor: color, fillOpacity: 0.6, weight: 1
                             }).bindPopup(
-                                `<b>${p.municipio} (${p.uf})</b><br>Rebanho 2023: ${Number(p.rebanho).toLocaleString('pt-BR')}<br>`
+                                `<b>${this.esc(p.municipio)} (${this.esc(p.uf)})</b><br>Rebanho 2023: ${Number(p.rebanho).toLocaleString('pt-BR')}<br>`
                                 + `<b style="color:${color}">${g >= 0 ? '+' : ''}${g}%</b> vs 2020`
                             ).addTo(group);
                         });
                     } else if (this.mapLayer === 'lotacao') {
                         const qs = (this.mapUf ? `?uf=${this.mapUf}&` : '?') + `min_ha=10000&min_cab=10000&limit=2000`;
-                        pts = await (await fetch('/api/demanda/lotacao' + qs)).json();
+                        pts = await this.jget('/api/demanda/lotacao' + qs);
                         (Array.isArray(pts) ? pts : []).forEach(p => {
                             if (p.lat == null || p.lng == null) return;
                             const l = Number(p.lotacao);
@@ -2255,14 +2535,14 @@
                             L.circleMarker([p.lat, p.lng], {
                                 radius: r, color, fillColor: color, fillOpacity: 0.6, weight: 1
                             }).bindPopup(
-                                `<b>${p.municipio} (${p.uf})</b><br>Lotação: <b>${l.toFixed(2)}</b> cab/ha<br>`
+                                `<b>${this.esc(p.municipio)} (${this.esc(p.uf)})</b><br>Lotação: <b>${l.toFixed(2)}</b> cab/ha<br>`
                                 + `Rebanho: ${Number(p.rebanho).toLocaleString('pt-BR')}<br>`
                                 + `Pastagem: ${Number(p.pastagem_ha).toLocaleString('pt-BR')} ha`
                             ).addTo(group);
                         });
                     } else {
                         const qs = (this.mapUf ? `?uf=${this.mapUf}&` : '?') + `min_bovinos=${this.mapMin}`;
-                        pts = await (await fetch('/api/map' + qs)).json();
+                        pts = await this.jget('/api/map' + qs);
                         const colors = { 'DESERTO VET': '#c62828', 'BAIXA COBERTURA': '#b8860b', 'NORMAL': '#2e7d32' };
                         (Array.isArray(pts) ? pts : []).forEach(p => {
                             if (p.lat == null || p.lng == null) return;
@@ -2271,11 +2551,15 @@
                                 radius: r, color: colors[p.classificacao_vet] || '#607d8b',
                                 fillColor: colors[p.classificacao_vet] || '#607d8b', fillOpacity: 0.6, weight: 1
                             }).bindPopup(
-                                `<b>${p.municipio} (${p.uf})</b><br>Rebanho: ${Number(p.bovinos).toLocaleString('pt-BR')}<br>`
+                                `<b>${this.esc(p.municipio)} (${this.esc(p.uf)})</b><br>Rebanho: ${Number(p.bovinos).toLocaleString('pt-BR')}<br>`
                                 + `Estab. vet: ${p.cnpj_vet}<br><b style="color:${colors[p.classificacao_vet]||'#607d8b'}">${p.classificacao_vet}</b>`
                             ).addTo(group);
                         });
                     }
+                    // chegou resposta de uma chamada mais nova? descarta esta (e seu group)
+                    if (tok !== this._mapTok) return;
+                    // troca a layer só AGORA (remove a antiga e adiciona a nova de uma vez)
+                    if (this._mapLayer) { this._map.removeLayer(this._mapLayer); }
                     group.addTo(this._map);
                     this._mapLayer = group;
                     const arr = Array.isArray(pts) ? pts : [];
@@ -2287,6 +2571,7 @@
                                             .sort((a, b) => a.localeCompare(b, 'pt-BR'));
                     const target = this.mapUf && arr.length ? [arr[0].lat, arr[0].lng] : [-15.0, -55.0];
                     this._map.setView(target, this.mapUf ? 6 : 4);
+                    } catch (e) { this.setErr(e); }
                 },
                 buscarMunicipio() {
                     const nome = (this.mapMunicipio || '').trim();
@@ -2325,7 +2610,9 @@
                 async abrirTouro(id) {
                     // busca ANTES de abrir — evita o flash com touro=null (bindings do
                     // x-if avaliando em null durante o teardown = erros de console).
-                    const data = await (await fetch('/api/touro/' + id)).json();
+                    let data;
+                    try { data = await this.jget('/api/touro/' + id); }
+                    catch (e) { this.setErr(e); return; }
                     if (data.error) { alert('Touro não encontrado.'); return; }
                     this.touro = data; this.touroModal = true;
                     this.$nextTick(() => { document.querySelectorAll('.modal').forEach(b => { b.scrollTop = 0; }); });
@@ -2380,11 +2667,16 @@
                     if (this.matFilter.q) p.set('q', this.matFilter.q);
                     p.set('min_filhos', this.matFilter.min || 1);
                     p.set('limit', 100);
-                    this.matrizes = await (await fetch('/api/matrizes?' + p.toString())).json();
-                    this.loaded.matrizes = true; this.matLoading = false;
+                    try {
+                        this.matrizes = await this.jget('/api/matrizes?' + p.toString());
+                        this.loaded.matrizes = true;
+                    } catch (e) { this.setErr(e); }
+                    finally { this.matLoading = false; }
                 },
                 async abrirMatriz(id) {
-                    const data = await (await fetch('/api/matriz/' + id)).json();
+                    let data;
+                    try { data = await this.jget('/api/matriz/' + id); }
+                    catch (e) { this.setErr(e); return; }
                     if (data.error) { alert('Matriz não encontrada.'); return; }
                     this.matriz = data; this.matrizModal = true;   // dados antes de abrir
                     this.$nextTick(() => { document.querySelectorAll('.modal').forEach(b => { b.scrollTop = 0; }); });
@@ -2427,14 +2719,16 @@
                     if (this.livre.touroRaca) p.set('raca', this.livre.touroRaca);
                     if (this.livre.touroUf) p.set('uf', this.livre.touroUf);
                     if (this.livre.touroQ) p.set('q', this.livre.touroQ);
-                    this.livre.touroRes = await (await fetch('/api/animais/busca?' + p)).json();
+                    try { this.livre.touroRes = await this.jget('/api/animais/busca?' + p); }
+                    catch (e) { this.setErr(e); }
                 },
                 async buscarVaca() {
                     const p = new URLSearchParams({ min_filhos: 1, limit: 15 });
                     if (this.livre.vacaQ) p.set('q', this.livre.vacaQ);
                     if (this.livre.vacaRaca) p.set('raca', this.livre.vacaRaca);
                     if (this.livre.vacaUf) p.set('uf', this.livre.vacaUf);
-                    this.livre.vacaRes = await (await fetch('/api/matrizes?' + p)).json();
+                    try { this.livre.vacaRes = await this.jget('/api/matrizes?' + p); }
+                    catch (e) { this.setErr(e); }
                 },
                 localStr(a) {
                     if (!a) return '—';
@@ -2448,12 +2742,17 @@
                     if (!this.livre.touro || !this.livre.vaca) return;
                     this.acCruzLoading = true; this.acCruz = null;
                     const p = new URLSearchParams({ touro_id: this.livre.touro.id, vaca_id: this.livre.vaca.id, traits: this.traitsCsv() });
-                    const d = await (await fetch('/api/cruzamento?' + p)).json();
-                    this.acCruz = d.error ? null : d; this.acCruzLoading = false;
+                    try {
+                        const d = await this.jget('/api/cruzamento?' + p);
+                        this.acCruz = d.error ? null : d;
+                    } catch (e) { this.setErr(e); }
+                    finally { this.acCruzLoading = false; }
                 },
                 async abrirFilhote(touroId, vacaId) {
                     const p = new URLSearchParams({ touro_id: touroId, vaca_id: vacaId, traits: this.traitsCsv() });
-                    const d = await (await fetch('/api/cruzamento?' + p)).json();
+                    let d;
+                    try { d = await this.jget('/api/cruzamento?' + p); }
+                    catch (e) { this.setErr(e); return; }
                     if (d.error) { alert('Erro ao calcular o bezerro.'); return; }
                     this.filhote = d; this.filhoteModal = true;   // dados prontos antes de abrir
                     this.$nextTick(() => { document.querySelectorAll('.modal').forEach(b => { b.scrollTop = 0; }); });
@@ -2518,9 +2817,12 @@
                     if (this.sug.uf) p.set('uf', this.sug.uf);
                     if (this.acasalReq.orcamento) p.set('orcamento', this.acasalReq.orcamento);
                     p.set('top', 12);
-                    const data = await (await fetch('/api/acasalamento/' + this.acasalDam.id + '?' + p.toString())).json();
-                    if (data.error) { this.acasalLoading = false; alert('Erro ao calcular acasalamento.'); return; }
-                    this.acasal = data; this.acasalLoading = false;
+                    try {
+                        const data = await this.jget('/api/acasalamento/' + this.acasalDam.id + '?' + p.toString());
+                        if (data.error) { alert('Erro ao calcular acasalamento.'); return; }
+                        this.acasal = data;
+                    } catch (e) { this.setErr(e); }
+                    finally { this.acasalLoading = false; }
                 },
                 fecharAcasalamento() { this.acasalModal = false; },
                 async loadAcList() {
@@ -2529,9 +2831,12 @@
                     if (this.acVacaQ) p.set('q', this.acVacaQ);
                     if (this.sugVacaRaca) p.set('raca', this.sugVacaRaca);
                     if (this.sugVacaUf) p.set('uf', this.sugVacaUf);
-                    this.acList = await (await fetch('/api/matrizes?' + p)).json();
-                    this.ordenarAcList();
-                    this.acListLoading = false;
+                    try {
+                        this.acList = await this.jget('/api/matrizes?' + p);
+                        this.ordenarAcList();
+                        this.loaded.acasalamento = true;
+                    } catch (e) { this.setErr(e); }
+                    finally { this.acListLoading = false; }
                 },
                 ordenarAcList() {
                     const k = this.acSort;
@@ -2547,8 +2852,10 @@
                     this.loadAcasalamento();
                 },
                 async carregarMatrizDetalhe(id) {
-                    const d = await (await fetch('/api/matriz/' + id)).json();
-                    this.matrizDetalhe = d.error ? null : d;
+                    try {
+                        const d = await this.jget('/api/matriz/' + id);
+                        this.matrizDetalhe = d.error ? null : d;
+                    } catch (e) { this.matrizDetalhe = null; this.setErr(e); }
                 },
                 trocarMatriz() {
                     this.acasalDam = null; this.matrizDetalhe = null; this.acasal = null;
@@ -2557,26 +2864,29 @@
                 // ---- Mercado & dados abertos ----
                 async loadMercado() {
                     this.loading.mercado = true;
-                    const [ind, leite, reb, abate, boi, leitePreco, graos] = await Promise.all([
-                        fetch('/api/externo/indicadores').then(r => r.json()),
-                        fetch('/api/externo/leite').then(r => r.json()),
-                        fetch('/api/externo/rebanho').then(r => r.json()),
-                        fetch('/api/externo/abate').then(r => r.json()),
-                        fetch('/api/externo/boi').then(r => r.json()),
-                        fetch('/api/externo/leite-preco').then(r => r.json()),
-                        fetch('/api/externo/graos').then(r => r.json()),
-                    ]);
-                    this.mercado = {
-                        indicadores: ind,
-                        boi: boi,
-                        leitePreco: leitePreco,
-                        graos: graos,
-                        leite: Array.isArray(leite) ? leite : [],
-                        rebanho: Array.isArray(reb) ? reb : [],
-                        abate: Array.isArray(abate) ? abate : [],
-                    };
-                    this.loading.mercado = false;
-                    this.$nextTick(() => this.renderMercadoCharts());
+                    try {
+                        const [ind, leite, reb, abate, boi, leitePreco, graos] = await Promise.all([
+                            this.jget('/api/externo/indicadores'),
+                            this.jget('/api/externo/leite'),
+                            this.jget('/api/externo/rebanho'),
+                            this.jget('/api/externo/abate'),
+                            this.jget('/api/externo/boi'),
+                            this.jget('/api/externo/leite-preco'),
+                            this.jget('/api/externo/graos'),
+                        ]);
+                        this.mercado = {
+                            indicadores: ind,
+                            boi: boi,
+                            leitePreco: leitePreco,
+                            graos: graos,
+                            leite: Array.isArray(leite) ? leite : [],
+                            rebanho: Array.isArray(reb) ? reb : [],
+                            abate: Array.isArray(abate) ? abate : [],
+                        };
+                        this.loaded.mercado = true;
+                        this.$nextTick(() => this.renderMercadoCharts());
+                    } catch (e) { this.setErr(e); }
+                    finally { this.loading.mercado = false; }
                 },
                 leiteTotal() { return this.mercado ? (this.mercado.leite || []).reduce((a, r) => a + (r.leite_mil_litros || 0), 0) : 0; },
                 rebanhoTotal() { return this.mercado ? (this.mercado.rebanho || []).reduce((a, r) => a + (r.bovinos || 0), 0) : 0; },
@@ -2616,8 +2926,86 @@
                 async abrirCnpj(cnpj) {
                     if (!cnpj) return;
                     this.cnpjData = null; this.cnpjModal = true; this.cnpjLoading = true;
-                    this.cnpjData = await (await fetch('/api/externo/cnpj/' + cnpj)).json();
-                    this.cnpjLoading = false;
+                    try { this.cnpjData = await this.jget('/api/externo/cnpj/' + cnpj); }
+                    catch (e) { this.setErr(e); }
+                    finally { this.cnpjLoading = false; }
+                },
+                // ---- Feature 4: painel de vendas ----
+                async loadVendas() {
+                    const p = new URLSearchParams();
+                    if (this.vendas.uf) p.set('uf', this.vendas.uf);
+                    if (this.vendas.desde) p.set('desde', this.vendas.desde);
+                    if (this.vendas.ate) p.set('ate', this.vendas.ate);
+                    try {
+                        const d = await this.jget('/api/painel-vendas' + (p.toString() ? '?' + p : ''));
+                        this.vendas.resumo = d.resumo || {};
+                        this.vendas.por_municipio = d.por_municipio || [];
+                        this.vendas.por_touro = d.por_touro || [];
+                    } catch (e) { this.setErr(e); }
+                },
+                abrirVendaModal() {
+                    this.vForm = { municipio: '', uf: '', touro_nome: '', tipo: 'semen', quantidade: 1, valor_unitario: null, salvando: false };
+                    this.vModal = true;
+                },
+                async registrarVendaAdmin() {
+                    if (!this.vForm.municipio && !this.vForm.touro_nome) { alert('Informe ao menos município ou touro.'); return; }
+                    this.vForm.salvando = true;
+                    try {
+                        await this.jget('/api/campo/venda', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ uuid: 'adm-' + Date.now() + '-' + Math.random().toString(16).slice(2),
+                                municipio: this.vForm.municipio || null, uf: this.vForm.uf || null, touro_nome: this.vForm.touro_nome || null,
+                                tipo: this.vForm.tipo, quantidade: this.vForm.quantidade || 1, valor_unitario: this.vForm.valor_unitario || null,
+                                registrado_por: 'admin' }) });
+                        this.vModal = false;
+                        this.vForm = { municipio: '', uf: '', touro_nome: '', tipo: 'semen', quantidade: 1, valor_unitario: null, salvando: false };
+                        this.loadVendas();
+                    } catch (e) { this.setErr(e); this.vForm.salvando = false; }
+                },
+                // ---- Feature 6: evolução genética por fazenda ----
+                async loadFazendasEvo() {
+                    this.evoLoaded = true;
+                    try { this.evoClientes = await this.jget('/api/campo/clientes'); } catch (e) { this.setErr(e); }
+                },
+                async loadAprendizado() {
+                    try {
+                        const [d, w] = await Promise.all([
+                            this.jget('/api/aprendizado/prenhez'),
+                            this.jget('/api/aprendizado/peso'),
+                        ]);
+                        this.apr = { overall: d.overall || {}, por_touro: d.por_touro || [],
+                                     calibracao: d.calibracao, peso: w.por_touro || [] };
+                    } catch (e) { this.setErr(e); }
+                },
+                async loadEvolucao() {
+                    if (this.evoDemo) {
+                        this.evoTemDados = false;
+                        this._renderEvo([{ estacao_monta: '2025-1', iqgg_medio: 18.2 },
+                                         { estacao_monta: '2025-2', iqgg_medio: 24.7 },
+                                         { estacao_monta: '2026-1', iqgg_medio: 31.5 }]);
+                        return;
+                    }
+                    if (!this.evoCliente) { this.evoTemDados = false; if (this._evoChart) { this._evoChart.destroy(); this._evoChart = null; } return; }
+                    try {
+                        const d = await this.jget('/api/fazenda/' + this.evoCliente + '/evolucao-genetica');
+                        this.evoTemDados = !!d.tem_dados;
+                        if (d.tem_dados) this._renderEvo(d.serie);
+                        else if (this._evoChart) { this._evoChart.destroy(); this._evoChart = null; }
+                    } catch (e) { this.setErr(e); }
+                },
+                _renderEvo(serie) {
+                    this.$nextTick(() => {
+                        const el = document.getElementById('chartEvo');
+                        if (!el || typeof Chart === 'undefined') return;
+                        if (this._evoChart) this._evoChart.destroy();
+                        this._evoChart = new Chart(el, {
+                            type: 'line',
+                            data: { labels: serie.map(s => s.estacao_monta),
+                                datasets: [{ label: 'IQGg médio das progênies', data: serie.map(s => s.iqgg_medio),
+                                    borderColor: '#2d5a2d', backgroundColor: 'rgba(74,158,74,0.15)', fill: true, tension: 0.3, pointRadius: 4 }] },
+                            options: { responsive: true, plugins: { legend: { display: true } },
+                                scales: { y: { title: { display: true, text: 'IQGg médio' } } } }
+                        });
+                    });
                 },
                 exportarLeadsCSV() {
                     // exporta o CONJUNTO FILTRADO completo (não só a página atual)
