@@ -496,7 +496,7 @@
             <section x-show="section==='prospeccao'">
                 <h2>📋 Fila de Prospecção <span style="font-size:13px;font-weight:500;color:#9aa39a;">· Monte Sião · Nelore elite, decisor validado e vivo</span></h2>
                 <div style="display:flex;gap:12px;flex-wrap:wrap;margin:14px 0;">
-                    <div class="kpi k2"><div><div class="value" x-text="fmt(prosStats.total||0)"></div><div class="label">cabanhas vivas</div></div></div>
+                    <div class="kpi k2"><div><div class="value" x-text="fmt(prosStats.total||0)"></div><div class="label">fazendas vivas</div></div></div>
                     <div class="kpi k2"><div><div class="value" x-text="fmt(prosStats.email_decisor||0)"></div><div class="label">e-mail de decisor</div></div></div>
                     <div class="kpi k2"><div><div class="value" x-text="fmt((prosStats.com_whatsapp||0)+(prosStats.com_celular_rfb||0)+(prosStats.com_whatsapp_ig||0))"></div><div class="label">WhatsApp<span x-show="prosStats.com_celular_rfb||prosStats.com_whatsapp_ig" style="color:#a07a00;" x-text="' ('+fmt(prosStats.com_whatsapp||0)+' conf.+'+fmt(prosStats.com_whatsapp_ig||0)+' IG+'+fmt(prosStats.com_celular_rfb||0)+' Receita)'"></span></div></div></div>
                     <div class="kpi k2"><div><div class="value" x-text="fmt(prosStats.com_instagram||0)"></div><div class="label">Instagram</div></div></div>
@@ -512,7 +512,7 @@
                         <option value="email_decisor">Com e-mail de decisor</option>
                         <option value="instagram">Com Instagram</option>
                     </select>
-                    <input type="text" placeholder="buscar fazenda / decisor / cabanha" x-model="prosQ" @keydown.enter="prosFiltrar()" style="padding:8px;flex:1;min-width:200px;">
+                    <input type="text" placeholder="buscar fazenda / decisor" x-model="prosQ" @keydown.enter="prosFiltrar()" style="padding:8px;flex:1;min-width:200px;">
                     <button class="run-btn" @click="prosFiltrar()" style="padding:8px 14px;font-size:13px;">Filtrar</button>
                     <button class="lookup-btn" @click="exportProspeccaoCSV()">⬇️ CSV</button>
                 </div>
@@ -520,7 +520,7 @@
                 <table x-show="!prosLoading && pros.length">
                     <thead><tr>
                         <th class="sortable" @click="setProsSort('score')" title="canais de contato confirmados">Score<span x-text="prosArrow('score')"></span></th>
-                        <th class="sortable" @click="setProsSort('cabanha')">Cabanha / Fazenda<span x-text="prosArrow('cabanha')"></span></th>
+                        <th class="sortable" @click="setProsSort('fazenda')">Fazenda<span x-text="prosArrow('fazenda')"></span></th>
                         <th class="sortable" @click="setProsSort('decisor')">👤 Decisor<span x-text="prosArrow('decisor')"></span></th>
                         <th class="sortable" @click="setProsSort('uf')">UF<span x-text="prosArrow('uf')"></span></th>
                         <th class="sortable" @click="setProsSort('nelore')">Nelore<span x-text="prosArrow('nelore')"></span></th>
@@ -535,13 +535,13 @@
                                 <td data-label="Score">
                                     <span class="badge" :style="'font-weight:700;'+(p.score>=4?'background:#e8f5e9;color:#2e7d32':(p.score>=2?'background:#fff8e1;color:#a07a00':'background:#f0f0f0;color:#999'))" x-text="(p.score||0)+'/6'"></span>
                                 </td>
-                                <td data-label="Cabanha / Fazenda">
-                                    <span style="font-weight:600;" x-text="p.cabanha || p.fazenda"></span>
+                                <td data-label="Fazenda">
+                                    <span style="font-weight:600;" x-text="p.fazenda || p.razao_social"></span>
                                     <span x-show="p.tier==='ALTA'" class="badge" style="background:#e8f5e9;color:#2e7d32;margin-left:6px;">alta</span>
                                     <span class="badge" style="margin-left:6px;" x-show="p.melhor_canal && p.melhor_canal!=='nenhum'"
                                           :style="({whatsapp:'background:#e8f5e9;color:#2e7d32',instagram:'background:#fce4ec;color:#c2185b',email:'background:#ede7f6;color:#5e35b1',telefone:'background:#f0f0f0;color:#777'}[p.melhor_canal]||'')"
                                           x-text="'→ '+({whatsapp:'WhatsApp',instagram:'Instagram DM',email:'e-mail',telefone:'ligar'}[p.melhor_canal]||p.melhor_canal)"></span>
-                                    <div style="font-size:11px;color:#999;" x-text="p.fazenda + (p.municipio ? ' · '+p.municipio : '')"></div>
+                                    <div style="font-size:11px;color:#999;" x-text="(p.razao_social||'') + (p.municipio ? ' · '+p.municipio : '')"></div>
                                 </td>
                                 <td data-label="Decisor" x-text="p.decisor || '—'"></td>
                                 <td data-label="UF" x-text="p.uf"></td>
@@ -568,7 +568,7 @@
                 </table>
                 <div class="empty" x-show="!prosLoading && !pros.length">Nenhum lead para este filtro.</div>
                 <div class="pager" x-show="pros.length" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:14px;">
-                    <span style="color:#666;" x-text="fmt(prosTotal)+' cabanhas · ordenadas por melhor canal (WhatsApp → e-mail decisor → mérito Nelore)'"></span>
+                    <span style="color:#666;" x-text="fmt(prosTotal)+' fazendas · ordenadas por melhor canal (WhatsApp → e-mail decisor → mérito Nelore)'"></span>
                     <span style="display:flex;align-items:center;gap:12px;">
                         <button class="lookup-btn" @click="irPros(-1)" :disabled="prosPage<=1" :style="prosPage<=1?'opacity:.4;cursor:default':''">← Anterior</button>
                         <span style="font-weight:700;color:#1a3a1a;">Página <span x-text="prosPage"></span> de <span x-text="fmt(prosPages)"></span></span>

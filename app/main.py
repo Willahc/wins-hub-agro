@@ -28,7 +28,7 @@ logger = logging.getLogger("wins_agro")
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 # Versão do shell — bumpar a cada deploy de front. O cliente compara com /api/version e
 # se auto-atualiza (limpa cache + reload) se estiver velho. Mata o "downgrade pra v1".
-APP_VERSION = "2026-06-11.4"
+APP_VERSION = "2026-06-11.5"
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 
@@ -2213,12 +2213,12 @@ _PROS_SCORE = ("((decisor IS NOT NULL AND decisor <> '')::int "
                "+ (telefone IS NOT NULL AND telefone <> '')::int "
                "+ (instagram IS NOT NULL AND instagram <> '')::int "
                "+ (linkedin IS NOT NULL AND linkedin <> '')::int)")
-_PROS_COLS = ("tier, cabanha, fazenda, decisor, uf, municipio, nelore, "
+_PROS_COLS = ("tier, cabanha AS fazenda, fazenda AS razao_social, decisor, uf, municipio, nelore, "
               "email, email_origem, whatsapp, telefone, instagram, linkedin, cnpj, "
               f"{_PROS_ZAP_RFB} AS whatsapp_rfb, {_PROS_ZAP_IG} AS whatsapp_ig, {_PROS_CANAL} AS melhor_canal, {_PROS_SCORE} AS score")
 _PROS_ORDER = (f"ORDER BY {_PROS_SCORE} DESC, (whatsapp IS NOT NULL) DESC, "
                "(email_origem='decisor') DESC, (tier='ALTA') DESC, nelore DESC NULLS LAST")
-_PROS_SORT = {"score": _PROS_SCORE, "cabanha": "COALESCE(cabanha,fazenda)", "decisor": "decisor",
+_PROS_SORT = {"score": _PROS_SCORE, "fazenda": "COALESCE(cabanha,fazenda)", "decisor": "decisor",
               "uf": "uf", "nelore": "nelore", "email": "email", "whatsapp": "whatsapp",
               "instagram": "instagram", "telefone": "telefone"}
 
@@ -2291,7 +2291,7 @@ def prospeccao_csv(uf: str = None, canal: str = None, q: str = None):
         return rows
     import csv as _csv
     buf = io.StringIO()
-    cols = ["score", "melhor_canal", "tier", "cabanha", "fazenda", "decisor", "uf", "municipio", "nelore",
+    cols = ["score", "melhor_canal", "tier", "fazenda", "razao_social", "decisor", "uf", "municipio", "nelore",
             "email", "email_origem", "whatsapp", "whatsapp_rfb", "whatsapp_ig", "telefone", "instagram", "linkedin", "cnpj"]
     w = _csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
     w.writeheader()
