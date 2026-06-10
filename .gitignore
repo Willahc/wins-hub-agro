@@ -20,3 +20,8 @@ leads_test.py
 sort_test.py
 mapa_test.py
 modal_test.py
+
+# Deliverables de prospecção com PII (decisor/email/telefone) + logs — NÃO versionar
+/*.csv
+/*.log
+data/

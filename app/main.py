@@ -9,10 +9,9 @@ from typing import Optional
 from datetime import datetime
 from starlette.concurrency import run_in_threadpool
 from auth import authenticate_user, create_access_token, decode_token
-from pdf_generator import gerar_relatorio_territorial
 from pdf_html import (gerar_parecer_cruzamento, gerar_parecer_matching,  # HTML/CSS -> WeasyPrint
                       gerar_cotacao_acasalamento, gerar_briefing_chegada,
-                      gerar_proposta_simulador)
+                      gerar_proposta_simulador, gerar_relatorio_territorial)
 import external_apis
 import psycopg2
 import psycopg2.extras
@@ -1499,12 +1498,16 @@ async def cruzamento(touro_id: int, vaca_id: int, traits: str | None = None):
 
         def mid(cid):
             tv, vv = touro["_deps"].get(cid), vaca["_deps"].get(cid)
-            if tv is None or vv is None:
+            # cria = média 50/50 das DEPs. Se SÓ um dos pais tem a DEP, o lado
+            # ausente entra como 0 (= média da raça, já que DEP é desvio); a cria
+            # ainda regride pra metade. Só fica None quando NENHUM dos pais tem.
+            if tv is None and vv is None:
                 return {"touro": tv, "vaca": vv, "cria": None, "vs_touro": None, "vs_vaca": None}
-            cria = 0.5 * (tv + vv)
+            cria = 0.5 * ((tv or 0) + (vv or 0))
             return {"touro": tv, "vaca": vv, "cria": round(cria, 2),
-                    "vs_touro": round(cria - tv, 2),   # ganho/perda vs pai
-                    "vs_vaca": round(cria - vv, 2)}    # ganho/perda vs mãe
+                    # delta só faz sentido contra um genitor que realmente tem a DEP
+                    "vs_touro": round(cria - tv, 2) if tv is not None else None,
+                    "vs_vaca": round(cria - vv, 2) if vv is not None else None}
 
         def card(a):
             return {"id": a["id"], "nome": a["nome"], "registro": a["registro"],
@@ -1655,10 +1658,13 @@ def _leads_rows(uf, segmento, limit, offset=0, sort=None, order="asc"):
                    m.nome AS municipio, e.uf,
                    e.ddd_1, e.telefone_1, e.correio_eletronico AS email,
                    NULLIF(TRIM(CONCAT_WS(', ', NULLIF(e.logradouro,''), NULLIF(e.bairro,''))), '') AS endereco,
-                   em.porte, em.capital_social
+                   em.porte, em.capital_social,
+                   ld.decisor_top AS decisor, ld.tipo AS tipo_lead,
+                   ld.situacao_viva, ld.linkedin
             FROM cnpj.estabelecimento_rural e
             JOIN referencia.municipio m ON m.codigo_tom = e.municipio::int
             LEFT JOIN cnpj.empresa_rural em ON em.cnpj_basico = e.cnpj_basico
+            LEFT JOIN prospeccao.lead_decisor ld ON ld.cnpj_basico = e.cnpj_basico
             WHERE e.cnae_fiscal_principal = %(cnae)s
               AND e.situacao_cadastral = '02'
               AND (%(uf)s IS NULL OR e.uf = %(uf)s)
@@ -2144,17 +2150,20 @@ async def externo_valor_mapa(uf: str = None, min_valor: int = 10000):
 
 
 @app.get("/api/leads/csv")
-def leads_csv(uf: str = None, segmento: str = "corte", limit: int = 10000):
+def leads_csv(uf: str = None, segmento: str = "corte", limit: int = 200000):
     """Exporta o CONJUNTO FILTRADO de leads (não só a página) em CSV para CRM.
-    Cap de 10 mil linhas p/ não estourar memória (corte nacional tem ~180 mil)."""
-    base = _leads_rows(uf, segmento, min(limit, 10000), 0)
+    Cap 200 mil: cobre o corte nacional inteiro (~146 mil empresas) já com decisor."""
+    base = _leads_rows(uf, segmento, min(limit, 200000), 0)
     if isinstance(base, dict):  # erro
         return base
     import csv as _csv
 
     buf = io.StringIO()
-    cols = ["nome", "cnpj", "municipio", "uf", "ddd_1", "telefone_1",
-            "email", "endereco", "porte", "capital_social"]
+    # decisor/tipo_lead na frente: o que o vendedor da Monte Sião precisa primeiro
+    # (vem de prospeccao.lead_decisor, QSA da Receita ao vivo). email/situacao = contexto.
+    cols = ["nome", "decisor", "tipo_lead", "linkedin", "municipio", "uf",
+            "ddd_1", "telefone_1", "email", "situacao_viva", "cnpj",
+            "endereco", "porte", "capital_social"]
     w = _csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
     w.writeheader()
     for row in base:

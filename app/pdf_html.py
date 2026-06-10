@@ -613,6 +613,131 @@ def gerar_parecer_matching(perfil: dict, touros: list) -> bytes:
 
 
 # ---------------------------------------------------------------------------
+# Relatório territorial executivo de um estado (panorama + alvos de prospecção).
+# Migrado do ReportLab p/ o padrão WeasyPrint (mesma identidade dos pareceres).
+# ---------------------------------------------------------------------------
+UF_NOME = {
+    "TO": "Tocantins", "MT": "Mato Grosso", "MS": "Mato Grosso do Sul",
+    "GO": "Goiás", "PA": "Pará", "MG": "Minas Gerais", "SP": "São Paulo",
+    "BA": "Bahia", "RO": "Rondônia", "MA": "Maranhão", "PR": "Paraná",
+    "RS": "Rio Grande do Sul", "SC": "Santa Catarina", "AC": "Acre",
+    "AM": "Amazonas", "AP": "Amapá", "RR": "Roraima", "CE": "Ceará",
+    "PE": "Pernambuco", "PI": "Piauí", "PB": "Paraíba", "RN": "Rio Grande do Norte",
+    "AL": "Alagoas", "SE": "Sergipe", "ES": "Espírito Santo", "RJ": "Rio de Janeiro",
+    "DF": "Distrito Federal",
+}
+
+
+def _int_fmt(v):
+    """Inteiro com separador de milhar pt-BR (1234567 -> 1.234.567). None -> '—'."""
+    v = _num(v)
+    return f"{int(v):,}".replace(",", ".") if v is not None else "—"
+
+
+def gerar_relatorio_territorial(uf: str, dados: dict) -> bytes:
+    pan = dados.get("panorama") or {}
+    prioritarios = dados.get("prioritarios") or []
+    grupos = dados.get("grandes_grupos") or []
+    uf_nome = UF_NOME.get(uf, uf)
+
+    reb24 = _num(pan.get("rebanho_2024")) or 0
+    reb20 = _num(pan.get("rebanho_2020")) or 0
+    cresc = (100.0 * (reb24 - reb20) / reb20) if reb20 else None
+    cresc_txt = ("—" if cresc is None
+                 else (f"+{cresc:.0f}%" if cresc >= 0 else f"{cresc:.0f}%"))
+
+    # --- hero: os 3 números que abrem a conversa comercial ---
+    hero = f"""
+    <div class="hero">
+      <span class="rank">&#128205; {_esc(uf_nome)} ({_esc(uf)})</span>
+      <div class="hn">Inteligência de Prospecção</div>
+      <div class="hc">Onde a consultoria técnica entra primeiro: rebanho expressivo, suporte zero.</div>
+      <div class="stat-row">
+        <div class="stat"><div class="sl">Rebanho bovino (2024)</div><div class="sv">{_int_fmt(reb24)}</div></div>
+        <div class="stat"><div class="sl">Crescimento 2020→2024</div><div class="sv">{cresc_txt}</div></div>
+        <div class="stat"><div class="sl">Desertos Vet</div><div class="sv">{_int_fmt(pan.get('desertos_vet'))}</div></div>
+      </div>
+    </div>
+    """
+
+    # --- demais indicadores em mini-cards ---
+    pcards = [
+        ("Municípios analisados", _int_fmt(pan.get("municipios"))),
+        ("Criadores de corte (CNPJ ativo)", _int_fmt(pan.get("criadores_corte"))),
+        ("Criadores de leite (CNPJ ativo)", _int_fmt(pan.get("criadores_leite"))),
+        ("Criadores com contato (tel./e-mail)", _int_fmt(pan.get("com_contato"))),
+    ]
+    profile = "".join(
+        f"<div class='pcard'><div class='pl'>{l}</div><div class='pv'>{v}</div></div>"
+        for l, v in pcards
+    )
+
+    # --- municípios prioritários (Desertos Vet por rebanho) ---
+    if prioritarios:
+        rows = ""
+        for i, m in enumerate(prioritarios[:15], 1):
+            top1 = " class='top1'" if i == 1 else ""
+            rows += (
+                f"<tr{top1}><td>{i}</td><td class='nome'>{_esc(m.get('municipio') or '—')}</td>"
+                f"<td>{_int_fmt(m.get('bovinos'))}</td><td>{_int_fmt(m.get('cnpj_vet'))}</td></tr>"
+            )
+        prioritarios_html = f"""
+        <h2>Municípios prioritários — onde a Mari entra primeiro</h2><div class="rule"></div>
+        <p class="analysis">Desertos Vet ordenados por rebanho: maior gado, <b>zero suporte técnico</b>
+          = maior potencial de consultoria e venda de genética.</p>
+        <table class="cmp">
+          <thead><tr><th>#</th><th class="l">Município</th><th>Rebanho (cab.)</th><th>Estab. Vet</th></tr></thead>
+          <tbody>{rows}</tbody></table>
+        """
+    else:
+        prioritarios_html = ""
+
+    # --- grandes grupos (alvos B2B multi-fazenda) ---
+    if grupos:
+        grows = ""
+        for g in grupos[:10]:
+            grows += (f"<tr><td class='nome'>{_esc(g.get('socio') or '—')}</td>"
+                      f"<td>{_int_fmt(g.get('fazendas'))}</td></tr>")
+        grupos_html = f"""
+        <h2>Grandes grupos — alvos B2B (sócios multi-fazenda)</h2><div class="rule"></div>
+        <p class="analysis">Pessoas que controlam várias empresas rurais no estado: um negócio fecha
+          muitas fazendas.</p>
+        <table class="cmp">
+          <thead><tr><th class="l">Sócio</th><th>Fazendas no estado</th></tr></thead>
+          <tbody>{grows}</tbody></table>
+        """
+    else:
+        grupos_html = ""
+
+    estrategia = (
+        f"O estado de <b>{_esc(uf_nome)}</b> reúne <b>{_int_fmt(reb24)} cabeças</b> e "
+        f"<b>{_int_fmt(pan.get('desertos_vet'))} Desertos Vet</b> — municípios com rebanho expressivo e "
+        "<b>zero suporte técnico veterinário</b>. É exatamente o vazio onde a consultoria técnica entra: "
+        "a Mari atua como consultora nesses municípios, usa o <b>Motor de Matching</b> do WiNS Hub Agro "
+        "para recomendar o reprodutor adequado ao perfil de cada fazenda, emite o <b>parecer zootécnico</b> "
+        "e converte a recomendação em venda — sendo o canal de distribuição técnica nos mercados ainda "
+        "não atendidos."
+    )
+
+    body = f"""
+    <h2>Panorama da pecuária</h2><div class="rule"></div>
+    {hero}
+    <div class="profile">{profile}</div>
+    {prioritarios_html}
+    {grupos_html}
+    <h2>Estratégia de atuação</h2><div class="rule"></div>
+    <p class="analysis">{estrategia}</p>
+    <div class="note">Relatório gerado automaticamente pela plataforma <b>WiNS Hub Agro</b>. Dados:
+      IBGE/PPM (rebanho 2024), MapBiomas (pastagem), Receita Federal (CNPJ) e cobertura veterinária.
+      Gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M')}.</div>
+    """
+    return _render("Relatório territorial", "Relatório Territorial",
+                   f"{_esc(uf_nome)} ({_esc(uf)}) · Inteligência de Prospecção · "
+                   f"Gerado em {datetime.now().strftime('%d/%m/%Y')}",
+                   body)
+
+
+# ---------------------------------------------------------------------------
 # Cotação de sêmen / acasalamento — gerada da tela "Cruzar" do app de campo.
 # Lista a matriz + o ranking de touros recomendados com preço de dose, p/ o
 # produtor decidir e comprar. É o artefato comercial que vira PDF/WhatsApp.

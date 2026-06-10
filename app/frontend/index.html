@@ -1342,9 +1342,10 @@
                         <div class="card" style="margin-top:12px;position:relative;">
                             <div class="loading" x-show="leadsLoading" style="position:absolute;inset:0;background:rgba(255,255,255,.6);z-index:2;">Carregando…</div>
                             <table x-show="leads.length">
-                                <colgroup><col style="width:22%"><col style="width:13%"><col style="width:6%"><col style="width:14%"><col style="width:23%"><col style="width:14%"><col style="width:8%"></colgroup>
+                                <colgroup><col style="width:19%"><col style="width:18%"><col style="width:11%"><col style="width:5%"><col style="width:12%"><col style="width:18%"><col style="width:8%"><col style="width:9%"></colgroup>
                                 <thead><tr>
                                     <th class="sortable" @click="setLeadsSort('empresa')">Empresa / Produtor<span x-text="leadsArrow('empresa')"></span></th>
+                                    <th>👤 Decisor</th>
                                     <th class="sortable" @click="setLeadsSort('municipio')">Município<span x-text="leadsArrow('municipio')"></span></th>
                                     <th class="sortable" @click="setLeadsSort('uf')">UF<span x-text="leadsArrow('uf')"></span></th>
                                     <th>Telefone</th><th>E-mail</th>
@@ -1357,6 +1358,19 @@
                                                 <template x-if="l.enriquecido">
                                                     <span class="badge" style="margin-left:8px;background:#e8f5e9;color:#2e7d32;"
                                                           x-text="l.enriquecido.situacao + ' · ' + l.enriquecido.socios + ' sócio(s)'"></span>
+                                                </template>
+                                            </td>
+                                            <td data-label="Decisor">
+                                                <template x-if="l.decisor">
+                                                    <span>
+                                                        <span x-text="l.decisor" style="font-weight:600;"></span>
+                                                        <template x-if="l.linkedin">
+                                                            <a :href="l.linkedin" target="_blank" style="margin-left:5px;text-decoration:none;" title="LinkedIn">🔗</a>
+                                                        </template>
+                                                    </span>
+                                                </template>
+                                                <template x-if="!l.decisor">
+                                                    <span style="color:#b0b0b0;" x-text="l.tipo_lead==='CORPORATIVO' ? 'corporativo' : '—'"></span>
                                                 </template>
                                             </td>
                                             <td data-label="Município" x-text="l.municipio"></td>
@@ -1629,17 +1643,17 @@
                         <div class="chart-grid">
                             <div class="card" style="padding:18px;">
                                 <h2 style="font-size:16px;margin-bottom:12px;">🥛 Produção de leite — Top 12 UFs (mil litros)</h2>
-                                <canvas id="chartLeite" height="200"></canvas>
+                                <div style="position:relative;height:240px;"><canvas id="chartLeite"></canvas></div>
                             </div>
                             <div class="card" style="padding:18px;">
                                 <h2 style="font-size:16px;margin-bottom:12px;">🐄 Rebanho bovino — Top 12 UFs (cabeças)</h2>
-                                <canvas id="chartRebanho" height="200"></canvas>
+                                <div style="position:relative;height:240px;"><canvas id="chartRebanho"></canvas></div>
                             </div>
                         </div>
                         <div class="card" style="padding:18px;margin-top:20px;">
                             <h2 style="font-size:16px;margin-bottom:4px;">🔪 Abate de bovinos — Top 12 UFs (cabeças)</h2>
                             <p class="subtitle" style="margin-bottom:12px;" x-text="'Pesquisa Trimestral do Abate · ' + (mercado.abate?.[0]?.periodo || '')"></p>
-                            <canvas id="chartAbate" height="120"></canvas>
+                            <div style="position:relative;height:240px;"><canvas id="chartAbate"></canvas></div>
                         </div>
                         <p class="subtitle" style="margin-top:18px;">Fontes: IBGE/SIDRA (PPM + Abate Trimestral), Banco Central (SGS), BrasilAPI · ao vivo e cacheados. <i>Preço diário do boi (CEPEA) não tem API aberta acessível — bloqueado por Cloudflare.</i></p>
                     </div>
@@ -1726,7 +1740,7 @@
                     <div x-show="!evoTemDados && !evoDemo" style="color:#777;padding:20px;text-align:center;">
                         Histórico disponível após a 1ª safra registrada nesta fazenda.
                     </div>
-                    <div x-show="evoTemDados || evoDemo"><canvas id="chartEvo" height="110"></canvas></div>
+                    <div x-show="evoTemDados || evoDemo" style="position:relative;height:300px;"><canvas id="chartEvo"></canvas></div>
                 </div>
             </section>
 
@@ -2884,7 +2898,7 @@
                             abate: Array.isArray(abate) ? abate : [],
                         };
                         this.loaded.mercado = true;
-                        this.$nextTick(() => this.renderMercadoCharts());
+                        this._drawAfterPaint(() => this.renderMercadoCharts());
                     } catch (e) { this.setErr(e); }
                     finally { this.loading.mercado = false; }
                 },
@@ -2896,32 +2910,29 @@
                 },
                 renderMercadoCharts() {
                     if (typeof Chart === 'undefined' || !this.mercado) return;
-                    const barOpts = { responsive: true, plugins: { legend: { display: false } },
+                    // maintainAspectRatio:false + wrapper de altura fixa: o canvas preenche o
+                    // container (não depende de medir 0 de altura num section recém-pintado).
+                    const barOpts = { responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
                         scales: { y: { ticks: { callback: v => Number(v).toLocaleString('pt-BR') } } } };
                     const leite = (this.mercado.leite || []).slice(0, 12);
                     const reb = (this.mercado.rebanho || []).slice(0, 12);
                     const abate = (this.mercado.abate || []).slice(0, 12);
-                    if (this._chLeite) this._chLeite.destroy();
-                    if (this._chRebanho) this._chRebanho.destroy();
-                    if (this._chAbate) this._chAbate.destroy();
-                    const elL = document.getElementById('chartLeite');
-                    const elR = document.getElementById('chartRebanho');
-                    const elA = document.getElementById('chartAbate');
-                    if (elL) this._chLeite = new Chart(elL, {
-                        type: 'bar',
-                        data: { labels: leite.map(x => x.uf_sigla || x.uf),
-                            datasets: [{ data: leite.map(x => x.leite_mil_litros), backgroundColor: '#4a9e4a' }] },
-                        options: barOpts });
-                    if (elR) this._chRebanho = new Chart(elR, {
-                        type: 'bar',
-                        data: { labels: reb.map(x => x.uf_sigla || x.uf),
-                            datasets: [{ data: reb.map(x => x.bovinos), backgroundColor: '#2d5a2d' }] },
-                        options: barOpts });
-                    if (elA) this._chAbate = new Chart(elA, {
-                        type: 'bar',
-                        data: { labels: abate.map(x => x.uf_sigla || x.uf),
-                            datasets: [{ data: abate.map(x => x.cabecas), backgroundColor: '#a1561f' }] },
-                        options: barOpts });
+                    // cria 1 gráfico de barras destruindo QUALQUER chart preso ao canvas
+                    // (não só nossa ref) e força um resize após o paint — mesmo padrão do radar.
+                    const mk = (id, labels, data, cor) => {
+                        const el = document.getElementById(id);
+                        if (!el) return null;
+                        const prev = Chart.getChart ? Chart.getChart(el) : null;
+                        if (prev) prev.destroy();
+                        const c = new Chart(el, { type: 'bar',
+                            data: { labels, datasets: [{ data, backgroundColor: cor }] }, options: barOpts });
+                        this._chartResize(c);
+                        return c;
+                    };
+                    this._chLeite = mk('chartLeite', leite.map(x => x.uf_sigla || x.uf), leite.map(x => x.leite_mil_litros), '#4a9e4a');
+                    this._chRebanho = mk('chartRebanho', reb.map(x => x.uf_sigla || x.uf), reb.map(x => x.bovinos), '#2d5a2d');
+                    this._chAbate = mk('chartAbate', abate.map(x => x.uf_sigla || x.uf), abate.map(x => x.cabecas), '#a1561f');
                 },
                 async abrirCnpj(cnpj) {
                     if (!cnpj) return;
@@ -2993,18 +3004,22 @@
                     } catch (e) { this.setErr(e); }
                 },
                 _renderEvo(serie) {
-                    this.$nextTick(() => {
+                    // desenha só após o paint (2 frames) e força resize — evita o canvas
+                    // medir 0 de tamanho quando o x-show acabou de revelar o card (gráfico em branco).
+                    this._drawAfterPaint(() => {
                         const el = document.getElementById('chartEvo');
                         if (!el || typeof Chart === 'undefined') return;
-                        if (this._evoChart) this._evoChart.destroy();
+                        const prev = Chart.getChart ? Chart.getChart(el) : null;
+                        if (prev) prev.destroy();
                         this._evoChart = new Chart(el, {
                             type: 'line',
                             data: { labels: serie.map(s => s.estacao_monta),
                                 datasets: [{ label: 'IQGg médio das progênies', data: serie.map(s => s.iqgg_medio),
                                     borderColor: '#2d5a2d', backgroundColor: 'rgba(74,158,74,0.15)', fill: true, tension: 0.3, pointRadius: 4 }] },
-                            options: { responsive: true, plugins: { legend: { display: true } },
+                            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true } },
                                 scales: { y: { title: { display: true, text: 'IQGg médio' } } } }
                         });
+                        this._chartResize(this._evoChart);
                     });
                 },
                 exportarLeadsCSV() {
