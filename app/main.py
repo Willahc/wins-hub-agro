@@ -2180,6 +2180,81 @@ def leads_csv(uf: str = None, segmento: str = "corte", limit: int = 200000):
     )
 
 
+# ===================== FILA DE PROSPECÇÃO (ICP genético + contato do decisor) =====================
+_PROS_COLS = ("tier, cabanha, fazenda, decisor, uf, municipio, nelore, "
+              "email, email_origem, whatsapp, telefone, instagram, cnpj")
+_PROS_ORDER = ("ORDER BY (whatsapp IS NOT NULL) DESC, (email_origem='decisor') DESC, "
+               "(tier='ALTA') DESC, nelore DESC NULLS LAST")
+
+
+def _pros_where(uf, canal, q, params):
+    w = ["ativo"]
+    if uf:
+        w.append("uf = %(uf)s"); params["uf"] = uf
+    if canal == "whatsapp":
+        w.append("whatsapp IS NOT NULL")
+    elif canal == "email_decisor":
+        w.append("email_origem = 'decisor'")
+    elif canal == "instagram":
+        w.append("instagram IS NOT NULL")
+    if q:
+        w.append("(fazenda ILIKE %(q)s OR decisor ILIKE %(q)s OR cabanha ILIKE %(q)s)")
+        params["q"] = f"%{q}%"
+    return " AND ".join(w)
+
+
+@app.get("/api/prospeccao/stats")
+def prospeccao_stats():
+    """KPIs da fila de prospecção (ICP genético validado e vivo)."""
+    return query(
+        """SELECT count(*) AS total, count(whatsapp) AS com_whatsapp,
+                  count(*) FILTER (WHERE email_origem='decisor') AS email_decisor,
+                  count(instagram) AS com_instagram, count(*) FILTER (WHERE tier='ALTA') AS alta
+           FROM prospeccao.v_fila_prospeccao WHERE ativo"""
+    )
+
+
+@app.get("/api/prospeccao")
+def prospeccao(uf: str = None, canal: str = None, q: str = None, page: int = 1, page_size: int = 50):
+    """Fila de prospecção: ICP genético com decisor + melhor contato por canal."""
+    params = {}
+    where = _pros_where(uf, canal, q, params)
+    tot = query(f"SELECT count(*) AS n FROM prospeccao.v_fila_prospeccao WHERE {where}", params)
+    if isinstance(tot, dict):
+        return tot
+    total = tot[0]["n"]
+    ps = min(max(page_size, 1), 200); page = max(page, 1)
+    rows = query(
+        f"SELECT {_PROS_COLS} FROM prospeccao.v_fila_prospeccao WHERE {where} "
+        f"{_PROS_ORDER} LIMIT %(lim)s OFFSET %(off)s",
+        {**params, "lim": ps, "off": (page - 1) * ps},
+    )
+    if isinstance(rows, dict):
+        return rows
+    return {"rows": rows, "total": total, "total_pages": max(1, (total + ps - 1) // ps)}
+
+
+@app.get("/api/prospeccao/csv")
+def prospeccao_csv(uf: str = None, canal: str = None, q: str = None):
+    """Exporta a fila filtrada (não só a página) em CSV."""
+    params = {}
+    where = _pros_where(uf, canal, q, params)
+    rows = query(f"SELECT {_PROS_COLS} FROM prospeccao.v_fila_prospeccao WHERE {where} {_PROS_ORDER} LIMIT 5000", params)
+    if isinstance(rows, dict):
+        return rows
+    import csv as _csv
+    buf = io.StringIO()
+    cols = ["tier", "cabanha", "fazenda", "decisor", "uf", "municipio", "nelore",
+            "email", "email_origem", "whatsapp", "telefone", "instagram", "cnpj"]
+    w = _csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+    w.writeheader()
+    for r in rows:
+        w.writerow(r)
+    buf.seek(0)
+    return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": "attachment; filename=fila_prospeccao.csv"})
+
+
 @app.get("/api/leads/enriquecido")
 async def leads_enriquecido(uf: str = None, segmento: str = "corte", top: int = 5):
     """Leads + enriquecimento automático (BrasilAPI) dos `top` mais contactáveis."""

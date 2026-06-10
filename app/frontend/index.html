@@ -432,6 +432,10 @@
     <div class="layout">
         <div class="nav-overlay" x-show="mobileNav" @click="mobileNav=false" style="display:none;"></div>
         <nav class="sidebar" :class="{open: mobileNav}">
+            <div class="nav-group">Comercial</div>
+            <div class="nav-item" :class="{active: section==='prospeccao'}" @click="go('prospeccao')">
+                <span class="ico">📋</span> Fila Prospecção
+            </div>
             <div class="nav-group">Genética</div>
             <div class="nav-item" :class="{active: section==='visao'}" @click="go('visao')">
                 <span class="ico">📊</span> Visão Geral
@@ -483,6 +487,76 @@
         </nav>
 
         <main class="content">
+            <!-- ============ FILA PROSPECÇÃO ============ -->
+            <section x-show="section==='prospeccao'">
+                <h2>📋 Fila de Prospecção <span style="font-size:13px;font-weight:500;color:#9aa39a;">· Monte Sião · Nelore elite, decisor validado e vivo</span></h2>
+                <div style="display:flex;gap:12px;flex-wrap:wrap;margin:14px 0;">
+                    <div class="kpi k2"><div><div class="value" x-text="fmt(prosStats.total||0)"></div><div class="label">cabanhas vivas</div></div></div>
+                    <div class="kpi k2"><div><div class="value" x-text="fmt(prosStats.email_decisor||0)"></div><div class="label">e-mail de decisor</div></div></div>
+                    <div class="kpi k2"><div><div class="value" x-text="fmt(prosStats.com_whatsapp||0)"></div><div class="label">WhatsApp</div></div></div>
+                    <div class="kpi k2"><div><div class="value" x-text="fmt(prosStats.com_instagram||0)"></div><div class="label">Instagram</div></div></div>
+                </div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+                    <select @change="prosUf=$event.target.value; prosFiltrar()" style="padding:8px;">
+                        <option value="">Todas UFs</option>
+                        <template x-for="u in ufs" :key="u"><option :value="u" x-text="u"></option></template>
+                    </select>
+                    <select @change="prosCanal=$event.target.value; prosFiltrar()" style="padding:8px;">
+                        <option value="">Todos os canais</option>
+                        <option value="whatsapp">Com WhatsApp</option>
+                        <option value="email_decisor">Com e-mail de decisor</option>
+                        <option value="instagram">Com Instagram</option>
+                    </select>
+                    <input type="text" placeholder="buscar fazenda / decisor / cabanha" x-model="prosQ" @keydown.enter="prosFiltrar()" style="padding:8px;flex:1;min-width:200px;">
+                    <button class="run-btn" @click="prosFiltrar()" style="padding:8px 14px;font-size:13px;">Filtrar</button>
+                    <button class="lookup-btn" @click="exportProspeccaoCSV()">⬇️ CSV</button>
+                </div>
+                <div x-show="prosLoading" class="empty">Carregando…</div>
+                <table x-show="!prosLoading && pros.length">
+                    <thead><tr>
+                        <th>Cabanha / Fazenda</th><th>👤 Decisor</th><th>UF</th><th>Nelore</th>
+                        <th>✉ E-mail</th><th>📱 WhatsApp</th><th>📷 Instagram</th><th>☎ Sede</th>
+                    </tr></thead>
+                    <tbody>
+                        <template x-for="(p,i) in pros" :key="p.cnpj || i">
+                            <tr>
+                                <td data-label="Cabanha / Fazenda">
+                                    <span style="font-weight:600;" x-text="p.cabanha || p.fazenda"></span>
+                                    <span x-show="p.tier==='ALTA'" class="badge" style="background:#e8f5e9;color:#2e7d32;margin-left:6px;">alta</span>
+                                    <div style="font-size:11px;color:#999;" x-text="p.fazenda + (p.municipio ? ' · '+p.municipio : '')"></div>
+                                </td>
+                                <td data-label="Decisor" x-text="p.decisor || '—'"></td>
+                                <td data-label="UF" x-text="p.uf"></td>
+                                <td data-label="Nelore" x-text="p.nelore || ''"></td>
+                                <td data-label="E-mail">
+                                    <template x-if="p.email"><span><span x-text="p.email"></span>
+                                        <span class="badge" :style="p.email_origem==='decisor' ? 'background:#e8f5e9;color:#2e7d32' : 'background:#f0f0f0;color:#888'" x-text="p.email_origem"></span></span></template>
+                                    <template x-if="!p.email"><span style="color:#ccc;">—</span></template>
+                                </td>
+                                <td data-label="WhatsApp">
+                                    <template x-if="p.whatsapp"><a :href="'https://wa.me/55'+p.whatsapp" target="_blank" style="color:#1faa52;font-weight:600;text-decoration:none;" x-text="p.whatsapp"></a></template>
+                                    <template x-if="!p.whatsapp"><span style="color:#ccc;">—</span></template>
+                                </td>
+                                <td data-label="Instagram">
+                                    <template x-if="p.instagram"><a :href="'https://instagram.com/'+p.instagram" target="_blank" style="text-decoration:none;">@<span x-text="p.instagram"></span></a></template>
+                                    <template x-if="!p.instagram"><span style="color:#ccc;">—</span></template>
+                                </td>
+                                <td data-label="Sede" x-text="p.telefone || '—'"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+                <div class="empty" x-show="!prosLoading && !pros.length">Nenhum lead para este filtro.</div>
+                <div class="pager" x-show="pros.length" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:14px;">
+                    <span style="color:#666;" x-text="fmt(prosTotal)+' cabanhas · ordenadas por melhor canal (WhatsApp → e-mail decisor → mérito Nelore)'"></span>
+                    <span style="display:flex;align-items:center;gap:12px;">
+                        <button class="lookup-btn" @click="irPros(-1)" :disabled="prosPage<=1" :style="prosPage<=1?'opacity:.4;cursor:default':''">← Anterior</button>
+                        <span style="font-weight:700;color:#1a3a1a;">Página <span x-text="prosPage"></span> de <span x-text="fmt(prosPages)"></span></span>
+                        <button class="lookup-btn" @click="irPros(1)" :disabled="prosPage>=prosPages" :style="prosPage>=prosPages?'opacity:.4;cursor:default':''">Próxima →</button>
+                    </span>
+                </div>
+            </section>
+
             <!-- ============ VISÃO GERAL ============ -->
             <section x-show="section==='visao'">
                 <h2>Visão Geral</h2>
@@ -2095,6 +2169,8 @@
                 racasTodas: [],
                 mkt: { segmento: 'corte', uf: '' }, marketplace: null, leads: [],
                 leadsPage: 1, leadsTotal: 0, leadsPages: 1, leadsLoading: false,
+                pros: [], prosStats: {}, prosUf: '', prosCanal: '', prosQ: '',
+                prosPage: 1, prosTotal: 0, prosPages: 1, prosLoading: false,
                 demUf: '', tendencia: [], lotacao: [], whales: [],
                 terUf: 'TO', territorio: null,
                 mapUf: '', mapMin: 100000, mapLayer: 'rebanho', _map: null, _mapLayer: null,
@@ -2143,7 +2219,7 @@
                     });
                 },
                 _secValida(s) {
-                    const ok = ['visao', 'whitespace', 'arbitragem', 'rankings', 'matching',
+                    const ok = ['visao', 'prospeccao', 'whitespace', 'arbitragem', 'rankings', 'matching',
                                 'matrizes', 'acasalamento', 'marketplace', 'demanda', 'territorio', 'mapa', 'mercado',
                                 'vendas', 'evolucao', 'aprendizado'];
                     return ok.includes(s) ? s : 'visao';
@@ -2210,6 +2286,7 @@
                     if (s === 'vendas') this.loadVendas();
                     if (s === 'evolucao' && !this.evoLoaded) this.loadFazendasEvo();
                     if (s === 'aprendizado') this.loadAprendizado();
+                    if (s === 'prospeccao' && !this.loaded.prospeccao) { this.loadProsStats(); this.loadProspeccao(); }
                 },
 
                 async loadStats() { try { this.stats = await this.jget('/api/stats'); } catch (e) { this.setErr(e); } },
@@ -2358,6 +2435,26 @@
                     this.leadsPage = nova;
                     this.loadLeads();
                     this.$nextTick(() => { if (this.$refs.leadsTop) this.$refs.leadsTop.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+                },
+                async loadProsStats() { try { const d = await this.jget('/api/prospeccao/stats'); this.prosStats = (d && d[0]) || {}; } catch (e) { this.setErr(e); } },
+                async loadProspeccao() {
+                    this.prosLoading = true;
+                    const qs = `?page=${this.prosPage}&page_size=50`
+                             + (this.prosUf ? `&uf=${this.prosUf}` : '')
+                             + (this.prosCanal ? `&canal=${this.prosCanal}` : '')
+                             + (this.prosQ ? `&q=${encodeURIComponent(this.prosQ)}` : '');
+                    try {
+                        const d = await this.jget('/api/prospeccao' + qs);
+                        this.pros = d.rows || []; this.prosTotal = d.total || 0; this.prosPages = d.total_pages || 1;
+                        this.loaded.prospeccao = true;
+                    } catch (e) { this.setErr(e); }
+                    finally { this.prosLoading = false; }
+                },
+                prosFiltrar() { this.prosPage = 1; this.loadProspeccao(); },
+                irPros(delta) { const n = this.prosPage + delta; if (n < 1 || n > this.prosPages) return; this.prosPage = n; this.loadProspeccao(); },
+                exportProspeccaoCSV() {
+                    const qs = '?' + (this.prosUf ? `uf=${this.prosUf}&` : '') + (this.prosCanal ? `canal=${this.prosCanal}&` : '') + (this.prosQ ? `q=${encodeURIComponent(this.prosQ)}` : '');
+                    window.location.href = '/api/prospeccao/csv' + qs;
                 },
                 // --- ordenação CLIENT-SIDE (tabelas pequenas já carregadas) ---
                 sortState: {},
