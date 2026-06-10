@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#1a3a1a">
   <title>WiNS Campo — Curral</title>
+  <script>window.APP_VERSION = "{{ app_version }}";</script>
   <link rel="manifest" href="/manifest.webmanifest">
   <script defer src="/static/vendor/alpine.min.js"></script>
   <style>
@@ -100,6 +101,11 @@
 
     <!-- ====================== FAZENDA ====================== -->
     <div x-show="tab==='fazenda'">
+      <div class="card" style="background:#14361a;color:#fff;">
+        <h3 style="color:#fff;margin-top:0;">📊 Central de Dados (Hub)</h3>
+        <div style="font-size:13px;opacity:.9;margin-bottom:10px;">Tudo do banco: prospecção de cabanhas, veterinários & zootecnistas, leads de produtores e desertos vet — com WhatsApp, score e exportação.</div>
+        <a href="/" style="display:inline-block;background:#7fc77f;color:#14361a;font-weight:700;padding:10px 16px;border-radius:8px;text-decoration:none;">Abrir Central de Dados →</a>
+      </div>
       <div class="card">
         <h3>Fazenda (cliente)</h3>
         <label>Selecionar fazenda existente</label>
@@ -461,8 +467,8 @@
               <span>Score <b x-text="r.score"></b></span>
             </div>
             <!-- Feature 1: ganho financeiro estimado por cria (vs. touro médio da raça) -->
-            <div x-show="r.ganho_cria != null" style="margin-top:5px; font-size:14px; color:#2d5a2d; font-weight:800">
-              +R$ <span x-text="r.ganho_cria"></span>/cria
+            <div x-show="r?.ganho_cria != null" style="margin-top:5px; font-size:14px; color:#2d5a2d; font-weight:800">
+              +R$ <span x-text="r?.ganho_cria"></span>/cria
               <span style="font-weight:500; color:#6b7a6b; font-size:12px">vs. média da raça<span x-show="r.roi_cria"> · ROI <b x-text="r.roi_cria+'×'"></b></span></span>
             </div>
             <!-- Feature 3: taxa de prenhez estimada (proxy PES) -->
@@ -479,7 +485,7 @@
         <h3>Registrar cruzamento</h3>
         <p class="muted" style="margin:0 0 8px">
           <b x-text="cruza.dam && cruza.dam.nome"></b> × <b x-text="cruza.chosen && cruza.chosen.nome"></b>
-          <span x-show="cruza.chosen && cruza.chosen.ganho_cria != null"> · +R$ <span x-text="cruza.chosen.ganho_cria"></span>/cria</span>
+          <span x-show="cruza.chosen && cruza.chosen.ganho_cria != null"> · +R$ <span x-text="cruza.chosen?.ganho_cria"></span>/cria</span>
         </p>
         <button class="btn" :disabled="cruza.registrando || cruza.registrado" @click="registrarCruzamento()"
                 x-text="cruza.registrado ? '✓ Cruzamento registrado' : (cruza.registrando ? 'Registrando…' : '✓ Confirmar cruzamento')"></button>
@@ -786,6 +792,22 @@ function campo() {
       // retry periódico: itens em backoff (error) voltam a tentar mesmo sem nova captura
       setInterval(()=>{ if(this.online) this.sync(); }, 30000);
       if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
+      // AUTO-ATUALIZAÇÃO: se o shell carregado for mais velho que o do servidor, limpa cache+SW e recarrega
+      // (self-heal — mata o "downgrade pra primeira versão"). Guard de sessão evita loop.
+      (async () => {
+        try {
+          const r = await fetch('/api/version', {cache:'no-store'});
+          const d = await r.json();
+          if (d.version && d.version !== window.APP_VERSION) {
+            if (!sessionStorage.getItem('vrl')) {
+              sessionStorage.setItem('vrl','1');
+              if ('serviceWorker' in navigator) { const g=await navigator.serviceWorker.getRegistrations(); await Promise.all(g.map(x=>x.unregister())); }
+              if (window.caches) { const ks=await caches.keys(); await Promise.all(ks.map(k=>caches.delete(k))); }
+              location.reload(true);
+            }
+          } else { sessionStorage.removeItem('vrl'); }
+        } catch(e){}
+      })();
       // reabre onde parou: persiste fazenda + aba
       this.$watch('cliente', v=>localStorage.setItem('wins_cliente', v||0));
       this.$watch('tab', v=>localStorage.setItem('wins_tab', v));
@@ -1352,5 +1374,6 @@ function campo() {
   };
 }
 </script>
+<div style="position:fixed;bottom:2px;right:5px;font-size:9px;color:#c4c4c4;z-index:9999;pointer-events:none;">v{{ app_version }}</div>
 </body>
 </html>

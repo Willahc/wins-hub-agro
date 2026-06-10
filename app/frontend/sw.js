@@ -9,7 +9,7 @@
 //
 // IMPORTANTE: bumpar CACHE a cada deploy que mexa em ASSETS ou no shell — a troca do nome
 // dispara o activate que apaga os caches antigos e força addAll dos vendors novos.
-const CACHE = 'wins-agro-v3';
+const CACHE = 'wins-agro-v4';
 const ASSETS = [
   '/static/vendor/leaflet.css',
   '/static/vendor/leaflet.js',
@@ -62,7 +62,8 @@ self.addEventListener('fetch', (e) => {
   // Só cacheia a resposta autenticada de verdade (200, sem redirect p/ /login).
   if (url.pathname === '/campo') {
     e.respondWith(
-      fetch(e.request).then((res) => {
+      // cache:'no-store' garante que o network-first NÃO devolva o shell velho do cache HTTP do WebView
+      fetch(e.request, { cache: 'no-store' }).then((res) => {
         if (res.ok && !res.redirected) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put('/campo', copy));

@@ -26,7 +26,16 @@ logger = logging.getLogger("wins_agro")
 # docs/openapi desligados: app single-tenant não deve expor o mapa de rotas/schemas
 # (incl. endpoints de PII/lead) a quem não está autenticado. O middleware só protege /api/*.
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+# Versão do shell — bumpar a cada deploy de front. O cliente compara com /api/version e
+# se auto-atualiza (limpa cache + reload) se estiver velho. Mata o "downgrade pra v1".
+APP_VERSION = "2026-06-11.4"
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
+
+
+@app.get("/api/version")
+def app_version():
+    from fastapi.responses import JSONResponse as _JR
+    return _JR({"version": APP_VERSION}, headers={"Cache-Control": "no-store"})
 templates = Jinja2Templates(directory="frontend")
 
 
@@ -200,7 +209,9 @@ def root(request: Request):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login")
-    return templates.TemplateResponse("index.html", {"request": request, "user": user})
+    resp = templates.TemplateResponse("index.html", {"request": request, "user": user, "app_version": APP_VERSION})
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"  # shell nunca cacheado (mata downgrade do app/WebView)
+    return resp
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -1631,32 +1642,36 @@ SEGMENTO_CNAE = {"corte": "0151201", "leite": "0151202"}
 
 # colunas ordenáveis da lista de leads -> nome real (whitelist: nunca interpola
 # string crua do cliente no SQL).
-LEADS_SORT = {"empresa": "nome", "municipio": "municipio", "uf": "uf", "porte": "porte"}
+LEADS_SORT = {"empresa": "nome", "municipio": "municipio", "uf": "uf", "porte": "porte", "score": "score"}
+# score = nº de canais de contato confirmados (decisor + email + telefone + whatsapp(celular inferido) + linkedin)
+_LEADS_SCORE = ("((decisor IS NOT NULL AND decisor<>'')::int "
+                "+ (email IS NOT NULL AND email<>'')::int "
+                "+ (telefone_1 IS NOT NULL AND telefone_1<>'')::int "
+                "+ (whatsapp_rfb IS NOT NULL)::int "
+                "+ (linkedin IS NOT NULL AND linkedin<>'')::int)")
 
 
 def _leads_rows(uf, segmento, limit, offset=0, sort=None, order="asc"):
-    """Linhas de leads (uma por empresa, ordenadas por contactabilidade) com
-    paginação por LIMIT/OFFSET. Tiebreaker por cnpj garante ordem ESTÁVEL entre
-    páginas (sem repetir/pular linha no OFFSET). `sort` (whitelist) reordena a
-    lista; o tiebreaker cnpj é mantido sempre."""
+    """Linhas de leads (uma por empresa) paginadas. `sort` (whitelist) reordena;
+    default = score (contatos completos) desc. Tiebreaker cnpj p/ ordem estável."""
     cnae = SEGMENTO_CNAE.get(segmento, "0151201")
     col = LEADS_SORT.get(sort)
     if col:
         dir_sql = "DESC" if str(order).lower() == "desc" else "ASC"
         order_sql = f"ORDER BY {col} {dir_sql} NULLS LAST, cnpj ASC"
     else:
-        order_sql = ("ORDER BY (email IS NOT NULL) DESC, (telefone_1 IS NOT NULL) DESC, "
-                     "capital_social DESC NULLS LAST, cnpj ASC")
+        order_sql = "ORDER BY score DESC, capital_social DESC NULLS LAST, cnpj ASC"
     # DISTINCT ON (cnpj_basico): uma linha por empresa (JBJ etc. têm dezenas de filiais),
-    # mantendo o estabelecimento mais "contactável".
+    # mantendo o estabelecimento mais "contactável". whatsapp_rfb = celular inferido do tel RFB.
     return query(
-        """
-        SELECT * FROM (
+        f"""
+        SELECT *, {_LEADS_SCORE} AS score FROM (
             SELECT DISTINCT ON (e.cnpj_basico)
                    COALESCE(NULLIF(em.razao_social, ''), e.nome_fantasia, '(produtor rural)') AS nome,
                    e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj,
                    m.nome AS municipio, e.uf,
                    e.ddd_1, e.telefone_1, e.correio_eletronico AS email,
+                   prospeccao.cel_whats(e.ddd_1||e.telefone_1) AS whatsapp_rfb,
                    NULLIF(TRIM(CONCAT_WS(', ', NULLIF(e.logradouro,''), NULLIF(e.bairro,''))), '') AS endereco,
                    em.porte, em.capital_social,
                    ld.decisor_top AS decisor, ld.tipo AS tipo_lead,
@@ -2161,8 +2176,8 @@ def leads_csv(uf: str = None, segmento: str = "corte", limit: int = 200000):
     buf = io.StringIO()
     # decisor/tipo_lead na frente: o que o vendedor da Monte Sião precisa primeiro
     # (vem de prospeccao.lead_decisor, QSA da Receita ao vivo). email/situacao = contexto.
-    cols = ["nome", "decisor", "tipo_lead", "linkedin", "municipio", "uf",
-            "ddd_1", "telefone_1", "email", "situacao_viva", "cnpj",
+    cols = ["score", "nome", "decisor", "tipo_lead", "linkedin", "municipio", "uf",
+            "ddd_1", "telefone_1", "whatsapp_rfb", "email", "situacao_viva", "cnpj",
             "endereco", "porte", "capital_social"]
     w = _csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
     w.writeheader()
@@ -2181,10 +2196,39 @@ def leads_csv(uf: str = None, segmento: str = "corte", limit: int = 200000):
 
 
 # ===================== FILA DE PROSPECÇÃO (ICP genético + contato do decisor) =====================
+# celular inferido do telefone-sede via a mesma função dos técnicos (DDI 55 + 6/7/8/9 + 9º dígito)
+_PROS_ZAP_RFB = "prospeccao.cel_whats(telefone)"
+# WhatsApp recuperado via Serper(decisor+fazenda)/link-externo do IG — só alta confiança (DDD bate UF, ou wa.me/linktree)
+_PROS_ZAP_IG = ("(SELECT z.whatsapp FROM prospeccao.cabanha_zap z WHERE z.cnpj=v_fila_prospeccao.cnpj "
+                "AND z.whatsapp IS NOT NULL AND (z.uf_match OR z.fonte IN ('wa.me','extlink')))")
+# melhor canal de abordagem (cascata): WhatsApp > Instagram > e-mail > telefone
+_PROS_CANAL = (f"CASE WHEN (whatsapp IS NOT NULL AND whatsapp<>'') OR {_PROS_ZAP_RFB} IS NOT NULL OR {_PROS_ZAP_IG} IS NOT NULL THEN 'whatsapp' "
+               "WHEN instagram IS NOT NULL AND instagram<>'' THEN 'instagram' "
+               "WHEN email IS NOT NULL AND email<>'' THEN 'email' "
+               "WHEN telefone IS NOT NULL AND telefone<>'' THEN 'telefone' ELSE 'nenhum' END")
+# score = nº de canais confirmados (decisor + email + whatsapp(confirmado/celular-sede/IG-web) + telefone + instagram + linkedin)
+_PROS_SCORE = ("((decisor IS NOT NULL AND decisor <> '')::int "
+               "+ (email IS NOT NULL AND email <> '')::int "
+               f"+ ((whatsapp IS NOT NULL AND whatsapp <> '') OR {_PROS_ZAP_RFB} IS NOT NULL OR {_PROS_ZAP_IG} IS NOT NULL)::int "
+               "+ (telefone IS NOT NULL AND telefone <> '')::int "
+               "+ (instagram IS NOT NULL AND instagram <> '')::int "
+               "+ (linkedin IS NOT NULL AND linkedin <> '')::int)")
 _PROS_COLS = ("tier, cabanha, fazenda, decisor, uf, municipio, nelore, "
-              "email, email_origem, whatsapp, telefone, instagram, cnpj")
-_PROS_ORDER = ("ORDER BY (whatsapp IS NOT NULL) DESC, (email_origem='decisor') DESC, "
-               "(tier='ALTA') DESC, nelore DESC NULLS LAST")
+              "email, email_origem, whatsapp, telefone, instagram, linkedin, cnpj, "
+              f"{_PROS_ZAP_RFB} AS whatsapp_rfb, {_PROS_ZAP_IG} AS whatsapp_ig, {_PROS_CANAL} AS melhor_canal, {_PROS_SCORE} AS score")
+_PROS_ORDER = (f"ORDER BY {_PROS_SCORE} DESC, (whatsapp IS NOT NULL) DESC, "
+               "(email_origem='decisor') DESC, (tier='ALTA') DESC, nelore DESC NULLS LAST")
+_PROS_SORT = {"score": _PROS_SCORE, "cabanha": "COALESCE(cabanha,fazenda)", "decisor": "decisor",
+              "uf": "uf", "nelore": "nelore", "email": "email", "whatsapp": "whatsapp",
+              "instagram": "instagram", "telefone": "telefone"}
+
+
+def _pros_order(sort, order):
+    col = _PROS_SORT.get(sort)
+    if not col:
+        return _PROS_ORDER
+    dir_sql = "DESC" if str(order).lower() == "desc" else "ASC"
+    return f"ORDER BY {col} {dir_sql} NULLS LAST, COALESCE(cabanha,fazenda) ASC"
 
 
 def _pros_where(uf, canal, q, params):
@@ -2192,7 +2236,7 @@ def _pros_where(uf, canal, q, params):
     if uf:
         w.append("uf = %(uf)s"); params["uf"] = uf
     if canal == "whatsapp":
-        w.append("whatsapp IS NOT NULL")
+        w.append(f"(whatsapp IS NOT NULL OR {_PROS_ZAP_RFB} IS NOT NULL OR {_PROS_ZAP_IG} IS NOT NULL)")
     elif canal == "email_decisor":
         w.append("email_origem = 'decisor'")
     elif canal == "instagram":
@@ -2207,7 +2251,9 @@ def _pros_where(uf, canal, q, params):
 def prospeccao_stats():
     """KPIs da fila de prospecção (ICP genético validado e vivo)."""
     return query(
-        """SELECT count(*) AS total, count(whatsapp) AS com_whatsapp,
+        f"""SELECT count(*) AS total, count(whatsapp) AS com_whatsapp,
+                  count(*) FILTER (WHERE whatsapp IS NULL AND {_PROS_ZAP_RFB} IS NOT NULL) AS com_celular_rfb,
+                  count(*) FILTER (WHERE whatsapp IS NULL AND {_PROS_ZAP_RFB} IS NULL AND {_PROS_ZAP_IG} IS NOT NULL) AS com_whatsapp_ig,
                   count(*) FILTER (WHERE email_origem='decisor') AS email_decisor,
                   count(instagram) AS com_instagram, count(*) FILTER (WHERE tier='ALTA') AS alta
            FROM prospeccao.v_fila_prospeccao WHERE ativo"""
@@ -2215,7 +2261,8 @@ def prospeccao_stats():
 
 
 @app.get("/api/prospeccao")
-def prospeccao(uf: str = None, canal: str = None, q: str = None, page: int = 1, page_size: int = 50):
+def prospeccao(uf: str = None, canal: str = None, q: str = None, page: int = 1,
+               page_size: int = 50, sort: str = None, order: str = "asc"):
     """Fila de prospecção: ICP genético com decisor + melhor contato por canal."""
     params = {}
     where = _pros_where(uf, canal, q, params)
@@ -2226,7 +2273,7 @@ def prospeccao(uf: str = None, canal: str = None, q: str = None, page: int = 1, 
     ps = min(max(page_size, 1), 200); page = max(page, 1)
     rows = query(
         f"SELECT {_PROS_COLS} FROM prospeccao.v_fila_prospeccao WHERE {where} "
-        f"{_PROS_ORDER} LIMIT %(lim)s OFFSET %(off)s",
+        f"{_pros_order(sort, order)} LIMIT %(lim)s OFFSET %(off)s",
         {**params, "lim": ps, "off": (page - 1) * ps},
     )
     if isinstance(rows, dict):
@@ -2244,8 +2291,8 @@ def prospeccao_csv(uf: str = None, canal: str = None, q: str = None):
         return rows
     import csv as _csv
     buf = io.StringIO()
-    cols = ["tier", "cabanha", "fazenda", "decisor", "uf", "municipio", "nelore",
-            "email", "email_origem", "whatsapp", "telefone", "instagram", "cnpj"]
+    cols = ["score", "melhor_canal", "tier", "cabanha", "fazenda", "decisor", "uf", "municipio", "nelore",
+            "email", "email_origem", "whatsapp", "whatsapp_rfb", "whatsapp_ig", "telefone", "instagram", "linkedin", "cnpj"]
     w = _csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
     w.writeheader()
     for r in rows:
@@ -2253,6 +2300,119 @@ def prospeccao_csv(uf: str = None, canal: str = None, q: str = None):
     buf.seek(0)
     return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": "attachment; filename=fila_prospeccao.csv"})
+
+
+# ===================== CANAL TÉCNICO (veterinário / zootecnista) =====================
+# Profissão COERENTE = sinal textual do Serper reforçado pelo sufixo do CRMV (/Z=zootecnista, /V=vet).
+# A fila mostra só dado coerente: estabelecimentos de CNAE veterinário (categoria conhecida) e
+# tiers acionáveis de corte — fora o ruído urbano (U) e pet (E).
+_TEC_PROF = ("COALESCE(NULLIF(profissao,''), "
+             "CASE crmv_cat WHEN 'Z' THEN 'zootecnista' WHEN 'V' THEN 'veterinario' END)")
+# celular INFERIDO do telefone da Receita via prospeccao.cel_whats(): tira DDI 55, aceita
+# assinante 6/7/8/9 (fixo é 2-5), insere o 9º dígito nos antigos de 8 díg → 11 díg WhatsApp-able.
+_TEC_ZAP_RFB = "prospeccao.cel_whats(tel_melhor)"
+# score = nº de canais de contato confirmados (nome real + tel + whatsapp/cel(confirmado OU celular-RFB) + email + instagram + CRMV)
+_TEC_SCORE = ("((nome !~ '^[0-9]' AND nome <> '(sem nome fantasia)')::int "
+              "+ (tel_melhor IS NOT NULL)::int "
+              f"+ (COALESCE(whatsapp,celular) IS NOT NULL OR {_TEC_ZAP_RFB} IS NOT NULL)::int "
+              "+ (email_receita IS NOT NULL)::int "
+              "+ (instagram IS NOT NULL)::int "
+              "+ COALESCE(crmv_confiavel,false)::int)")
+_TEC_COLS = (f"nome, {_TEC_PROF} AS profissao, categoria, tier, municipio, uf, "
+             "tel_melhor AS telefone, whatsapp, celular, instagram, email_receita AS email, "
+             f"{_TEC_ZAP_RFB} AS whatsapp_rfb, "
+             f"crmv_uf, crmv, crmv_cat, crmv_confiavel, sinal_corte, cnpj14 AS cnpj, {_TEC_SCORE} AS score")
+_TEC_BASE = ("FROM prospeccao.v_tecnico_full WHERE categoria IS NOT NULL "
+             "AND tier IN ('A-inseminador','B-corte-alto','C-corte-medio','D-corte-baixo') "
+             "AND nome !~ '^[0-9]'")
+_TEC_ORDER = (f"ORDER BY {_TEC_SCORE} DESC, crmv_confiavel DESC NULLS LAST, "
+              "(COALESCE(whatsapp,celular) IS NOT NULL) DESC, "
+              "(sinal_corte IN ('corte','corte+pet')) DESC, nome")
+# colunas ordenáveis pelo cabeçalho (chave do front -> expressão SQL); tiebreaker nome
+_TEC_SORT = {"score": _TEC_SCORE, "nome": "nome", "profissao": "profissao", "atividade": "categoria",
+             "tier": "tier", "uf": "uf", "telefone": "telefone",
+             "whatsapp": "COALESCE(whatsapp,celular)", "instagram": "instagram",
+             "crmv": "crmv_confiavel", "sinal": "sinal_corte"}
+
+
+def _tec_where(uf, prof, canal, q, params):
+    w = []
+    if uf:
+        w.append("uf = %(uf)s"); params["uf"] = uf
+    if prof == "zootecnista":
+        w.append("(profissao='zootecnista' OR crmv_cat='Z')")
+    elif prof == "veterinario":
+        w.append("(profissao='veterinario' OR crmv_cat='V')")
+    if canal == "whatsapp":
+        w.append(f"(COALESCE(whatsapp,celular) IS NOT NULL OR {_TEC_ZAP_RFB} IS NOT NULL)")
+    elif canal == "crmv":
+        w.append("crmv_confiavel")
+    elif canal == "instagram":
+        w.append("instagram IS NOT NULL")
+    if q:
+        w.append("(nome ILIKE %(q)s OR municipio ILIKE %(q)s)"); params["q"] = f"%{q}%"
+    return (" AND " + " AND ".join(w)) if w else ""
+
+
+@app.get("/api/tecnicos/stats")
+def tecnicos_stats():
+    """KPIs do canal técnico (vet/zootec) — fila coerente."""
+    return query(
+        f"""SELECT count(*) AS total,
+               count(*) FILTER (WHERE {_TEC_PROF}='veterinario') AS veterinarios,
+               count(*) FILTER (WHERE {_TEC_PROF}='zootecnista') AS zootecnistas,
+               count(*) FILTER (WHERE COALESCE(whatsapp,celular) IS NOT NULL) AS com_whatsapp,
+               count(*) FILTER (WHERE COALESCE(whatsapp,celular) IS NULL AND {_TEC_ZAP_RFB} IS NOT NULL) AS com_celular_rfb,
+               count(*) FILTER (WHERE crmv_confiavel) AS com_crmv
+           {_TEC_BASE}""")
+
+
+def _tec_order(sort, order):
+    col = _TEC_SORT.get(sort)
+    if not col:
+        return _TEC_ORDER
+    dir_sql = "DESC" if str(order).lower() == "desc" else "ASC"
+    return f"ORDER BY {col} {dir_sql} NULLS LAST, nome ASC"
+
+
+@app.get("/api/tecnicos")
+def tecnicos(uf: str = None, prof: str = None, canal: str = None, q: str = None,
+             page: int = 1, page_size: int = 50, sort: str = None, order: str = "asc"):
+    """Fila do canal técnico: vet/zootecnista com nome, categoria, tier, contato e CRMV."""
+    params = {}
+    where = _tec_where(uf, prof, canal, q, params)
+    tot = query(f"SELECT count(*) AS n {_TEC_BASE}{where}", params)
+    if isinstance(tot, dict):
+        return tot
+    total = tot[0]["n"]
+    ps = min(max(page_size, 1), 200); page = max(page, 1)
+    rows = query(f"SELECT {_TEC_COLS} {_TEC_BASE}{where} {_tec_order(sort, order)} LIMIT %(lim)s OFFSET %(off)s",
+                 {**params, "lim": ps, "off": (page - 1) * ps})
+    if isinstance(rows, dict):
+        return rows
+    return {"rows": rows, "total": total, "total_pages": max(1, (total + ps - 1) // ps)}
+
+
+@app.get("/api/tecnicos/csv")
+def tecnicos_csv(uf: str = None, prof: str = None, canal: str = None, q: str = None):
+    """Exporta a fila técnica filtrada (não só a página) em CSV."""
+    params = {}
+    where = _tec_where(uf, prof, canal, q, params)
+    rows = query(f"SELECT {_TEC_COLS} {_TEC_BASE}{where} {_TEC_ORDER} LIMIT 20000", params)
+    if isinstance(rows, dict):
+        return rows
+    import csv as _csv
+    buf = io.StringIO()
+    cols = ["score", "nome", "profissao", "categoria", "tier", "municipio", "uf", "telefone",
+            "whatsapp", "celular", "whatsapp_rfb", "instagram", "email", "crmv_uf", "crmv", "crmv_cat",
+            "crmv_confiavel", "sinal_corte", "cnpj"]
+    w = _csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+    w.writeheader()
+    for r in rows:
+        w.writerow(r)
+    buf.seek(0)
+    return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": "attachment; filename=tecnicos.csv"})
 
 
 @app.get("/api/leads/enriquecido")
@@ -2509,7 +2669,9 @@ def campo_page(request: Request):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login")
-    return templates.TemplateResponse("campo.html", {"request": request, "user": user})
+    resp = templates.TemplateResponse("campo.html", {"request": request, "user": user, "app_version": APP_VERSION})
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"  # shell nunca cacheado (mata downgrade do app/WebView)
+    return resp
 
 
 @app.get("/baixar/campo.apk")

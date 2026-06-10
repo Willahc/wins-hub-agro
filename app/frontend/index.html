@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WiNS Hub Agro — Dashboard</title>
+    <script>window.APP_VERSION = "{{ app_version }}";</script>
     <meta name="theme-color" content="#1a3a1a">
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="apple-touch-icon" href="/static/vendor/icon-192.png">
@@ -432,9 +433,13 @@
     <div class="layout">
         <div class="nav-overlay" x-show="mobileNav" @click="mobileNav=false" style="display:none;"></div>
         <nav class="sidebar" :class="{open: mobileNav}">
+            <a href="/campo" class="nav-item" style="text-decoration:none;color:inherit;"><span class="ico">🐄</span> App de Campo</a>
             <div class="nav-group">Comercial</div>
             <div class="nav-item" :class="{active: section==='prospeccao'}" @click="go('prospeccao')">
                 <span class="ico">📋</span> Fila Prospecção
+            </div>
+            <div class="nav-item" :class="{active: section==='tecnicos'}" @click="go('tecnicos')">
+                <span class="ico">🩺</span> Técnicos
             </div>
             <div class="nav-group">Genética</div>
             <div class="nav-item" :class="{active: section==='visao'}" @click="go('visao')">
@@ -493,7 +498,7 @@
                 <div style="display:flex;gap:12px;flex-wrap:wrap;margin:14px 0;">
                     <div class="kpi k2"><div><div class="value" x-text="fmt(prosStats.total||0)"></div><div class="label">cabanhas vivas</div></div></div>
                     <div class="kpi k2"><div><div class="value" x-text="fmt(prosStats.email_decisor||0)"></div><div class="label">e-mail de decisor</div></div></div>
-                    <div class="kpi k2"><div><div class="value" x-text="fmt(prosStats.com_whatsapp||0)"></div><div class="label">WhatsApp</div></div></div>
+                    <div class="kpi k2"><div><div class="value" x-text="fmt((prosStats.com_whatsapp||0)+(prosStats.com_celular_rfb||0)+(prosStats.com_whatsapp_ig||0))"></div><div class="label">WhatsApp<span x-show="prosStats.com_celular_rfb||prosStats.com_whatsapp_ig" style="color:#a07a00;" x-text="' ('+fmt(prosStats.com_whatsapp||0)+' conf.+'+fmt(prosStats.com_whatsapp_ig||0)+' IG+'+fmt(prosStats.com_celular_rfb||0)+' Receita)'"></span></div></div></div>
                     <div class="kpi k2"><div><div class="value" x-text="fmt(prosStats.com_instagram||0)"></div><div class="label">Instagram</div></div></div>
                 </div>
                 <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
@@ -514,15 +519,28 @@
                 <div x-show="prosLoading" class="empty">Carregando…</div>
                 <table x-show="!prosLoading && pros.length">
                     <thead><tr>
-                        <th>Cabanha / Fazenda</th><th>👤 Decisor</th><th>UF</th><th>Nelore</th>
-                        <th>✉ E-mail</th><th>📱 WhatsApp</th><th>📷 Instagram</th><th>☎ Sede</th>
+                        <th class="sortable" @click="setProsSort('score')" title="canais de contato confirmados">Score<span x-text="prosArrow('score')"></span></th>
+                        <th class="sortable" @click="setProsSort('cabanha')">Cabanha / Fazenda<span x-text="prosArrow('cabanha')"></span></th>
+                        <th class="sortable" @click="setProsSort('decisor')">👤 Decisor<span x-text="prosArrow('decisor')"></span></th>
+                        <th class="sortable" @click="setProsSort('uf')">UF<span x-text="prosArrow('uf')"></span></th>
+                        <th class="sortable" @click="setProsSort('nelore')">Nelore<span x-text="prosArrow('nelore')"></span></th>
+                        <th class="sortable" @click="setProsSort('email')">✉ E-mail<span x-text="prosArrow('email')"></span></th>
+                        <th class="sortable" @click="setProsSort('whatsapp')">📱 WhatsApp<span x-text="prosArrow('whatsapp')"></span></th>
+                        <th class="sortable" @click="setProsSort('instagram')">📷 Instagram<span x-text="prosArrow('instagram')"></span></th>
+                        <th class="sortable" @click="setProsSort('telefone')">☎ Sede<span x-text="prosArrow('telefone')"></span></th>
                     </tr></thead>
                     <tbody>
                         <template x-for="(p,i) in pros" :key="p.cnpj || i">
                             <tr>
+                                <td data-label="Score">
+                                    <span class="badge" :style="'font-weight:700;'+(p.score>=4?'background:#e8f5e9;color:#2e7d32':(p.score>=2?'background:#fff8e1;color:#a07a00':'background:#f0f0f0;color:#999'))" x-text="(p.score||0)+'/6'"></span>
+                                </td>
                                 <td data-label="Cabanha / Fazenda">
                                     <span style="font-weight:600;" x-text="p.cabanha || p.fazenda"></span>
                                     <span x-show="p.tier==='ALTA'" class="badge" style="background:#e8f5e9;color:#2e7d32;margin-left:6px;">alta</span>
+                                    <span class="badge" style="margin-left:6px;" x-show="p.melhor_canal && p.melhor_canal!=='nenhum'"
+                                          :style="({whatsapp:'background:#e8f5e9;color:#2e7d32',instagram:'background:#fce4ec;color:#c2185b',email:'background:#ede7f6;color:#5e35b1',telefone:'background:#f0f0f0;color:#777'}[p.melhor_canal]||'')"
+                                          x-text="'→ '+({whatsapp:'WhatsApp',instagram:'Instagram DM',email:'e-mail',telefone:'ligar'}[p.melhor_canal]||p.melhor_canal)"></span>
                                     <div style="font-size:11px;color:#999;" x-text="p.fazenda + (p.municipio ? ' · '+p.municipio : '')"></div>
                                 </td>
                                 <td data-label="Decisor" x-text="p.decisor || '—'"></td>
@@ -534,14 +552,16 @@
                                     <template x-if="!p.email"><span style="color:#ccc;">—</span></template>
                                 </td>
                                 <td data-label="WhatsApp">
-                                    <template x-if="p.whatsapp"><a :href="'https://wa.me/55'+p.whatsapp" target="_blank" style="color:#1faa52;font-weight:600;text-decoration:none;" x-text="p.whatsapp"></a></template>
-                                    <template x-if="!p.whatsapp"><span style="color:#ccc;">—</span></template>
+                                    <template x-if="p.whatsapp"><a :href="'https://wa.me/55'+zapDigits(p.whatsapp)" target="_blank" style="color:#1faa52;font-weight:600;text-decoration:none;" x-text="fmtZap(p.whatsapp)"></a></template>
+                                    <template x-if="!p.whatsapp && p.whatsapp_ig"><a :href="'https://wa.me/55'+zapDigits(p.whatsapp_ig)" target="_blank" style="color:#1565c0;font-weight:600;text-decoration:none;" :title="'WhatsApp achado no Instagram/site da fazenda (DDD bate UF)'"><span x-text="fmtZap(p.whatsapp_ig)"></span> <span class="badge" style="background:#e3f2fd;color:#1565c0;font-size:10px;">IG/web</span></a></template>
+                                    <template x-if="!p.whatsapp && !p.whatsapp_ig && p.whatsapp_rfb"><a :href="'https://wa.me/55'+zapDigits(p.whatsapp_rfb)" target="_blank" style="color:#a07a00;font-weight:600;text-decoration:none;" :title="'celular da Receita (inferido pelo nº, não confirmado)'"><span x-text="fmtZap(p.whatsapp_rfb)"></span> <span class="badge" style="background:#fff8e1;color:#a07a00;font-size:10px;">Receita</span></a></template>
+                                    <template x-if="!p.whatsapp && !p.whatsapp_ig && !p.whatsapp_rfb"><span style="color:#ccc;">—</span></template>
                                 </td>
                                 <td data-label="Instagram">
                                     <template x-if="p.instagram"><a :href="'https://instagram.com/'+p.instagram" target="_blank" style="text-decoration:none;">@<span x-text="p.instagram"></span></a></template>
                                     <template x-if="!p.instagram"><span style="color:#ccc;">—</span></template>
                                 </td>
-                                <td data-label="Sede" x-text="p.telefone || '—'"></td>
+                                <td data-label="Sede" x-text="p.telefone ? fmtZap(p.telefone) : '—'"></td>
                             </tr>
                         </template>
                     </tbody>
@@ -553,6 +573,105 @@
                         <button class="lookup-btn" @click="irPros(-1)" :disabled="prosPage<=1" :style="prosPage<=1?'opacity:.4;cursor:default':''">← Anterior</button>
                         <span style="font-weight:700;color:#1a3a1a;">Página <span x-text="prosPage"></span> de <span x-text="fmt(prosPages)"></span></span>
                         <button class="lookup-btn" @click="irPros(1)" :disabled="prosPage>=prosPages" :style="prosPage>=prosPages?'opacity:.4;cursor:default':''">Próxima →</button>
+                    </span>
+                </div>
+            </section>
+
+            <!-- ============ CANAL TÉCNICO (vet / zootecnista) ============ -->
+            <section x-show="section==='tecnicos'">
+                <h2>🩺 Técnicos — veterinários & zootecnistas <span style="font-size:13px;font-weight:500;color:#9aa39a;">· canal de genética (maleta + comissão) · cinturão de corte</span></h2>
+                <div style="display:flex;gap:12px;flex-wrap:wrap;margin:14px 0;">
+                    <div class="kpi k2"><div><div class="value" x-text="fmt(tecStats.total||0)"></div><div class="label">técnicos (fila coerente)</div></div></div>
+                    <div class="kpi k2"><div><div class="value" x-text="fmt(tecStats.veterinarios||0)"></div><div class="label">veterinários</div></div></div>
+                    <div class="kpi k2"><div><div class="value" x-text="fmt(tecStats.zootecnistas||0)"></div><div class="label">zootecnistas</div></div></div>
+                    <div class="kpi k2"><div><div class="value" x-text="fmt((tecStats.com_whatsapp||0)+(tecStats.com_celular_rfb||0))"></div><div class="label">WhatsApp/celular<span x-show="tecStats.com_celular_rfb" style="color:#a07a00;" x-text="' ('+fmt(tecStats.com_whatsapp||0)+' conf.+'+fmt(tecStats.com_celular_rfb||0)+' Receita)'"></span></div></div></div>
+                    <div class="kpi k2"><div><div class="value" x-text="fmt(tecStats.com_crmv||0)"></div><div class="label">CRMV confiável</div></div></div>
+                </div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+                    <select @change="tecUf=$event.target.value; tecFiltrar()" style="padding:8px;">
+                        <option value="">Todas UFs</option>
+                        <template x-for="u in ufs" :key="u"><option :value="u" x-text="u"></option></template>
+                    </select>
+                    <select @change="tecProf=$event.target.value; tecFiltrar()" style="padding:8px;">
+                        <option value="">Vet + Zootec</option>
+                        <option value="veterinario">Só veterinário</option>
+                        <option value="zootecnista">Só zootecnista</option>
+                    </select>
+                    <select @change="tecCanal=$event.target.value; tecFiltrar()" style="padding:8px;">
+                        <option value="">Todos os canais</option>
+                        <option value="whatsapp">Com WhatsApp/celular</option>
+                        <option value="crmv">Com CRMV confiável</option>
+                        <option value="instagram">Com Instagram</option>
+                    </select>
+                    <input type="text" placeholder="buscar nome / município" x-model="tecQ" @keydown.enter="tecFiltrar()" style="padding:8px;flex:1;min-width:200px;">
+                    <button class="run-btn" @click="tecFiltrar()" style="padding:8px 14px;font-size:13px;">Filtrar</button>
+                    <button class="lookup-btn" @click="exportTecnicosCSV()">⬇️ CSV</button>
+                </div>
+                <div x-show="tecLoading" class="empty">Carregando…</div>
+                <table x-show="!tecLoading && tec.length">
+                    <thead><tr>
+                        <th class="sortable" @click="setTecSort('score')" title="canais de contato confirmados">Score<span x-text="tecArrow('score')"></span></th>
+                        <th class="sortable" @click="setTecSort('nome')">Nome<span x-text="tecArrow('nome')"></span></th>
+                        <th class="sortable" @click="setTecSort('profissao')">Profissão<span x-text="tecArrow('profissao')"></span></th>
+                        <th class="sortable" @click="setTecSort('atividade')">Atividade<span x-text="tecArrow('atividade')"></span></th>
+                        <th class="sortable" @click="setTecSort('tier')">Tier<span x-text="tecArrow('tier')"></span></th>
+                        <th class="sortable" @click="setTecSort('uf')">UF<span x-text="tecArrow('uf')"></span></th>
+                        <th class="sortable" @click="setTecSort('telefone')">☎ Telefone<span x-text="tecArrow('telefone')"></span></th>
+                        <th class="sortable" @click="setTecSort('whatsapp')">📱 WhatsApp<span x-text="tecArrow('whatsapp')"></span></th>
+                        <th class="sortable" @click="setTecSort('instagram')">📷 Instagram<span x-text="tecArrow('instagram')"></span></th>
+                        <th class="sortable" @click="setTecSort('crmv')">CRMV<span x-text="tecArrow('crmv')"></span></th>
+                        <th class="sortable" @click="setTecSort('sinal')">Sinal<span x-text="tecArrow('sinal')"></span></th>
+                    </tr></thead>
+                    <tbody>
+                        <template x-for="(t,i) in tec" :key="t.cnpj || i">
+                            <tr>
+                                <td data-label="Score">
+                                    <span class="badge" :style="'font-weight:700;'+(t.score>=4?'background:#e8f5e9;color:#2e7d32':(t.score>=2?'background:#fff8e1;color:#a07a00':'background:#f0f0f0;color:#999'))" x-text="(t.score||0)+'/6'"></span>
+                                </td>
+                                <td data-label="Nome">
+                                    <span style="font-weight:600;" x-text="t.nome"></span>
+                                    <div style="font-size:11px;color:#999;" x-text="t.municipio || ''"></div>
+                                </td>
+                                <td data-label="Profissão">
+                                    <template x-if="t.profissao==='zootecnista'"><span class="badge" style="background:#e3f2fd;color:#1565c0;">Zootecnista</span></template>
+                                    <template x-if="t.profissao==='veterinario'"><span class="badge" style="background:#e8f5e9;color:#2e7d32;">Veterinário</span></template>
+                                    <template x-if="t.profissao==='ambos'"><span class="badge" style="background:#f3e5f5;color:#7b1fa2;">Vet+Zoo</span></template>
+                                    <template x-if="!t.profissao"><span style="color:#ccc;">—</span></template>
+                                </td>
+                                <td data-label="Atividade" x-text="({inseminacao:'inseminação',apoio_pecuaria:'apoio pecuária',veterinaria:'veterinária',repro_secundario:'repro (2ª ativ.)'})[t.categoria] || t.categoria"></td>
+                                <td data-label="Tier"><span x-text="(t.tier||'').split('-')[0]"></span></td>
+                                <td data-label="UF" x-text="t.uf"></td>
+                                <td data-label="Telefone" x-text="t.telefone ? fmtZap(t.telefone) : '—'"></td>
+                                <td data-label="WhatsApp">
+                                    <template x-if="t.whatsapp || t.celular"><a :href="'https://wa.me/55'+zapDigits(t.whatsapp||t.celular)" target="_blank" style="color:#1faa52;font-weight:600;text-decoration:none;" x-text="fmtZap(t.whatsapp||t.celular)"></a></template>
+                                    <template x-if="!(t.whatsapp||t.celular) && t.whatsapp_rfb"><a :href="'https://wa.me/55'+zapDigits(t.whatsapp_rfb)" target="_blank" style="color:#a07a00;font-weight:600;text-decoration:none;" :title="'celular da Receita (inferido pelo nº, não confirmado)'"><span x-text="fmtZap(t.whatsapp_rfb)"></span> <span class="badge" style="background:#fff8e1;color:#a07a00;font-size:10px;">Receita</span></a></template>
+                                    <template x-if="!(t.whatsapp||t.celular) && !t.whatsapp_rfb"><span style="color:#ccc;">—</span></template>
+                                </td>
+                                <td data-label="Instagram">
+                                    <template x-if="t.instagram"><a :href="'https://instagram.com/'+t.instagram" target="_blank" style="text-decoration:none;">@<span x-text="t.instagram"></span></a></template>
+                                    <template x-if="!t.instagram"><span style="color:#ccc;">—</span></template>
+                                </td>
+                                <td data-label="CRMV">
+                                    <template x-if="t.crmv && t.crmv_confiavel"><span x-text="'CRMV-'+t.crmv_uf+' '+t.crmv+(t.crmv_cat==='Z'?'/Z':'')"></span></template>
+                                    <template x-if="t.crmv && !t.crmv_confiavel"><span style="color:#c98a00;" :title="'UF do registro ('+t.crmv_uf+') diverge — conferir'" x-text="t.crmv_uf+' '+t.crmv+' ?'"></span></template>
+                                    <template x-if="!t.crmv"><span style="color:#ccc;">—</span></template>
+                                </td>
+                                <td data-label="Sinal">
+                                    <template x-if="t.sinal_corte==='corte'"><span class="badge" style="background:#e8f5e9;color:#2e7d32;">corte</span></template>
+                                    <template x-if="t.sinal_corte==='corte+pet'"><span class="badge" style="background:#fff8e1;color:#a07a00;">corte+pet</span></template>
+                                    <template x-if="t.sinal_corte!=='corte' && t.sinal_corte!=='corte+pet'"><span style="color:#ccc;">—</span></template>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+                <div class="empty" x-show="!tecLoading && !tec.length">Nenhum técnico para este filtro.</div>
+                <div class="pager" x-show="tec.length" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:14px;">
+                    <span style="color:#666;" x-text="fmt(tecTotal)+' técnicos · ordenados por CRMV confiável → contato → sinal de corte'"></span>
+                    <span style="display:flex;align-items:center;gap:12px;">
+                        <button class="lookup-btn" @click="irTec(-1)" :disabled="tecPage<=1" :style="tecPage<=1?'opacity:.4;cursor:default':''">← Anterior</button>
+                        <span style="font-weight:700;color:#1a3a1a;">Página <span x-text="tecPage"></span> de <span x-text="fmt(tecPages)"></span></span>
+                        <button class="lookup-btn" @click="irTec(1)" :disabled="tecPage>=tecPages" :style="tecPage>=tecPages?'opacity:.4;cursor:default':''">Próxima →</button>
                     </span>
                 </div>
             </section>
@@ -710,7 +829,7 @@
             <!-- ============ WHITE-SPACE ============ -->
             <section x-show="section==='whitespace'">
                 <h2>Desertos Vet</h2>
-                <p class="subtitle">Municípios com maior rebanho e cobertura veterinária crítica (rebanho &gt; 50 mil cabeças).</p>
+                <p class="subtitle">Municípios com maior rebanho e cobertura TÉCNICA crítica — oferta = veterinária + inseminação + apoio à pecuária (base nacional 52k, rebanho &gt; 50 mil cabeças).</p>
                 <div class="toolbar">
                     <label>UF:</label>
                     <select x-model="ufFilter" @change="loadWhitespace()">
@@ -728,7 +847,7 @@
                                     <th class="sortable" @click="setSort('ws','municipio_nome','txt')">Município<span x-text="sortArrow('ws','municipio_nome')"></span></th>
                                     <th class="sortable" @click="setSort('ws','uf','txt')">UF<span x-text="sortArrow('ws','uf')"></span></th>
                                     <th class="num sortable" @click="setSort('ws','total_bovinos','num')">Bovinos<span x-text="sortArrow('ws','total_bovinos')"></span></th>
-                                    <th class="num sortable" @click="setSort('ws','cnpj_vet','num')">Estab. Vet<span x-text="sortArrow('ws','cnpj_vet')"></span></th>
+                                    <th class="num sortable" @click="setSort('ws','cnpj_vet','num')" title="oferta técnica = veterinária + inseminação + apoio à pecuária">Oferta téc.<span x-text="sortArrow('ws','cnpj_vet')"></span></th>
                                     <th class="sortable" @click="setSort('ws','classificacao_vet','rank')">Classificação<span x-text="sortArrow('ws','classificacao_vet')"></span></th>
                                 </tr></thead>
                                 <tbody>
@@ -737,7 +856,7 @@
                                             <td data-label="Município" x-text="row.municipio_nome"></td>
                                             <td data-label="UF" x-text="row.uf"></td>
                                             <td data-label="Bovinos" class="num" x-text="fmt(row.total_bovinos)"></td>
-                                            <td data-label="Estab. Vet" class="num" x-text="fmt(row.cnpj_vet)"></td>
+                                            <td data-label="Oferta téc." class="num" x-text="fmt(row.cnpj_vet)"></td>
                                             <td data-label="Classificação"><span class="badge" :class="badgeClass(row.classificacao_vet)" x-text="row.classificacao_vet"></span></td>
                                         </tr>
                                     </template>
@@ -792,7 +911,7 @@
                                     <th class="num sortable" @click="setSort('arb','preco_por_iqgg','num')">R$/IQGg<span x-text="sortArrow('arb','preco_por_iqgg')"></span></th>
                                 </tr></thead>
                                 <tbody>
-                                    <template x-for="(row, i) in page(sorted(arbitragem, 'arb'), 'arbitragem')" :key="row.registro + '|' + row.central">
+                                    <template x-for="(row, i) in page(sorted(arbitragem, 'arb'), 'arbitragem')" :key="(row.registro||'') + '|' + (row.central||'') + '|' + i">
                                         <tr :class="{best: row._best}" style="cursor:pointer" @click="abrirTouro(row.id)" title="Ver ficha completa">
                                             <td data-label="Touro" x-text="row.nome_touro"></td>
                                             <td data-label="Raça" x-text="row.raca"></td>
@@ -1416,17 +1535,21 @@
                         <div class="card" style="margin-top:12px;position:relative;">
                             <div class="loading" x-show="leadsLoading" style="position:absolute;inset:0;background:rgba(255,255,255,.6);z-index:2;">Carregando…</div>
                             <table x-show="leads.length">
-                                <colgroup><col style="width:19%"><col style="width:18%"><col style="width:11%"><col style="width:5%"><col style="width:12%"><col style="width:18%"><col style="width:8%"><col style="width:9%"></colgroup>
+                                <colgroup><col style="width:5%"><col style="width:16%"><col style="width:15%"><col style="width:10%"><col style="width:4%"><col style="width:11%"><col style="width:11%"><col style="width:14%"><col style="width:7%"><col style="width:7%"></colgroup>
                                 <thead><tr>
+                                    <th class="sortable" @click="setLeadsSort('score')" title="canais de contato confirmados">Score<span x-text="leadsArrow('score')"></span></th>
                                     <th class="sortable" @click="setLeadsSort('empresa')">Empresa / Produtor<span x-text="leadsArrow('empresa')"></span></th>
                                     <th>👤 Decisor</th>
                                     <th class="sortable" @click="setLeadsSort('municipio')">Município<span x-text="leadsArrow('municipio')"></span></th>
                                     <th class="sortable" @click="setLeadsSort('uf')">UF<span x-text="leadsArrow('uf')"></span></th>
-                                    <th>Telefone</th><th>E-mail</th>
+                                    <th>☎ Telefone</th><th>📱 WhatsApp</th><th>E-mail</th>
                                     <th class="sortable" @click="setLeadsSort('porte')">Porte<span x-text="leadsArrow('porte')"></span></th><th></th></tr></thead>
                                 <tbody>
                                     <template x-for="(l, i) in leads" :key="l.cnpj || i">
                                         <tr>
+                                            <td data-label="Score">
+                                                <span class="badge" :style="'font-weight:700;'+(l.score>=3?'background:#e8f5e9;color:#2e7d32':(l.score>=2?'background:#fff8e1;color:#a07a00':'background:#f0f0f0;color:#999'))" x-text="(l.score||0)+'/5'"></span>
+                                            </td>
                                             <td data-label="Empresa / Produtor">
                                                 <span x-text="l.nome"></span>
                                                 <template x-if="l.enriquecido">
@@ -1449,7 +1572,11 @@
                                             </td>
                                             <td data-label="Município" x-text="l.municipio"></td>
                                             <td data-label="UF" x-text="l.uf"></td>
-                                            <td data-label="Telefone" x-text="l.telefone_1 ? ('(' + (l.ddd_1||'') + ') ' + l.telefone_1) : '—'"></td>
+                                            <td data-label="Telefone" x-text="l.telefone_1 ? fmtZap((l.ddd_1||'')+l.telefone_1) : '—'"></td>
+                                            <td data-label="WhatsApp">
+                                                <template x-if="l.whatsapp_rfb"><a :href="'https://wa.me/55'+zapDigits(l.whatsapp_rfb)" target="_blank" style="color:#a07a00;font-weight:600;text-decoration:none;" :title="'celular da Receita (inferido pelo nº, não confirmado)'"><span x-text="fmtZap(l.whatsapp_rfb)"></span> <span class="badge" style="background:#fff8e1;color:#a07a00;font-size:10px;">Receita</span></a></template>
+                                                <template x-if="!l.whatsapp_rfb"><span style="color:#ccc;">—</span></template>
+                                            </td>
                                             <td data-label="E-mail" x-text="l.email || '—'"></td>
                                             <td data-label="Porte" x-text="porteLabel(l.porte)"></td>
                                             <td data-label=""><button class="lookup-btn" @click="abrirCnpj(l.cnpj)" x-show="l.cnpj">🔍 CNPJ</button></td>
@@ -2144,6 +2271,20 @@
             return res;
         };
 
+        // AUTO-ATUALIZAÇÃO: shell velho -> limpa cache+SW e recarrega (self-heal anti-downgrade)
+        (async () => {
+            try {
+                const d = await (await fetch('/api/version', {cache:'no-store'})).json();
+                if (d.version && d.version !== window.APP_VERSION) {
+                    if (!sessionStorage.getItem('vrl')) {
+                        sessionStorage.setItem('vrl','1');
+                        if ('serviceWorker' in navigator) { const g=await navigator.serviceWorker.getRegistrations(); await Promise.all(g.map(x=>x.unregister())); }
+                        if (window.caches) { const ks=await caches.keys(); await Promise.all(ks.map(k=>caches.delete(k))); }
+                        location.reload(true);
+                    }
+                } else { sessionStorage.removeItem('vrl'); }
+            } catch(e){}
+        })();
         // PWA: registra o service worker (cacheia a casca/libs p/ abrir rápido e offline).
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
@@ -2171,6 +2312,10 @@
                 leadsPage: 1, leadsTotal: 0, leadsPages: 1, leadsLoading: false,
                 pros: [], prosStats: {}, prosUf: '', prosCanal: '', prosQ: '',
                 prosPage: 1, prosTotal: 0, prosPages: 1, prosLoading: false,
+                prosSort: 'score', prosOrder: 'desc',
+                tec: [], tecStats: {}, tecUf: '', tecProf: '', tecCanal: '', tecQ: '',
+                tecPage: 1, tecTotal: 0, tecPages: 1, tecLoading: false,
+                tecSort: 'score', tecOrder: 'desc',
                 demUf: '', tendencia: [], lotacao: [], whales: [],
                 terUf: 'TO', territorio: null,
                 mapUf: '', mapMin: 100000, mapLayer: 'rebanho', _map: null, _mapLayer: null,
@@ -2287,6 +2432,7 @@
                     if (s === 'evolucao' && !this.evoLoaded) this.loadFazendasEvo();
                     if (s === 'aprendizado') this.loadAprendizado();
                     if (s === 'prospeccao' && !this.loaded.prospeccao) { this.loadProsStats(); this.loadProspeccao(); }
+                    if (s === 'tecnicos' && !this.loaded.tecnicos) { this.loadTecStats(); this.loadTecnicos(); }
                 },
 
                 async loadStats() { try { this.stats = await this.jget('/api/stats'); } catch (e) { this.setErr(e); } },
@@ -2442,7 +2588,8 @@
                     const qs = `?page=${this.prosPage}&page_size=50`
                              + (this.prosUf ? `&uf=${this.prosUf}` : '')
                              + (this.prosCanal ? `&canal=${this.prosCanal}` : '')
-                             + (this.prosQ ? `&q=${encodeURIComponent(this.prosQ)}` : '');
+                             + (this.prosQ ? `&q=${encodeURIComponent(this.prosQ)}` : '')
+                             + (this.prosSort ? `&sort=${this.prosSort}&order=${this.prosOrder}` : '');
                     try {
                         const d = await this.jget('/api/prospeccao' + qs);
                         this.pros = d.rows || []; this.prosTotal = d.total || 0; this.prosPages = d.total_pages || 1;
@@ -2452,9 +2599,57 @@
                 },
                 prosFiltrar() { this.prosPage = 1; this.loadProspeccao(); },
                 irPros(delta) { const n = this.prosPage + delta; if (n < 1 || n > this.prosPages) return; this.prosPage = n; this.loadProspeccao(); },
+                setProsSort(col) {
+                    if (this.prosSort === col) { this.prosOrder = this.prosOrder === 'asc' ? 'desc' : 'asc'; }
+                    else { this.prosSort = col; this.prosOrder = 'asc'; }
+                    this.prosPage = 1; this.loadProspeccao();
+                },
+                prosArrow(col) { return this.prosSort !== col ? '' : (this.prosOrder === 'asc' ? ' ▲' : ' ▼'); },
+                zapDigits(n) {  // dígitos: tira DDI 55 + insere 9º dígito em celular antigo (8 díg)
+                    if (!n) return '';
+                    let d = String(n).replace(/\D/g, '');
+                    if (d.startsWith('55') && d.length >= 12) d = d.slice(2);          // tira DDI
+                    if (d.length === 10 && ['6','7','8','9'].includes(d[2]))           // celular antigo
+                        d = d.slice(0,2) + '9' + d.slice(2);                           // insere o 9
+                    return d;
+                },
+                fmtZap(n) {  // exibição: celular (DD) 9XXXX-XXXX · fixo (DD) XXXX-XXXX
+                    const d = this.zapDigits(n);
+                    if (d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
+                    if (d.length === 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
+                    return d;
+                },
                 exportProspeccaoCSV() {
                     const qs = '?' + (this.prosUf ? `uf=${this.prosUf}&` : '') + (this.prosCanal ? `canal=${this.prosCanal}&` : '') + (this.prosQ ? `q=${encodeURIComponent(this.prosQ)}` : '');
                     window.location.href = '/api/prospeccao/csv' + qs;
+                },
+                async loadTecStats() { try { const d = await this.jget('/api/tecnicos/stats'); this.tecStats = (d && d[0]) || {}; } catch (e) { this.setErr(e); } },
+                async loadTecnicos() {
+                    this.tecLoading = true;
+                    const qs = `?page=${this.tecPage}&page_size=50`
+                             + (this.tecUf ? `&uf=${this.tecUf}` : '')
+                             + (this.tecProf ? `&prof=${this.tecProf}` : '')
+                             + (this.tecCanal ? `&canal=${this.tecCanal}` : '')
+                             + (this.tecQ ? `&q=${encodeURIComponent(this.tecQ)}` : '')
+                             + (this.tecSort ? `&sort=${this.tecSort}&order=${this.tecOrder}` : '');
+                    try {
+                        const d = await this.jget('/api/tecnicos' + qs);
+                        this.tec = d.rows || []; this.tecTotal = d.total || 0; this.tecPages = d.total_pages || 1;
+                        this.loaded.tecnicos = true;
+                    } catch (e) { this.setErr(e); }
+                    finally { this.tecLoading = false; }
+                },
+                tecFiltrar() { this.tecPage = 1; this.loadTecnicos(); this.loadTecStats(); },
+                irTec(delta) { const n = this.tecPage + delta; if (n < 1 || n > this.tecPages) return; this.tecPage = n; this.loadTecnicos(); },
+                setTecSort(col) {
+                    if (this.tecSort === col) { this.tecOrder = this.tecOrder === 'asc' ? 'desc' : 'asc'; }
+                    else { this.tecSort = col; this.tecOrder = 'asc'; }
+                    this.tecPage = 1; this.loadTecnicos();
+                },
+                tecArrow(col) { return this.tecSort !== col ? '' : (this.tecOrder === 'asc' ? ' ▲' : ' ▼'); },
+                exportTecnicosCSV() {
+                    const qs = '?' + (this.tecUf ? `uf=${this.tecUf}&` : '') + (this.tecProf ? `prof=${this.tecProf}&` : '') + (this.tecCanal ? `canal=${this.tecCanal}&` : '') + (this.tecQ ? `q=${encodeURIComponent(this.tecQ)}` : '');
+                    window.location.href = '/api/tecnicos/csv' + qs;
                 },
                 // --- ordenação CLIENT-SIDE (tabelas pequenas já carregadas) ---
                 sortState: {},
@@ -2514,7 +2709,7 @@
                     return out;
                 },
                 // --- ordenação SERVER-SIDE (lista de leads paginada) ---
-                leadsSort: '', leadsOrder: 'asc',
+                leadsSort: 'score', leadsOrder: 'desc',
                 setLeadsSort(col) {
                     if (this.leadsSort === col) {
                         this.leadsOrder = this.leadsOrder === 'asc' ? 'desc' : 'asc';
