@@ -33,10 +33,15 @@ with httpx.Client(timeout=25) as cl:
     for i,r in enumerate(rows,1):
         dom=host(r['ext']); first,last=split_nome(r['decisor'])
         if not first: continue
-        try:
-            j=cl.get('https://api.hunter.io/v2/email-finder',params={'domain':dom,'first_name':first,'last_name':last,'api_key':KEY}).json()
-            em=j.get('data',{}).get('email'); sc=j.get('data',{}).get('score')
-        except Exception: em=sc=None
+        em=sc=None; ok_api=False
+        for t in range(3):   # retry: falha de API != "vazio" (que é permanente)
+            try:
+                j=cl.get('https://api.hunter.io/v2/email-finder',params={'domain':dom,'first_name':first,'last_name':last,'api_key':KEY}).json()
+                em=j.get('data',{}).get('email'); sc=j.get('data',{}).get('score'); ok_api=True; break
+            except Exception:
+                time.sleep(2*(t+1))
+        if not ok_api:
+            print(f"  {i} API falhou 3x — pulado (re-run tenta de novo)", file=sys.stderr); continue
         if em: achou+=1
         cur.execute("INSERT INTO prospeccao.hunter_ig(username,dominio,decisor,email_decisor,score) VALUES(%s,%s,%s,%s,%s) ON CONFLICT(username) DO UPDATE SET email_decisor=EXCLUDED.email_decisor,score=EXCLUDED.score",
                     (r['username'],dom,r['decisor'],em,sc))

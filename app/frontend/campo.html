@@ -755,6 +755,17 @@
   </div>
 
 <script>
+// Vírgula decimal BR: "412,5" passa por parseFloat do x-model.number e vira 412.
+// Normaliza ','->'.' em TODO input inputmode="decimal", em fase de CAPTURA no
+// document (roda antes do listener do Alpine, que fica no próprio elemento).
+document.addEventListener('input', e => {
+  const el = e.target;
+  if (el && el.getAttribute && el.getAttribute('inputmode') === 'decimal' && el.value && el.value.includes(',')) {
+    const pos = el.selectionStart;
+    el.value = el.value.replace(/,/g, '.');
+    try { el.setSelectionRange(pos, pos); } catch(_){}
+  }
+}, true);
 function campo() {
   return {
     tab:'fazenda', online:navigator.onLine, syncing:false, toast:'',
@@ -772,7 +783,7 @@ function campo() {
     venda:{tipo:'semen', quantidade:1, valor_unitario:null, salvando:false},
     dg:{pendentes:[]},
     nascimentos:[],   // Brief A/F1: cruzamentos prenhes p/ vincular no cadastro do bezerro
-    monta:{ estacoes:[], sel:null, resumo:{}, por_touro:[], novo:{nome:''}, grupo:0, d0:'', touroQ:'', touroRes:[], touro:null, inseminando:false },
+    monta:{ estacoes:[], sel:null, resumo:{}, por_touro:[], novo:{nome:''}, grupo:0, d0:'', touroQ:'', touroRes:[], touro:null, inseminando:false, loteUuid:null },
     psheet:{open:false, animal:null, nome:'', peso_kg:null, escore_corporal:null, altura_cm:null, obs:''},
     ssheet:{open:false, animal:null, nome:'', tipo:'vacina', produto:'', dose:'', via:'', proxima_dose:'', responsavel:'', obs:'', origem_lembrete_id:null},
     agenda:{itens:[], resumo:{}, dias:30, loading:false},
@@ -785,7 +796,16 @@ function campo() {
     animalVazio(){ return {sexo:'F', brinco:'', eid:'', sisbov:'', nome:'', registro:'', raca_id:null, categoria:'', peso_kg:null, escore_corporal:null, iqgg:null, gpd:null, aol:null, catalogo_id:null, pai_catalogo_id:null, cruzamento_id:null}; },
 
     async init(){
-      this.outbox = JSON.parse(localStorage.getItem('wins_outbox')||'[]');
+      // localStorage corrompido NÃO pode matar o app na 1ª linha do init:
+      // preserva o blob p/ perícia e segue com fila vazia.
+      try {
+        const raw = JSON.parse(localStorage.getItem('wins_outbox')||'[]');
+        this.outbox = Array.isArray(raw) ? raw : [];
+      } catch(e){
+        try { localStorage.setItem('wins_outbox_corrompido', localStorage.getItem('wins_outbox')); } catch(_){}
+        this.outbox = [];
+        this.flash('⚠ Fila local estava corrompida e foi zerada');
+      }
       this.tab = localStorage.getItem('wins_tab') || 'fazenda';
       window.addEventListener('online', ()=>{ this.online=true; this.sync(); });
       window.addEventListener('offline', ()=>{ this.online=false; });
@@ -849,6 +869,9 @@ function campo() {
       return j;
     },
     uuid(){ return (crypto.randomUUID ? crypto.randomUUID() : 'u'+Date.now()+Math.random().toString(16).slice(2)); },
+    // data LOCAL (não toISOString, que vira o dia seguinte das 21h às 0h BRT).
+    // Carimbada na CAPTURA: replay do outbox dias depois mantém a data real do evento.
+    hojeISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); },
     isApp(){ return /WiNSCampoApp/.test(navigator.userAgent); },  // dentro do APK (WebView)
     persist(){
       try { localStorage.setItem('wins_outbox', JSON.stringify(this.outbox)); this.armazenamentoCheio=false; }
@@ -863,13 +886,33 @@ function campo() {
     // precisa de atenção); 'synced' = enviado. pendentes() só conta o que ainda vai tentar.
     pendentes(){ return this.outbox.filter(o=>o.status==='pending'||o.status==='error').length; },
     falhados(){ return this.outbox.filter(o=>o.status==='failed').length; },
-    flash(m){ this.toast=m; setTimeout(()=>{ if(this.toast===m) this.toast=''; }, 2600); },
+    flash(m){
+      // com a memória cheia, toasts comuns ("salvo") não podem pisar no aviso crítico
+      if (this.armazenamentoCheio && !String(m).startsWith('⚠')) return;
+      this.toast=m; setTimeout(()=>{ if(this.toast===m) this.toast=''; }, 2600);
+    },
     clienteNome(){ const c=this.clientes.find(c=>c.id===this.cliente); return c? c.razao_social : ''; },
 
+    // Retorna false quando a captura foi RECUSADA (quota cheia): aceitar criaria um
+    // registro só-na-memória que some no próximo reload, com o usuário achando que salvou.
     enqueue(endpoint, payload){
+      if (this.armazenamentoCheio){
+        this.persist();   // re-tenta: sync pode ter liberado espaço desde o último estouro
+        if (this.armazenamentoCheio){
+          this.flash('⚠ Memória cheia — sincronize antes de capturar'); return false;
+        }
+      }
       this.outbox.push({id:payload.uuid, endpoint, payload, status:'pending', ts:Date.now()});
       this.persist();
+      if (this.armazenamentoCheio){
+        this.outbox.pop();   // este item não coube no storage: recusa honestamente
+        this.persist();
+        this.armazenamentoCheio = true;   // pop pode ter "cabido" — o aviso fica de pé
+        this.flash('⚠ Memória cheia — sincronize antes de capturar');
+        return false;
+      }
       this.sync();
+      return true;
     },
 
     async sync(){
@@ -957,10 +1000,10 @@ function campo() {
     // ---------- curral ----------
     cadastrar(){
       if(!this.cliente){ this.flash('Selecione a fazenda'); return; }
-      const p = {uuid:this.uuid(), cliente_id:this.cliente, grupo_id:this.grupo||null, ...this.novo};
+      const p = {uuid:this.uuid(), cliente_id:this.cliente, grupo_id:this.grupo||null, data_captura:this.hojeISO(), ...this.novo};
       // tira campos vazios numéricos
       ['peso_kg','escore_corporal','iqgg','gpd','aol'].forEach(k=>{ if(p[k]===''||p[k]===undefined) p[k]=null; });
-      this.enqueue('/api/campo/animal', p);
+      if(!this.enqueue('/api/campo/animal', p)) return;
       this.flash((p.sexo==='F'?'Fêmea':'Macho')+' '+(p.nome||p.brinco||'')+' salvo'+(this.online?'':' (offline)'));
       this.novo = this.animalVazio();
       this.cat = {q:'', results:[], loading:false, vinculado:null};
@@ -1057,8 +1100,9 @@ function campo() {
       const s=this.stsheet, a=s.animal;
       // uuid p/ id do outbox; o endpoint ignora o campo extra (idempotente por natureza)
       const payload = {uuid:this.uuid(), animal_id:a.id, status:s.status, eh_doadora:s.eh_doadora,
-        motivo_descarte:s.motivo_descarte||null, data_saida:s.data_saida||null};
-      this.enqueue('/api/campo/animal/status', payload);
+        motivo_descarte:s.motivo_descarte||null,
+        data_saida:s.data_saida || (s.status!=='ativo' ? this.hojeISO() : null)};
+      if(!this.enqueue('/api/campo/animal/status', payload)) return;
       a.status=s.status; a.eh_doadora=s.eh_doadora; a.motivo_descarte=s.motivo_descarte||null;
       s.open=false;
       this.flash('Atualizado: '+s.nome+(this.online?'':' (offline)'));
@@ -1075,9 +1119,9 @@ function campo() {
       if((s.peso_kg===null||s.peso_kg==='') && (s.escore_corporal===null||s.escore_corporal==='')){
         this.flash('Informe peso ou escore'); return;
       }
-      this.enqueue('/api/campo/pesagem', {uuid:this.uuid(), animal_id:a.id,
+      if(!this.enqueue('/api/campo/pesagem', {uuid:this.uuid(), animal_id:a.id, data_medicao:this.hojeISO(),
         peso_kg:s.peso_kg ?? null, escore_corporal:s.escore_corporal ?? null, altura_cm:s.altura_cm ?? null,
-        grupo_id:this.grupo||null, origem:'manual', obs:s.obs||null});
+        grupo_id:this.grupo||null, origem:'manual', obs:s.obs||null})) return;
       if(s.peso_kg!=null && s.peso_kg!=='') a.peso_atual_kg=s.peso_kg;
       if(s.escore_corporal!=null) a.escore_corporal=s.escore_corporal;
       s.open=false;
@@ -1090,9 +1134,9 @@ function campo() {
     salvarSanitario(){
       const s=this.ssheet, a=s.animal;
       if(!s.produto){ this.flash('Informe o produto/vacina'); return; }
-      this.enqueue('/api/campo/sanitario', {uuid:this.uuid(), animal_id:a.id, tipo:s.tipo,
+      if(!this.enqueue('/api/campo/sanitario', {uuid:this.uuid(), animal_id:a.id, tipo:s.tipo, data_evento:this.hojeISO(),
         produto:s.produto, dose:s.dose||null, via:s.via||null, proxima_dose:s.proxima_dose||null,
-        responsavel:s.responsavel||null, obs:s.obs||null, origem_lembrete_id:s.origem_lembrete_id||null});
+        responsavel:s.responsavel||null, obs:s.obs||null, origem_lembrete_id:s.origem_lembrete_id||null})) return;
       const veioDaAgenda = !!s.origem_lembrete_id;
       s.open=false;
       this.flash(s.tipo+' em '+s.nome+' registrado'+(this.online?'':' (offline)'));
@@ -1134,11 +1178,13 @@ function campo() {
       const piores = (this.audit.data.ranking||[]).filter(r=>r.prioridade_corretiva);
       if(!piores.length) return;
       if(!confirm('Marcar '+piores.length+' fêmea(s) de prioridade corretiva como DESCARTE? (pode reverter no Rebanho)')) return;
+      let aceitos=0;
       piores.forEach(r=>{
-        this.enqueue('/api/campo/animal/status', {uuid:this.uuid(), animal_id:r.id, status:'descarte',
-          motivo_descarte:'auditoria: baixo índice genético'});
+        if(this.enqueue('/api/campo/animal/status', {uuid:this.uuid(), animal_id:r.id, status:'descarte',
+          motivo_descarte:'auditoria: baixo índice genético'})) aceitos++;
       });
-      this.flash(piores.length+' marcada(s) p/ descarte'+(this.online?'':' (offline)'));
+      if(!aceitos) return;
+      this.flash(aceitos+' marcada(s) p/ descarte'+(this.online?'':' (offline)'));
       if(this.online) setTimeout(()=>{ this.carregaAuditoria(); this.carregaAnimais(); }, 1300);
     },
 
@@ -1170,10 +1216,10 @@ function campo() {
     salvarMov(){
       if(!this.cliente){ this.flash('Selecione a fazenda'); return; }
       const p = {uuid:this.uuid(), cliente_id:this.cliente, tipo:this.mov.tipo,
-        data_evento:this.mov.data_evento||null, gta_numero:this.mov.gta_numero||null,
+        data_evento:this.mov.data_evento||this.hojeISO(), gta_numero:this.mov.gta_numero||null,
         origem:this.mov.origem||null, destino:this.mov.destino||null,
         finalidade:this.mov.finalidade||null, quantidade:this.mov.quantidade||null, obs:this.mov.obs||null};
-      this.enqueue('/api/campo/movimentacao', p);
+      if(!this.enqueue('/api/campo/movimentacao', p)) return;
       this.flash('Movimentação registrada'+(this.online?'':' (offline)'));
       this.mov.gta_numero=''; this.mov.origem=''; this.mov.destino=''; this.mov.finalidade='';
       this.mov.quantidade=null; this.mov.obs='';
@@ -1196,12 +1242,12 @@ function campo() {
     },
     concluirLembrete(it){
       // remoção otimista + dispensa via OUTBOX (sobrevive offline; idempotente por id no servidor)
+      if(!this.enqueue('/api/campo/agenda/concluir', {uuid:this.uuid(), id:it.id})) return;
       this.agenda.itens = this.agenda.itens.filter(x=>x.id!==it.id);
       const dec = k => { this.agenda.resumo[k] = Math.max(0, (this.agenda.resumo[k]||0) - 1); };
       if(it.status==='atrasado') dec('atrasado');
       else if(it.status==='hoje') dec('hoje');
       else dec('proximo');
-      this.enqueue('/api/campo/agenda/concluir', {uuid:this.uuid(), id:it.id});
       this.flash('Lembrete dispensado'+(this.online?'':' (offline)'));
     },
 
@@ -1231,12 +1277,15 @@ function campo() {
       if(!this.cruza.vacaId){ this.flash('Abra o cruzamento pelo Rebanho p/ registrar'); return; }
       if(!this.cliente){ this.flash('Selecione a fazenda'); return; }
       this.cruza.registrando=true;
-      this.enqueue('/api/campo/cruzamento', {
+      const aceito = this.enqueue('/api/campo/cruzamento', {
         uuid:this.uuid(), cliente_id:this.cliente, vaca_id:this.cruza.vacaId,
+        data_cruzamento:this.hojeISO(),
         touro_id:c.id, touro_nome:c.nome||null,
         ganho_cria:(c.ganho_cria ?? null), prog_iqgg:(c.prog_iqgg ?? null), prenhez_est:(c.prenhez_est ?? null),
       });
-      this.cruza.registrando=false; this.cruza.registrado=true;
+      this.cruza.registrando=false;
+      if(!aceito) return;
+      this.cruza.registrado=true;
       this.flash('Cruzamento registrado'+(this.online?'':' (offline)'));
       if(this.online) setTimeout(()=>this.carregaDG(), 900);   // novo cruzamento -> entra na fila de DG
     },
@@ -1251,8 +1300,8 @@ function campo() {
       catch(e){ /* offline: mantém o que tem */ }
     },
     marcarDG(d, resultado){
+      if(!this.enqueue('/api/campo/cruzamento/dg', {uuid:this.uuid(), cruzamento_id:d.id, resultado, data_dg:this.hojeISO()})) return;
       this.dg.pendentes = this.dg.pendentes.filter(x=>x.id!==d.id);   // remoção otimista
-      this.enqueue('/api/campo/cruzamento/dg', {uuid:this.uuid(), cruzamento_id:d.id, resultado});
       this.flash('DG: '+(resultado==='prenhe'?'prenhe ✓':'vazia')+(this.online?'':' (offline)'));
     },
     // ---------- estação de monta (Brief B) ----------
@@ -1272,7 +1321,7 @@ function campo() {
         this.flash('Estação criada');
       }catch(e){ this.flash('Erro: criar estação exige conexão'); }
     },
-    selecionarEstacao(e){ this.monta.sel=e; this.monta.touro=null; this.monta.touroQ=''; this.monta.touroRes=[]; this.carregaResumoEstacao(); },
+    selecionarEstacao(e){ this.monta.sel=e; this.monta.touro=null; this.monta.touroQ=''; this.monta.touroRes=[]; this.monta.loteUuid=null; this.carregaResumoEstacao(); },
     async carregaResumoEstacao(){
       if(!this.monta.sel) return;
       try{ const r = await this.api('GET','/api/campo/estacao/'+this.monta.sel.id+'/resumo'); this.monta.resumo=r.resumo||{}; this.monta.por_touro=r.por_touro||[]; }catch(e){}
@@ -1282,15 +1331,18 @@ function campo() {
       if(q.length<2){ this.monta.touroRes=[]; return; }
       try{ this.monta.touroRes = await this.api('GET','/api/campo/catalogo/busca?sexo=M&q='+encodeURIComponent(q)); }catch(e){ this.monta.touroRes=[]; }
     },
-    pickTouroMonta(t){ this.monta.touro=t; this.monta.touroRes=[]; this.monta.touroQ=t.nome||''; },
+    pickTouroMonta(t){ this.monta.touro=t; this.monta.touroRes=[]; this.monta.touroQ=t.nome||''; this.monta.loteUuid=null; },
     async inseminarLote(){
       if(!this.monta.sel || !this.monta.touro){ this.flash('Escolha estação e touro'); return; }
       if(!this.online){ this.flash('IATF em lote exige conexão'); return; }
       this.monta.inseminando=true;
+      // uuid ESTÁVEL por tentativa de lote: retry após timeout reusa o mesmo uuid
+      // (o backend deriva o uuid de cada cruzamento dele) -> não duplica o lote.
+      if(!this.monta.loteUuid) this.monta.loteUuid = this.uuid();
       try{
-        const r = await this.api('POST','/api/campo/estacao/iatf', {uuid:this.uuid(), estacao_id:this.monta.sel.id, cliente_id:this.cliente, touro_id:this.monta.touro.id, touro_nome:this.monta.touro.nome, grupo_id:this.monta.grupo||null});
+        const r = await this.api('POST','/api/campo/estacao/iatf', {uuid:this.monta.loteUuid, estacao_id:this.monta.sel.id, cliente_id:this.cliente, touro_id:this.monta.touro.id, touro_nome:this.monta.touro.nome, grupo_id:this.monta.grupo||null});
         this.flash((r.inseminadas||0)+' matriz(es) inseminada(s)');
-        this.monta.touro=null; this.monta.touroQ='';
+        this.monta.touro=null; this.monta.touroQ=''; this.monta.loteUuid=null;
         await this.carregaResumoEstacao(); await this.carregaEstacoes();
       }catch(e){ this.flash('Erro na IATF (exige conexão)'); }
       this.monta.inseminando=false;
@@ -1306,12 +1358,12 @@ function campo() {
     salvarVenda(){
       if(!this.cliente){ this.flash('Selecione a fazenda'); return; }
       const c = this.cruza.chosen;
-      this.enqueue('/api/campo/venda', {
-        uuid:this.uuid(), cliente_id:this.cliente,
+      if(!this.enqueue('/api/campo/venda', {
+        uuid:this.uuid(), cliente_id:this.cliente, data_venda:this.hojeISO(),
         touro_id:(c?c.id:null), touro_nome:(c?c.nome:null),
         tipo:this.venda.tipo, quantidade:(this.venda.quantidade||1),
         valor_unitario:(this.venda.valor_unitario||null),
-      });
+      })) return;
       this.flash('Venda registrada'+(this.online?'':' (offline)'));
       this.venda={tipo:'semen', quantidade:1, valor_unitario:null, salvando:false};
     },

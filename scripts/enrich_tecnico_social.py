@@ -55,11 +55,16 @@ UFS_BR = {'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA',
 
 def digits(s): return re.sub(r'\D','',s or '')
 
-def serper(q):
-    r = httpx.post("https://google.serper.dev/search",
-                   headers={"X-API-KEY":KEY,"Content-Type":"application/json"},
-                   json={"q":q,"gl":"br","hl":"pt","num":10}, timeout=20)
-    r.raise_for_status(); return r.json()
+def serper(q, tries=3):
+    for t in range(tries):
+        try:
+            r = httpx.post("https://google.serper.dev/search",
+                           headers={"X-API-KEY":KEY,"Content-Type":"application/json"},
+                           json={"q":q,"gl":"br","hl":"pt","num":10}, timeout=20)
+            r.raise_for_status(); return r.json()
+        except Exception:
+            if t == tries-1: raise
+            time.sleep(2*(t+1))
 
 def _name_tokens(nm):
     return {t for t in re.split(r'\W+', (nm or "").upper()) if len(t)>=4 and not t.isdigit() and t not in

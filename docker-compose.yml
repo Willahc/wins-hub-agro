@@ -1,28 +1,37 @@
-version: "3.9"
+# version 2.4 (não 3.x): docker-compose v1.29 só honra mem_limit no formato 2.x
+# (no 3.x ele é silenciosamente ignorado fora de swarm).
+version: "2.4"
 
 services:
   db:
     image: postgres:16-alpine
     restart: always
     env_file: .env
+    mem_limit: 2g
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      # Apenas localhost — não exposto à internet. api/metabase acessam via rede interna (db:5432).
+      # Apenas localhost — não exposto à internet. api acessa via rede interna (db:5432).
       - "127.0.0.1:5432:5432"
 
   api:
     build: ./app
     restart: always
     env_file: .env
+    environment:
+      TZ: America/Sao_Paulo
+    # 1.5g: o export CSV nacional (200k leads) materializa as linhas em memória
+    mem_limit: 1536m
     depends_on:
       - db
     expose:
       - "8000"
 
   nginx:
-    image: nginx:alpine
+    # pinada na minor da imagem em produção (1.31.x) — :alpine puro flutua de major
+    image: nginx:1.31-alpine
     restart: always
+    mem_limit: 256m
     ports:
       - "80:80"
       - "443:443"
@@ -34,7 +43,10 @@ services:
       - api
 
   certbot:
-    image: certbot/certbot
+    # pinada na versão em produção — :latest flutua
+    image: certbot/certbot:v5.6.0
+    restart: unless-stopped
+    mem_limit: 256m
     volumes:
       - ./certbot/www:/var/www/certbot
       - ./certbot/conf:/etc/letsencrypt

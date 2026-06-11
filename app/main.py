@@ -28,7 +28,7 @@ logger = logging.getLogger("wins_agro")
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 # Versão do shell — bumpar a cada deploy de front. O cliente compara com /api/version e
 # se auto-atualiza (limpa cache + reload) se estiver velho. Mata o "downgrade pra v1".
-APP_VERSION = "2026-06-11.6"
+APP_VERSION = "2026-06-11.7"
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 
@@ -92,8 +92,10 @@ DB_CONFIG = {
     "host": os.getenv("DB_HOST", "db"),
     "port": int(os.getenv("DB_PORT", 5432)),
     "dbname": os.getenv("POSTGRES_DB", "wins_agro"),
-    "user": os.getenv("POSTGRES_USER", "postgres"),
-    "password": os.getenv("POSTGRES_PASSWORD", ""),
+    # least-privilege: a app conecta como DB_USER (wins_app, só DML nos schemas de
+    # negócio) — POSTGRES_USER/PASSWORD ficam só p/ o container do banco (superuser).
+    "user": os.getenv("DB_USER") or os.getenv("POSTGRES_USER", "postgres"),
+    "password": os.getenv("DB_PASSWORD") or os.getenv("POSTGRES_PASSWORD", ""),
 }
 
 # IQGg = Índice de Qualificação Genética Genômica (Básico) — catalogo.caracteristica.id = 20
@@ -285,6 +287,16 @@ async def simulador_proposta(t: int, m: int = 100, p: float = 60, a: float = Non
     """PDF da proposta de retorno (Feature 5) — público, ZERO PII. `t`=touro Monte Sião,
     `m`=matrizes, `p`=prenhez atual %, `a`=preço @ (default = boi gordo ao vivo)."""
     try:
+        import math
+        # endpoint PÚBLICO: clamp de tudo que entra no cálculo/PDF. float('nan'/'inf')
+        # passa pelo parse do FastAPI e estoura no round(); valores absurdos não fazem
+        # sentido e encarecem o WeasyPrint de graça.
+        m = max(0, min(int(m), 100_000))
+        p = float(p) if (p is not None and math.isfinite(float(p))) else 60.0
+        p = max(0.0, min(p, 100.0))
+        if a is not None:
+            a = float(a)
+            a = a if (math.isfinite(a) and 0 < a <= 5000) else None
         rows = query(
             f"""SELECT r.id, r.nome, ra.nome AS raca,
                        MAX(av.valor) FILTER (WHERE av.caracteristica_id = {PD_ID})  AS pd,
@@ -302,7 +314,10 @@ async def simulador_proposta(t: int, m: int = 100, p: float = 60, a: float = Non
         if not rows:
             return JSONResponse({"error": "touro fora do catálogo Monte Sião"}, status_code=404)
         b = rows[0]
-        arroba = a if (a and a > 0) else (external_apis.boi_gordo() or {}).get("valor")
+        # handler é async: o fetch da arroba (HTTP externo, até 20s) vai pro threadpool
+        # p/ não bloquear o event loop inteiro do uvicorn.
+        arroba = a if (a and a > 0) else \
+            (await run_in_threadpool(external_apis.boi_gordo) or {}).get("valor")
         pd, pes, preco_dose = b.get("pd"), b.get("pes"), b.get("preco_dose")
         ganho_cria = round(pd * arroba / 30) if (pd and pd > 0 and arroba) else None
         prenhez_esp = _prenhez_est(pes) or int(p)
@@ -599,14 +614,30 @@ def centrais():
             """
             -- CRV Brasil (id 23) e CRV Lagoa (id 9) são a MESMA central, cadastradas
             -- em 2 registros -> consolida na linha "CRV" (nome canônico).
-            SELECT CASE WHEN c.nome ILIKE 'CRV%%' THEN 'CRV' ELSE c.nome END AS central,
-                   COUNT(DISTINCT tc.reprodutor_id) AS total_touros,
-                   COUNT(DISTINCT o.id) AS total_ofertas,
-                   ROUND(AVG(o.preco_dose_brl)::numeric, 2) AS preco_medio
-            FROM catalogo.central c
-            LEFT JOIN mercado.touro_central tc ON tc.central_id = c.id
-            LEFT JOIN mercado.touro_oferta o ON o.central_id = c.id
-            GROUP BY CASE WHEN c.nome ILIKE 'CRV%%' THEN 'CRV' ELSE c.nome END
+            -- Agregados por CTE separada: o join duplo touro_central × touro_oferta
+            -- fazia fan-out e distorcia o AVG (cada oferta repetida N vezes).
+            WITH cn AS (
+                SELECT id, CASE WHEN nome ILIKE 'CRV%%' THEN 'CRV' ELSE nome END AS central
+                FROM catalogo.central
+            ),
+            t AS (
+                SELECT cn.central, COUNT(DISTINCT tc.reprodutor_id) AS total_touros
+                FROM cn JOIN mercado.touro_central tc ON tc.central_id = cn.id
+                GROUP BY cn.central
+            ),
+            o AS (
+                SELECT cn.central, COUNT(*) AS total_ofertas,
+                       ROUND(AVG(ofr.preco_dose_brl)::numeric, 2) AS preco_medio
+                FROM cn JOIN mercado.touro_oferta ofr ON ofr.central_id = cn.id
+                GROUP BY cn.central
+            )
+            SELECT c.central,
+                   COALESCE(t.total_touros, 0) AS total_touros,
+                   COALESCE(o.total_ofertas, 0) AS total_ofertas,
+                   o.preco_medio
+            FROM (SELECT DISTINCT central FROM cn) c
+            LEFT JOIN t USING (central)
+            LEFT JOIN o USING (central)
             ORDER BY total_touros DESC
             """
         )
@@ -1210,14 +1241,20 @@ def acasalamento(matriz_id: int, prioridade: str = "geral",
                 GROUP BY reprodutor_id
             ),
             ofertas AS (
-                SELECT reprodutor_id, MIN(preco_dose_brl) AS preco
-                FROM mercado.touro_oferta WHERE preco_dose_brl IS NOT NULL GROUP BY reprodutor_id
+                -- menor preço E a central DESSE preço (a exibida tem que ser a do preço,
+                -- não a 1ª em ordem alfabética de touro_central)
+                SELECT DISTINCT ON (o.reprodutor_id)
+                       o.reprodutor_id, o.preco_dose_brl AS preco, co.nome AS central_preco
+                FROM mercado.touro_oferta o
+                LEFT JOIN catalogo.central co ON co.id = o.central_id
+                WHERE o.preco_dose_brl IS NOT NULL
+                ORDER BY o.reprodutor_id, o.preco_dose_brl ASC
             )
             SELECT * FROM (
                 SELECT DISTINCT ON (r.id)
                     r.id, r.nome, r.registro, r.fazenda_origem, r.uf, r.municipio, ra.sigla AS raca_sigla,
                     r.pai_registro, r.mae_registro, r.avo_materno_registro, r.mae_id, r.pai_id,
-                    c.nome AS central, o.preco AS preco_dose, d.*
+                    COALESCE(o.central_preco, c.nome) AS central, o.preco AS preco_dose, d.*
                 FROM mercado.reprodutor r
                 JOIN catalogo.raca ra ON ra.id = r.raca_id
                 JOIN deps d ON d.reprodutor_id = r.id
@@ -2165,12 +2202,17 @@ async def externo_valor_mapa(uf: str = None, min_valor: int = 10000):
 
 
 @app.get("/api/leads/csv")
-def leads_csv(uf: str = None, segmento: str = "corte", limit: int = 200000):
+def leads_csv(request: Request, uf: str = None, segmento: str = "corte", limit: int = 200000):
     """Exporta o CONJUNTO FILTRADO de leads (não só a página) em CSV para CRM.
     Cap 200 mil: cobre o corte nacional inteiro (~146 mil empresas) já com decisor."""
     base = _leads_rows(uf, segmento, min(limit, 200000), 0)
     if isinstance(base, dict):  # erro
         return base
+    # trilha de auditoria do export de PII (LGPD): quem, o quê, quanto, de onde.
+    _user = get_current_user(request) or {}
+    logger.warning("AUDIT export CSV leads: user=%s uf=%s segmento=%s linhas=%s ip=%s",
+                   _user.get("sub", "?"), uf, segmento, len(base),
+                   request.headers.get("x-real-ip") or (request.client.host if request.client else "?"))
     import csv as _csv
 
     buf = io.StringIO()
@@ -2520,6 +2562,8 @@ class AnimalIn(BaseModel):
     catalogo_id: int | None = None      # ponte: vincula ao reprodutor REAL do catálogo
     pai_catalogo_id: int | None = None  # ponte pelo pai: vincula o touro real (genética + consanguinidade)
     cruzamento_id: int | None = None    # Brief A/F1: bezerro nascido DESTE cruzamento (fecha o loop)
+    data_captura: str | None = None     # data em que o registro foi capturado no campo (replay
+                                        # offline dias depois não desloca a 1ª pesagem p/ hoje)
 
 
 class PesagemIn(BaseModel):
@@ -2826,11 +2870,20 @@ def campo_grupo(req: GrupoIn):
     try:
         with _tx() as conn:
             cur = _cur(conn)
+            # idempotência por (cliente, nome): retry/duplo-toque devolve o lote existente
+            # em vez de criar duplicata (única escrita do campo que não tinha uuid).
+            cur.execute(
+                """SELECT id FROM fazenda.grupo_manejo
+                    WHERE cliente_id = %(c)s AND lower(trim(nome)) = lower(trim(%(n)s))""",
+                {"c": req.cliente_id, "n": req.nome})
+            ex = cur.fetchone()
+            if ex:
+                return {"id": ex["id"], "novo": False}
             cur.execute(
                 """INSERT INTO fazenda.grupo_manejo (cliente_id, nome, tipo, data_inicio, criado_em)
                    VALUES (%(c)s,%(n)s,%(t)s,%(d)s, now()) RETURNING id""",
                 {"c": req.cliente_id, "n": req.nome, "t": req.tipo, "d": req.data_inicio or None})
-            return {"id": cur.fetchone()["id"]}
+            return {"id": cur.fetchone()["id"], "novo": True}
     except Exception as e:
         return _error(e)
 
@@ -2971,8 +3024,9 @@ def campo_animal(req: AnimalIn):
                 cur.execute(
                     """INSERT INTO fazenda.medicao
                          (animal_id, data_medicao, peso_kg, escore_corporal, grupo_id, origem, medido_em)
-                       VALUES (%(a)s, current_date, %(p)s, %(e)s, %(g)s, 'manual', now())""",
-                    {"a": animal_id, "p": req.peso_kg, "e": req.escore_corporal, "g": req.grupo_id})
+                       VALUES (%(a)s, COALESCE(%(d)s::date, current_date), %(p)s, %(e)s, %(g)s, 'manual', now())""",
+                    {"a": animal_id, "p": req.peso_kg, "e": req.escore_corporal, "g": req.grupo_id,
+                     "d": req.data_captura or None})
 
             reprodutor_id = None
             # 1) PONTE: animal escolhido na busca do catálogo -> vincula ao registro REAL
@@ -2994,28 +3048,58 @@ def campo_animal(req: AnimalIn):
                 cur.execute("SELECT razao_social, uf, municipio FROM fazenda.cliente WHERE id = %(c)s",
                             {"c": req.cliente_id})
                 cli = cur.fetchone() or {}
+                prog = f"fazenda_{req.cliente_id}"
+                campos = {"reg": registro_m, "nome": req.nome or registro_m, "raca": req.raca_id,
+                          "faz": cli.get("razao_social"), "uf": cli.get("uf"), "mun": cli.get("municipio"),
+                          "pai_reg": (pai.get("registro") if pai else None),
+                          "pai_nome": (pai.get("nome") if pai else None),
+                          "ref": f"Rebanho {cli.get('razao_social')}", "prog": prog}
+                # registro REAL pode colidir com animal do catálogo (104k) ou de outra fazenda.
+                # Nesse caso VINCULA (mesma semântica da ponte catalogo_id) — nunca renomear/
+                # repedigrear/regravar avaliação de um animal que não é espelho DESTA fazenda.
                 cur.execute(
-                    """INSERT INTO mercado.reprodutor
-                         (registro, nome, especie_codigo, raca_id, sexo, fazenda_origem, uf, municipio,
-                          pai_registro, pai_nome, fonte_referencia, fonte_programa, coletado_em)
-                       VALUES (%(reg)s,%(nome)s,'BOV',%(raca)s,'F',%(faz)s,%(uf)s,%(mun)s,
-                          %(pai_reg)s,%(pai_nome)s,%(ref)s,%(prog)s, now())
-                       ON CONFLICT (registro, raca_id) DO UPDATE SET
-                          nome=EXCLUDED.nome, fazenda_origem=EXCLUDED.fazenda_origem,
-                          uf=EXCLUDED.uf, municipio=EXCLUDED.municipio,
-                          pai_registro=EXCLUDED.pai_registro, pai_nome=EXCLUDED.pai_nome,
-                          fonte_programa=EXCLUDED.fonte_programa
-                       RETURNING id""",
-                    {"reg": registro_m, "nome": req.nome or registro_m, "raca": req.raca_id,
-                     "faz": cli.get("razao_social"), "uf": cli.get("uf"), "mun": cli.get("municipio"),
-                     "pai_reg": (pai.get("registro") if pai else None),
-                     "pai_nome": (pai.get("nome") if pai else None),
-                     "ref": f"Rebanho {cli.get('razao_social')}", "prog": f"fazenda_{req.cliente_id}"})
-                reprodutor_id = cur.fetchone()["id"]
+                    "SELECT id, fonte_programa FROM mercado.reprodutor WHERE registro=%(reg)s AND raca_id=%(raca)s",
+                    {"reg": registro_m, "raca": req.raca_id})
+                exist = cur.fetchone()
+                espelho_proprio = False
+                if exist and exist.get("fonte_programa") == prog:
+                    # re-cadastro/correção do espelho da própria fazenda: atualiza no lugar
+                    reprodutor_id = exist["id"]
+                    espelho_proprio = True
+                    cur.execute(
+                        """UPDATE mercado.reprodutor
+                              SET nome=%(nome)s, fazenda_origem=%(faz)s, uf=%(uf)s, municipio=%(mun)s,
+                                  pai_registro=%(pai_reg)s, pai_nome=%(pai_nome)s
+                            WHERE id=%(id)s""", {**campos, "id": reprodutor_id})
+                elif exist:
+                    reprodutor_id = exist["id"]  # animal real do catálogo -> só vincula
+                else:
+                    cur.execute(
+                        """INSERT INTO mercado.reprodutor
+                             (registro, nome, especie_codigo, raca_id, sexo, fazenda_origem, uf, municipio,
+                              pai_registro, pai_nome, fonte_referencia, fonte_programa, coletado_em)
+                           VALUES (%(reg)s,%(nome)s,'BOV',%(raca)s,'F',%(faz)s,%(uf)s,%(mun)s,
+                              %(pai_reg)s,%(pai_nome)s,%(ref)s,%(prog)s, now())
+                           ON CONFLICT (registro, raca_id) DO NOTHING
+                           RETURNING id""", campos)
+                    row = cur.fetchone()
+                    if row:
+                        reprodutor_id = row["id"]
+                        espelho_proprio = True
+                    else:
+                        # corrida: outro insert ganhou entre o SELECT e o INSERT -> vincula
+                        cur.execute(
+                            "SELECT id FROM mercado.reprodutor WHERE registro=%(reg)s AND raca_id=%(raca)s",
+                            {"reg": registro_m, "raca": req.raca_id})
+                        reprodutor_id = cur.fetchone()["id"]
 
                 # índices genômicos próprios da vaca -> avaliacao (regrava)
+                # SÓ no espelho da própria fazenda — animal real do catálogo mantém a
+                # avaliação genômica oficial intacta.
                 idx = {k: getattr(req, k) for k in _GENOMICO if getattr(req, k) is not None}
-                if idx:
+                if not espelho_proprio:
+                    pass
+                elif idx:
                     cur.execute(
                         "DELETE FROM mercado.avaliacao WHERE reprodutor_id=%(r)s AND caracteristica_id = ANY(%(ids)s)",
                         {"r": reprodutor_id, "ids": [_GENOMICO[k] for k in idx]})
@@ -3038,7 +3122,7 @@ def campo_animal(req: AnimalIn):
                         {"r": reprodutor_id, "v": dam_est})
 
                 # gravamos avaliação nova p/ esta raça -> baseline cacheado ficou velho
-                if idx or (pai and pai.get("iqgg") is not None):
+                if espelho_proprio and (idx or (pai and pai.get("iqgg") is not None)):
                     _invalida_media_raca(req.raca_id)
 
                 cur.execute("UPDATE fazenda.animal SET reprodutor_espelho_id=%(r)s WHERE id=%(a)s",
@@ -3252,6 +3336,9 @@ def campo_estacao_iatf(req: IatfLoteIn):
     único INSERT, com snapshot da previsão (= alimenta o flywheel em escala). Idempotente
     (uuid por matriz = uuid_lote-vaca_id; ON CONFLICT não duplica em replay do outbox)."""
     try:
+        # HTTP externo ANTES da transação: um fetch lento da arroba (até 20s) não pode
+        # segurar a transação (e os locks) abertos.
+        arroba = (external_apis.boi_gordo() or {}).get("valor")
         with _tx() as conn:
             cur = _cur(conn)
             # genética do touro (1 query) -> ganho/cria e prenhez são touro-dirigidos
@@ -3261,7 +3348,6 @@ def campo_estacao_iatf(req: IatfLoteIn):
                            MAX(valor) FILTER (WHERE caracteristica_id={IQGG_ID}) AS iqgg
                     FROM mercado.avaliacao WHERE reprodutor_id = %(t)s""", {"t": req.touro_id})
             g = cur.fetchone() or {}
-            arroba = (external_apis.boi_gordo() or {}).get("valor")
             pd, pes, tiqgg = g.get("pd"), g.get("pes"), g.get("iqgg")
             ganho = round(float(pd) * arroba / 30) if (pd and pd > 0 and arroba) else None
             prenhez = _prenhez_est(pes)
@@ -3465,12 +3551,24 @@ def campo_pesagem(req: PesagemIn):
                  "e": req.escore_corporal, "alt": req.altura_cm, "g": req.grupo_id,
                  "orig": req.origem or "manual", "disp": req.dispositivo, "obs": req.obs, "u": req.uuid})
             mid = cur.fetchone()["id"]
+            # snapshot do animal só atualiza se ESTA medição é a mais recente — replay
+            # fora de ordem do outbox (pesagem antiga sincronizada depois) não pode
+            # sobrescrever o peso/escore atual com valor velho.
+            eh_recente = """NOT EXISTS (
+                  SELECT 1 FROM fazenda.medicao m2
+                   WHERE m2.animal_id = %(a)s AND m2.id <> %(m)s
+                     AND m2.{col} IS NOT NULL AND m2.data_medicao > (
+                         SELECT data_medicao FROM fazenda.medicao WHERE id = %(m)s))"""
             if req.peso_kg is not None:
-                cur.execute("UPDATE fazenda.animal SET peso_atual_kg=%(p)s WHERE id=%(a)s",
-                            {"p": req.peso_kg, "a": req.animal_id})
+                cur.execute(
+                    "UPDATE fazenda.animal SET peso_atual_kg=%(p)s WHERE id=%(a)s AND "
+                    + eh_recente.format(col="peso_kg"),
+                    {"p": req.peso_kg, "a": req.animal_id, "m": mid})
             if req.escore_corporal is not None:
-                cur.execute("UPDATE fazenda.animal SET escore_corporal=%(e)s WHERE id=%(a)s",
-                            {"e": req.escore_corporal, "a": req.animal_id})
+                cur.execute(
+                    "UPDATE fazenda.animal SET escore_corporal=%(e)s WHERE id=%(a)s AND "
+                    + eh_recente.format(col="escore_corporal"),
+                    {"e": req.escore_corporal, "a": req.animal_id, "m": mid})
             return {"id": mid, "novo": True}
     except Exception as e:
         return _error(e)

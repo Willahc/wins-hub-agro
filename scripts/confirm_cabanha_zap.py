@@ -13,9 +13,14 @@ STOP={'FAZENDA','AGROPECUARIA','AGROPECUÁRIA','LTDA','AGRO','PECUARIA','PECUÁR
 def digits(s): return re.sub(r'\D','',s or '')
 def toks(nm): return {t for t in re.split(r'\W+',(nm or '').upper()) if len(t)>=4 and t not in STOP}
 
-def serper(q):
-    r=httpx.post("https://google.serper.dev/search",headers={"X-API-KEY":KEY,"Content-Type":"application/json"},
-                 json={"q":q,"gl":"br","hl":"pt","num":10},timeout=20); r.raise_for_status(); return r.json()
+def serper(q, tries=3):
+    for t in range(tries):
+        try:
+            r=httpx.post("https://google.serper.dev/search",headers={"X-API-KEY":KEY,"Content-Type":"application/json"},
+                         json={"q":q,"gl":"br","hl":"pt","num":10},timeout=20); r.raise_for_status(); return r.json()
+        except Exception:
+            if t==tries-1: raise
+            time.sleep(2*(t+1))
 
 def confirma(j, last8, ntok):
     """True se algum resultado tem o número (últimos 8 díg) E ≥1 token do nome."""
@@ -35,14 +40,20 @@ def main():
     ok=0
     for i,r in enumerate(rows,1):
         last8=r['whatsapp'][-8:]; ntok=toks(r['decisor'])|toks(r['fazenda'])
-        conf=False; src=None
+        conf=False; src=None; falhas=0; nq=0
         if ntok:
             dec=re.sub(r'\s+',' ',r['decisor'] or '').strip()
-            for q in (f'"{dec}" {r["fazenda"]} {r["uf"]}', f'{r["fazenda"]} {r["uf"]} whatsapp contato'):
+            queries=(f'"{dec}" {r["fazenda"]} {r["uf"]}', f'{r["fazenda"]} {r["uf"]} whatsapp contato')
+            nq=len(queries)
+            for q in queries:
                 try: conf,src=confirma(serper(q),last8,ntok)
-                except Exception as e: print(f"  {i} ERRO {str(e)[:35]}",file=sys.stderr); time.sleep(2); continue
+                except Exception as e: falhas+=1; print(f"  {i} ERRO {str(e)[:35]}",file=sys.stderr); time.sleep(2); continue
                 if conf: break
                 time.sleep(0.3)
+        # API fora em TODAS as tentativas != "não confirmado": não regrava False
+        # em cima de confirmação anterior; re-run tenta de novo.
+        if nq and falhas==nq:
+            continue
         ok+=int(conf)
         cur.execute("UPDATE prospeccao.cabanha_zap SET nome_confirmado=%s, fonte_confirma=%s WHERE cnpj=%s",
                     (conf,src,r['cnpj']))

@@ -6,8 +6,11 @@
 #   0162899 = Atividades de apoio à pecuária n.e. (consultoria de campo)
 # Destino: cnpj.estabelecimento_vet (mesma estrutura da rural -> reusa enrich_decisores).
 set -uo pipefail
+FALHAS=0
 BASE='https://arquivos.receitafederal.gov.br/public.php/webdav/Dados/Cadastros/CNPJ/2026-05'
-AUTH='***TOKEN-RFB-REMOVIDO(.env)***:'
+# token do WebDAV da RFB vem do .env (não fica no código/git)
+AUTH="$(grep '^RFB_WEBDAV_TOKEN=' /root/wins_agro_v1/.env | cut -d= -f2):"
+[ "$AUTH" != ':' ] || { echo 'RFB_WEBDAV_TOKEN ausente no .env' >&2; exit 1; }
 DB=wins_agro_v1_db_1
 INS="cnpj_basico,cnpj_ordem,cnpj_dv,identificador_matriz_filial,nome_fantasia,situacao_cadastral,data_situacao_cadastral,cnae_fiscal_principal,cnae_fiscal_secundaria,tipo_logradouro,logradouro,numero,complemento,bairro,cep,uf,municipio,ddd_1,telefone_1,ddd_2,telefone_2,correio_eletronico,data_inicio_atividade"
 SEL="c0,c1,c2,c3,c4,c5,c6,c11,c12,c13,c14,c15,c16,c17,c18,c19,c20,c21,c22,c23,c24,c27,c10"
@@ -20,7 +23,9 @@ for N in 0 1 2 3 4 5 6 7 8 9; do
   sz=$(stat -c%s /tmp/estv.zip 2>/dev/null || echo 0)
   echo "  baixado $((sz/1024/1024)) MB"
   if [ "$sz" -lt 1000000 ]; then echo "  ARQUIVO SUSPEITO (<1MB), pulando"; rm -f /tmp/estv.zip; continue; fi
-  unzip -p /tmp/estv.zip | grep -aE "$CNAE_RE" > /tmp/estv_f.csv || true
+  # zip corrompido NÃO pode virar carga silenciosamente incompleta: testa antes
+  unzip -tq /tmp/estv.zip >/dev/null 2>&1 || { echo "ZIP CORROMPIDO: /tmp/estv.zip — bloco pulado, re-rodar" >&2; FALHAS=$((FALHAS+1)); rm -f /tmp/estv.zip; continue; }
+  unzip -p /tmp/estv.zip 2>/dev/null | grep -aE "$CNAE_RE" > /tmp/estv_f.csv || [ $? -eq 1 ]  # grep sem match = ok; outro erro estoura
   rm -f /tmp/estv.zip
   echo "  linhas vet/insem filtradas: $(wc -l < /tmp/estv_f.csv)"
   docker exec $DB psql -U postgres -d wins_agro -c "TRUNCATE cnpj.stg_estab;" >/dev/null 2>&1
@@ -39,3 +44,4 @@ for N in 0 1 2 3 4 5 6 7 8 9; do
     FROM cnpj.estabelecimento_vet;" 2>&1
 done
 echo "[$(date +%H:%M:%S)] === VET/INSEM NACIONAL CONCLUÍDO ==="
+[ "$FALHAS" -eq 0 ] || { echo "ATENÇÃO: $FALHAS bloco(s) com zip corrompido — carga INCOMPLETA" >&2; exit 1; }

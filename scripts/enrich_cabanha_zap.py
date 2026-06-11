@@ -42,11 +42,17 @@ def norm_mobile(raw):
     if len(d)==10 and d[2] in '6789' and d[:2] in DDD_OK: return d[:2]+'9'+d[2:]
     return None
 
-def serper(q):
-    r = httpx.post("https://google.serper.dev/search",
-                   headers={"X-API-KEY":KEY,"Content-Type":"application/json"},
-                   json={"q":q,"gl":"br","hl":"pt","num":10}, timeout=20)
-    r.raise_for_status(); return r.json()
+def serper(q, tries=3):
+    # retry com backoff: falha transitória da API não pode virar "lead sem contato" permanente
+    for t in range(tries):
+        try:
+            r = httpx.post("https://google.serper.dev/search",
+                           headers={"X-API-KEY":KEY,"Content-Type":"application/json"},
+                           json={"q":q,"gl":"br","hl":"pt","num":10}, timeout=20)
+            r.raise_for_status(); return r.json()
+        except Exception:
+            if t == tries-1: raise
+            time.sleep(2*(t+1))
 
 def find_zap(j):
     """procura WhatsApp por prioridade: wa.me > rótulo whatsapp/zap > móvel solto. + handle IG."""
@@ -96,18 +102,30 @@ def main():
         queries=[(f'"{dec}" {faz} {r["uf"]} whatsapp OR contato OR instagram','decisor+fazenda'),
                  (f'{faz} {r["municipio"] or ""} {r["uf"]} pecuária whatsapp OR contato instagram','fazenda'),
                  (f'"{dec}" {r["uf"]} instagram whatsapp','decisor')]
+        falhas=0
         for q,tag in queries:
             try: z,f,h = find_zap(serper(q))
-            except Exception as e: print(f"  {i} ERRO {str(e)[:40]}",file=sys.stderr); time.sleep(2); continue
+            except Exception as e:
+                falhas+=1; print(f"  {i} ERRO {str(e)[:40]}",file=sys.stderr); time.sleep(2); continue
             if h and not ig: ig=h
             if z: zap,fonte,via=z,f,tag; break
             time.sleep(0.3)
+        # TODAS as buscas falharam (API fora, não "não achou"): NÃO grava — sem linha/
+        # sem buscado_em novo, o próximo run re-tenta este lead em vez de enterrá-lo.
+        if falhas == len(queries) and not zap:
+            continue
         ufm = (DDD2UF.get(zap[:2]) == r['uf']) if zap else None
         if zap: achou+=1
         if ufm: ok_uf+=1
+        # COALESCE: re-run que não achou nada não apaga contato já conquistado antes
         cur.execute("""INSERT INTO prospeccao.cabanha_zap(cnpj,decisor,fazenda,uf,whatsapp,fonte,instagram,via_busca,uf_match)
             VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(cnpj) DO UPDATE SET
-            whatsapp=EXCLUDED.whatsapp,fonte=EXCLUDED.fonte,instagram=EXCLUDED.instagram,via_busca=EXCLUDED.via_busca,uf_match=EXCLUDED.uf_match,buscado_em=now()""",
+            whatsapp=COALESCE(EXCLUDED.whatsapp, cabanha_zap.whatsapp),
+            fonte=COALESCE(EXCLUDED.fonte, cabanha_zap.fonte),
+            instagram=COALESCE(EXCLUDED.instagram, cabanha_zap.instagram),
+            via_busca=COALESCE(EXCLUDED.via_busca, cabanha_zap.via_busca),
+            uf_match=COALESCE(EXCLUDED.uf_match, cabanha_zap.uf_match),
+            buscado_em=now()""",
             (r['cnpj'],dec,r['fazenda'],r['uf'],zap,fonte,ig,via,ufm))
         if i%10==0: print(f"  {i}/{len(rows)} | whatsapp {achou} (DDD-UF ok {ok_uf})",file=sys.stderr,flush=True)
     print(f"\n[FIM] {len(rows)} buscados · WhatsApp {achou} · DDD bate UF {ok_uf} (alta confiança)",file=sys.stderr,flush=True)

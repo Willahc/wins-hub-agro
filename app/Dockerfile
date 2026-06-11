@@ -15,4 +15,8 @@ RUN apt-get update \
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 COPY . .
+# Processo não roda como root: limita o estrago de um eventual RCE na app.
+# uid fixo alto (não colide com users do host); home p/ cache de fontes do WeasyPrint.
+RUN useradd --create-home --uid 10001 appuser
+USER appuser
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

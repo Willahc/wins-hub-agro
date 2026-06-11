@@ -38,8 +38,13 @@ def _cached(key, ttl, fn):
         return hit[1]
     val = fn()
     # NÃO cacheia falhas: uma indisponibilidade transitória da API externa não pode
-    # ficar "grudada" pelo TTL (ex.: CNPJ válido com timeout ficaria 24h dando erro).
-    if not (isinstance(val, dict) and val.get("error")):
+    # ficar "grudada" pelo TTL (ex.: arroba None por 6h faz a IATF em lote gravar
+    # snapshot ganho_cria=NULL permanente; CNPJ com timeout ficaria 24h dando erro).
+    falhou = val is None or (isinstance(val, dict) and val.get("error"))
+    # dict de sub-cotações (ex.: graos) com TODOS os valores None também é falha
+    if isinstance(val, dict) and val and not val.get("error") and all(v is None for v in val.values()):
+        falhou = True
+    if not falhou:
         _CACHE[key] = (now, val)
     return val
 

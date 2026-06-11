@@ -1562,7 +1562,7 @@
                                                     <span>
                                                         <span x-text="l.decisor" style="font-weight:600;"></span>
                                                         <template x-if="l.linkedin">
-                                                            <a :href="l.linkedin" target="_blank" style="margin-left:5px;text-decoration:none;" title="LinkedIn">🔗</a>
+                                                            <a :href="/^https?:\/\//i.test(l.linkedin||'') ? l.linkedin : '#'" target="_blank" rel="noopener noreferrer" style="margin-left:5px;text-decoration:none;" title="LinkedIn">🔗</a>
                                                         </template>
                                                     </span>
                                                 </template>
