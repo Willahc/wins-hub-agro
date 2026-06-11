@@ -2799,22 +2799,36 @@ def campo_catalogo_busca(q: str, sexo: str | None = None, limit: int = 15):
         params = {"q": f"%{q}%", "lim": min(max(limit, 1), 30)}
         if sexo in ("M", "F"):
             cond.append("r.sexo = %(sx)s"); params["sx"] = sexo
-        return query(
+        # pd(5)/pes(12)/preço entram p/ o touro buscado também render ganho/cria e prenhez
+        # no cruzamento do app (não só os 12 do Monte Sião). Aditivo — não quebra a ponte.
+        rows = query(
             f"""SELECT r.id, r.nome, r.registro, r.sexo, r.raca_id, ra.sigla AS raca_sigla, ra.nome AS raca,
                        r.fazenda_origem, r.pai_nome, r.pai_registro,
                        MAX(CASE WHEN a.caracteristica_id = 20 THEN a.valor END) AS iqgg,
                        MAX(CASE WHEN a.caracteristica_id = 8  THEN a.valor END) AS gpd,
-                       MAX(CASE WHEN a.caracteristica_id = 16 THEN a.valor END) AS aol
+                       MAX(CASE WHEN a.caracteristica_id = 16 THEN a.valor END) AS aol,
+                       MAX(CASE WHEN a.caracteristica_id = 5  THEN a.valor END) AS pd,
+                       MAX(CASE WHEN a.caracteristica_id = 12 THEN a.valor END) AS pes,
+                       (SELECT MIN(preco_dose_brl) FROM mercado.touro_oferta o
+                          WHERE o.reprodutor_id = r.id AND o.preco_dose_brl > 0) AS preco_dose
                   FROM mercado.reprodutor r
                   JOIN catalogo.raca ra ON ra.id = r.raca_id
                   LEFT JOIN mercado.avaliacao a ON a.reprodutor_id = r.id
-                        AND a.caracteristica_id IN (20, 8, 16)
+                        AND a.caracteristica_id IN (20, 8, 16, 5, 12)
                  WHERE {' AND '.join(cond)}
                  GROUP BY r.id, r.nome, r.registro, r.sexo, r.raca_id, ra.sigla, ra.nome,
                           r.fazenda_origem, r.pai_nome, r.pai_registro
                  ORDER BY (MAX(CASE WHEN a.caracteristica_id = 20 THEN a.valor END)) DESC NULLS LAST, r.nome
                  LIMIT %(lim)s""",
             params)
+        # ganho/cria do touro buscado (mesma fórmula do catálogo) p/ a tela do app
+        if sexo == "M" and rows:
+            arroba = (external_apis.boi_gordo() or {}).get("valor")
+            for t in rows:
+                pd = t.get("pd")
+                t["ganho_cria"] = round(float(pd) * arroba / 30) if (pd and pd > 0 and arroba) else None
+                t["prenhez_est"] = _prenhez_est(t.get("pes"))
+        return rows
     except Exception as e:
         return _error(e)
 

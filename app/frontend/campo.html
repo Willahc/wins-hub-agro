@@ -473,12 +473,30 @@
           </div>
         </div>
 
-        <!-- 2) escolher o touro (catálogo Monte Sião, ordenado por R$/cria) -->
+        <!-- 2) escolher o touro: Monte Sião (vendável) ou qualquer um do catálogo (busca) -->
         <div class="card">
-          <h3 x-text="'2 · Touro ('+mscat.touros.length+')'"></h3>
+          <h3>2 · Touro</h3>
+          <!-- touro escolhido fora da lista do MS (veio da busca) aparece aqui -->
+          <div x-show="livre.touro && livre.touro.fonte==='catalogo'" class="rec" style="border-color:#2d5a2d">
+            <div class="h"><span class="nm" x-text="livre.touro && livre.touro.nome"></span><span class="rg" x-text="livre.touro && livre.touro.raca_sigla"></span></div>
+            <div class="kv"><span>IQGg <b x-text="(livre.touro && livre.touro.iqgg!=null)?(+livre.touro.iqgg).toFixed(1):'—'"></b></span></div>
+            <button class="mini" style="margin-top:6px" @click="livre.touro=null; livre.res=null">trocar touro</button>
+          </div>
+          <!-- busca de QUALQUER touro do catálogo (104k, todas as raças) -->
+          <input type="search" placeholder="Buscar outro touro no catálogo (nome/registro)…" x-model="livre.touroQ"
+                 @input.debounce.400ms="buscarTouroLivre()" style="width:100%; margin-bottom:8px">
+          <div x-show="livre.buscandoT" class="muted">Buscando…</div>
+          <template x-for="r in livre.touroRes" :key="'tb'+r.id">
+            <div class="rec pickable" role="button" tabindex="0" @click="selTouroBusca(r)" @keydown.enter="selTouroBusca(r)">
+              <div class="h"><span class="nm" x-text="r.nome||r.registro"></span><span class="rg" x-text="r.raca_sigla"></span></div>
+              <div class="kv"><span>IQGg <b x-text="r.iqgg!=null?(+r.iqgg).toFixed(1):'—'"></b></span><span x-show="r.preco_dose">Dose <b x-text="'R$ '+r.preco_dose"></b></span></div>
+            </div>
+          </template>
+          <!-- catálogo Monte Sião (ordenado por R$/cria, #1 pré-selecionado) -->
+          <div class="muted" style="margin:8px 0 4px; font-weight:700" x-show="mscat.touros.length" x-text="'Monte Sião ('+mscat.touros.length+')'"></div>
           <div class="empty" x-show="!mscat.touros.length">Catálogo não sincronizado — conecte-se uma vez.</div>
           <template x-for="(t,i) in mscat.touros" :key="'t'+t.id">
-            <div class="rec pickable" :class="{sel: livre.touro && livre.touro.id===t.id}"
+            <div class="rec pickable" :class="{sel: livre.touro && livre.touro.fonte==='monteSiao' && livre.touro.id===t.id}"
                  role="button" tabindex="0" @click="selTouroLivre(t)" @keydown.enter="selTouroLivre(t)">
               <div class="h"><span class="rk" x-text="'#'+(i+1)"></span><span class="nm" x-text="t.nome"></span><span class="rg" x-text="t.raca_sigla"></span></div>
               <div class="kv">
@@ -488,7 +506,7 @@
               <div x-show="t.ganho_cria!=null" style="margin-top:5px; font-size:14px; color:#2d5a2d; font-weight:800">
                 +R$ <span x-text="t.ganho_cria"></span>/cria <span style="font-weight:500; color:#6b7a6b; font-size:12px">vs. média da raça</span>
               </div>
-              <div class="pick" x-text="(livre.touro && livre.touro.id===t.id) ? '✓ Touro escolhido' : 'Tocar p/ escolher'"></div>
+              <div class="pick" x-text="(livre.touro && livre.touro.fonte==='monteSiao' && livre.touro.id===t.id) ? '✓ Touro escolhido' : 'Tocar p/ escolher'"></div>
             </div>
           </template>
         </div>
@@ -520,10 +538,19 @@
           </div>
           <div style="display:flex; gap:8px">
             <button class="btn" style="flex:1" :disabled="livre.gerando" @click="gerarPdfLivre()"
-                    x-text="livre.gerando ? 'Gerando…' : '📄 Gerar PDF'"></button>
+                    x-text="livre.gerando ? 'Gerando…' : '📄 Parecer'"></button>
             <button class="btn sec" style="flex:1" :disabled="livre.registrando || livre.registrado" @click="registrarLivre()"
                     x-text="livre.registrado ? '✓ Registrado' : (livre.registrando ? 'Registrando…' : '✓ Registrar')"></button>
           </div>
+          <!-- proposta de RETORNO (financeira) — fecha venda; só p/ touro do Monte Sião -->
+          <div x-show="livre.touro && livre.touro.fonte==='monteSiao'" style="margin-top:8px; display:flex; gap:6px; align-items:center">
+            <label style="font-size:12px; color:#5a675a; margin:0">Em</label>
+            <input type="number" min="1" max="100000" x-model.number="livre.nMatrizes" inputmode="numeric" style="width:64px; padding:7px" placeholder="30">
+            <label style="font-size:12px; color:#5a675a; margin:0">matrizes</label>
+            <button class="btn" style="flex:1; margin:0; background:#1a3a1a" :disabled="livre.propondo" @click="gerarPropostaLivre()"
+                    x-text="livre.propondo ? 'Gerando…' : '💰 Proposta de retorno'"></button>
+          </div>
+          <p class="muted" style="margin:8px 0 0; font-size:11px; text-align:center" x-show="livre.res && livre.res.fonte==='servidor'">✓ números confirmados pelo motor do Hub</p>
           <p class="muted" style="margin:6px 0 0; font-size:11px; text-align:center" x-show="livre.vaca && !livre.vaca.animalId">Registrar exige vaca do rebanho — esta é do catálogo (só PDF).</p>
         </div>
       </div>
@@ -879,7 +906,8 @@ function campo() {
     cruza:{dam:null, prioridade:'geral', recs:[], loading:false, chosen:null, vacaId:null, registrando:false, registrado:false},
     cmode:'livre',  // aba Cruzar: 'livre' (catálogo touro×vaca → resultado na tela) | 'sugestoes' (acasalamento dirigido)
     mscat:{touros:[], arroba:null, prenhez_base:65, prenhez_coef:0.3},  // catálogo Monte Sião sincronizado p/ cálculo offline
-    livre:{ vaca:null, touro:null, vacaQ:'', vacaRes:[], buscando:false, res:null, registrando:false, registrado:false, gerando:false },
+    livre:{ vaca:null, touro:null, vacaQ:'', vacaRes:[], buscando:false, res:null, registrando:false, registrado:false, gerando:false,
+            touroQ:'', touroRes:[], buscandoT:false, nMatrizes:30, propondo:false, refinando:false },
     venda:{tipo:'semen', quantidade:1, valor_unitario:null, salvando:false},
     dg:{pendentes:[]},
     nascimentos:[],   // Brief A/F1: cruzamentos prenhes p/ vincular no cadastro do bezerro
@@ -1495,14 +1523,17 @@ function campo() {
     selVacaMinha(a){
       this.livre.vaca = {catId:a.reprodutor_espelho_id, animalId:a.id, nome:a.nome||a.brinco||('#'+a.id),
                          registro:a.brinco||null, iqgg:(a.iqgg!=null?+a.iqgg:null), raca:a.raca, fonte:'rebanho'};
-      this.livre.vacaRes=[]; this.livre.vacaQ=''; this.livre.registrado=false; this.calcLivre();
+      this.livre.vacaRes=[]; this.livre.vacaQ=''; this.livre.registrado=false; this.calcLivre(); this.refinarLivre();
     },
     selVacaBusca(r){
       this.livre.vaca = {catId:r.id, animalId:null, nome:r.nome||r.registro, registro:r.registro||null,
                          iqgg:(r.iqgg!=null?+r.iqgg:null), raca:r.raca_sigla, fonte:'catalogo'};
-      this.livre.vacaRes=[]; this.livre.vacaQ=''; this.livre.registrado=false; this.calcLivre();
+      this.livre.vacaRes=[]; this.livre.vacaQ=''; this.livre.registrado=false; this.calcLivre(); this.refinarLivre();
     },
-    selTouroLivre(t){ this.livre.touro=t; this.livre.registrado=false; this.calcLivre(); },
+    // touro do MONTE SIÃO (catálogo sincronizado) — vendável, tem proposta financeira
+    selTouroLivre(t){ this.livre.touro={...t, fonte:'monteSiao'}; this.livre.registrado=false; this.livre.touroRes=[]; this.livre.touroQ=''; this.calcLivre(); this.refinarLivre(); },
+    // touro de QUALQUER raça do catálogo (busca) — entra pelo mérito; sem proposta financeira do MS
+    selTouroBusca(t){ this.livre.touro={...t, fonte:'catalogo'}; this.livre.registrado=false; this.livre.touroRes=[]; this.livre.touroQ=''; this.calcLivre(); this.refinarLivre(); },
     async buscarVacaLivre(){
       const q=(this.livre.vacaQ||'').trim();
       if(q.length<2){ this.livre.vacaRes=[]; return; }
@@ -1512,8 +1543,17 @@ function campo() {
       catch(e){ this.livre.vacaRes=[]; }
       this.livre.buscando=false;
     },
+    async buscarTouroLivre(){
+      const q=(this.livre.touroQ||'').trim();
+      if(q.length<2){ this.livre.touroRes=[]; return; }
+      if(!this.online){ this.flash('Busca no catálogo exige conexão'); return; }
+      this.livre.buscandoT=true;
+      try{ this.livre.touroRes = await this.api('GET','/api/campo/catalogo/busca?sexo=M&q='+encodeURIComponent(q)); }
+      catch(e){ this.livre.touroRes=[]; }
+      this.livre.buscandoT=false;
+    },
     // cálculo do bezerro previsto — 100% client-side (offline). Mesmas fórmulas do servidor:
-    // IQGg = midparent; ganho/cria e prenhez são touro-dirigidos (já vêm do catálogo sincronizado).
+    // IQGg = midparent; ganho/cria e prenhez são touro-dirigidos. Refinado pelo servidor quando online.
     calcLivre(){
       const t=this.livre.touro, v=this.livre.vaca;
       if(!t){ this.livre.res=null; return; }
@@ -1521,14 +1561,42 @@ function campo() {
       // se só um lado tem IQGg, o ausente entra como 0 (= média da raça, já que DEP é desvio)
       // valor cheio (sem arredondar) p/ os deltas baterem com o servidor; só o display arredonda
       const raw=(iqT!=null||iqV!=null) ? 0.5*((iqT||0)+(iqV||0)) : null;
+      // ganho/prenhez: usa o já calculado do catálogo, senão deriva de pd/pes (touro buscado)
+      const arroba=this.mscat.arroba;
+      const ganho = (t.ganho_cria!=null) ? t.ganho_cria
+                  : ((t.pd!=null && +t.pd>0 && arroba) ? Math.round(+t.pd*arroba/30) : null);
+      const base=this.mscat.prenhez_base??65, coef=this.mscat.prenhez_coef??0.3;
+      const prenhez = (t.prenhez_est!=null) ? t.prenhez_est
+                    : ((t.pes!=null) ? Math.max(50,Math.min(90,Math.round(base+(+t.pes)*coef))) : null);
       this.livre.res = {
         bezerro_iqgg: raw!=null ? +raw.toFixed(1) : null,
         vs_mae: (raw!=null && iqV!=null) ? +(raw-iqV).toFixed(1) : null,
         vs_pai: (raw!=null && iqT!=null) ? +(raw-iqT).toFixed(1) : null,
-        ganho: (t.ganho_cria ?? null),
-        prenhez: (t.prenhez_est ?? null),
-        roi: (t.ganho_cria && t.preco_dose) ? +(t.ganho_cria/(+t.preco_dose)).toFixed(1) : null,
+        ganho, prenhez,
+        roi: (ganho && t.preco_dose) ? +(ganho/(+t.preco_dose)).toFixed(1) : null,
+        fonte:'local',
       };
+    },
+    // quando ONLINE, troca o IQGg/deltas pelo número AUTORITATIVO do motor do Hub
+    // (inclui o proxy de progênie p/ matriz sem genômica própria — melhor que o regredido).
+    async refinarLivre(){
+      const t=this.livre.touro, v=this.livre.vaca;
+      if(!t || !v || !v.catId || !this.online) return;
+      this.livre.refinando=true;
+      const touroId=t.id, vacaId=v.catId;
+      try{
+        const d = await this.api('GET','/api/cruzamento?touro_id='+touroId+'&vaca_id='+vacaId);
+        // ignora se o usuário já trocou a seleção durante o fetch
+        if(!this.livre.touro || this.livre.touro.id!==touroId || !this.livre.vaca || this.livre.vaca.catId!==vacaId) return;
+        if(d && d.calf && d.calf.iqgg && this.livre.res){
+          const c=d.calf.iqgg;
+          if(c.cria!=null) this.livre.res.bezerro_iqgg=+(+c.cria).toFixed(1);
+          if(c.vs_vaca!=null) this.livre.res.vs_mae=+(+c.vs_vaca).toFixed(1);
+          if(c.vs_touro!=null) this.livre.res.vs_pai=+(+c.vs_touro).toFixed(1);
+          this.livre.res.fonte='servidor';
+        }
+      }catch(e){ /* offline/erro: fica com o cálculo local */ }
+      this.livre.refinando=false;
     },
     registrarLivre(){
       const t=this.livre.touro, v=this.livre.vaca, r=this.livre.res;
@@ -1573,6 +1641,36 @@ function campo() {
         }
       }catch(e){ this.flash('Erro ao gerar PDF (precisa de conexão)'); }
       this.livre.gerando=false;
+    },
+    // Proposta de RETORNO (financeira) — só p/ touro do Monte Sião (tem preço/central 24).
+    // Reusa o simulador: "usar este touro em N matrizes → +R$ X/safra". É o PDF que fecha venda.
+    async gerarPropostaLivre(){
+      const t=this.livre.touro;
+      if(!t){ this.flash('Escolha um touro'); return; }
+      if(t.fonte!=='monteSiao'){ this.flash('Proposta financeira só p/ touros do Monte Sião'); return; }
+      if(!this.online){ this.flash('Conecte-se para gerar a proposta'); return; }
+      const m=Math.max(1, Math.min(parseInt(this.livre.nMatrizes||30,10)||30, 100000));
+      const p=(this.livre.res && this.livre.res.prenhez!=null) ? this.livre.res.prenhez : 60;
+      const url='/api/simulador/proposta?t='+t.id+'&m='+m+'&p='+p;
+      if(this.isApp()){ this.flash('Gerando proposta — compartilhe pela pasta Downloads'); window.location.href=url; return; }
+      this.livre.propondo=true; this.flash('Gerando proposta…');
+      try{
+        const res=await fetch(url,{credentials:'same-origin'});
+        if(res.status===401){ location.href='/login'; return; }
+        if(!res.ok) throw new Error('falha');
+        const blob=await res.blob();
+        const nome=(t.nome||'touro').replace(/[^a-z0-9]+/gi,'_').slice(0,30);
+        const file=new File([blob],'proposta_'+nome+'.pdf',{type:'application/pdf'});
+        if(navigator.canShare && navigator.canShare({files:[file]})){
+          await navigator.share({files:[file], title:'Proposta de retorno', text:'Proposta — '+(t.nome||'')+' · WiNS Hub Agro'});
+          this.flash('Compartilhado');
+        } else {
+          const u=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=u; a.download=file.name;
+          document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),5000);
+          this.flash('Proposta gerada');
+        }
+      }catch(e){ this.flash('Erro ao gerar proposta (precisa de conexão)'); }
+      this.livre.propondo=false;
     },
     cotacaoUrl(){
       return '/api/campo/cotacao/pdf?matriz_id='+this.cruza.rid+'&prioridade='+this.cruza.prioridade
