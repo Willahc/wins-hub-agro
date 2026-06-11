@@ -434,6 +434,102 @@
           </div>
         </template>
       </div>
+      <!-- seletor de modo -->
+      <div class="seg" style="display:flex; gap:6px; margin-bottom:10px">
+        <button class="seg-b" :class="{on:cmode==='livre'}" @click="cmode='livre'" style="flex:1; padding:9px; border-radius:10px; border:1.5px solid #cdd8cd; font-weight:800; cursor:pointer"
+                :style="cmode==='livre' ? 'background:#2d5a2d;color:#fff;border-color:#2d5a2d' : 'background:#fff;color:#2d5a2d'">🧬 Cruzar do catálogo</button>
+        <button class="seg-b" :class="{on:cmode==='sugestoes'}" @click="cmode='sugestoes'" style="flex:1; padding:9px; border-radius:10px; border:1.5px solid #cdd8cd; font-weight:800; cursor:pointer"
+                :style="cmode==='sugestoes' ? 'background:#2d5a2d;color:#fff;border-color:#2d5a2d' : 'background:#fff;color:#2d5a2d'">⭐ Sugestões</button>
+      </div>
+
+      <!-- ============ MODO LIVRE: touro do catálogo × vaca → resultado na tela ============ -->
+      <div x-show="cmode==='livre'">
+        <!-- 1) escolher a vaca -->
+        <div class="card">
+          <h3>1 · Vaca</h3>
+          <div x-show="livre.vaca" class="rec" style="border-color:#2d5a2d">
+            <div style="font-weight:800" x-text="livre.vaca && livre.vaca.nome"></div>
+            <div class="muted" x-text="livre.vaca && ((livre.vaca.raca||'')+' · IQGg '+(livre.vaca.iqgg!=null?(+livre.vaca.iqgg).toFixed(1):'—')+(livre.vaca.fonte==='rebanho'?' · do rebanho':' · catálogo'))"></div>
+            <button class="mini" style="margin-top:6px" @click="livre.vaca=null; livre.res=null; livre.registrado=false">trocar vaca</button>
+          </div>
+          <div x-show="!livre.vaca">
+            <input type="search" placeholder="Buscar vaca no catálogo (nome/registro)…" x-model="livre.vacaQ"
+                   @input.debounce.400ms="buscarVacaLivre()" style="width:100%">
+            <div x-show="livre.buscando" class="muted" style="margin-top:6px">Buscando…</div>
+            <template x-for="r in livre.vacaRes" :key="'b'+r.id">
+              <div class="rec pickable" role="button" tabindex="0" @click="selVacaBusca(r)" @keydown.enter="selVacaBusca(r)">
+                <div class="h"><span class="nm" x-text="r.nome||r.registro"></span><span class="rg" x-text="r.raca_sigla"></span></div>
+                <div class="kv"><span>IQGg <b x-text="r.iqgg!=null?(+r.iqgg).toFixed(1):'—'"></b></span><span x-show="r.registro" x-text="'Reg '+r.registro"></span></div>
+              </div>
+            </template>
+            <div class="muted" style="margin:10px 0 4px; font-weight:700" x-show="minhasMatrizes().length">Minhas matrizes</div>
+            <template x-for="a in minhasMatrizes()" :key="'m'+a.id">
+              <div class="rec pickable" role="button" tabindex="0" @click="selVacaMinha(a)" @keydown.enter="selVacaMinha(a)">
+                <div class="h"><span class="nm" x-text="a.nome||a.brinco||('#'+a.id)"></span><span class="rg" x-text="a.raca"></span></div>
+                <div class="kv"><span>IQGg <b x-text="a.iqgg!=null?(+a.iqgg).toFixed(1):'—'"></b></span></div>
+              </div>
+            </template>
+            <div class="empty" x-show="!minhasMatrizes().length && !livre.vacaRes.length && !livre.buscando">Busque uma vaca no catálogo, ou cadastre fêmeas no <b>Rebanho</b>.</div>
+          </div>
+        </div>
+
+        <!-- 2) escolher o touro (catálogo Monte Sião, ordenado por R$/cria) -->
+        <div class="card">
+          <h3 x-text="'2 · Touro ('+mscat.touros.length+')'"></h3>
+          <div class="empty" x-show="!mscat.touros.length">Catálogo não sincronizado — conecte-se uma vez.</div>
+          <template x-for="(t,i) in mscat.touros" :key="'t'+t.id">
+            <div class="rec pickable" :class="{sel: livre.touro && livre.touro.id===t.id}"
+                 role="button" tabindex="0" @click="selTouroLivre(t)" @keydown.enter="selTouroLivre(t)">
+              <div class="h"><span class="rk" x-text="'#'+(i+1)"></span><span class="nm" x-text="t.nome"></span><span class="rg" x-text="t.raca_sigla"></span></div>
+              <div class="kv">
+                <span>IQGg <b x-text="t.iqgg!=null?(+t.iqgg).toFixed(1):'—'"></b></span>
+                <span x-show="t.preco_dose">Dose <b x-text="'R$ '+t.preco_dose"></b></span>
+              </div>
+              <div x-show="t.ganho_cria!=null" style="margin-top:5px; font-size:14px; color:#2d5a2d; font-weight:800">
+                +R$ <span x-text="t.ganho_cria"></span>/cria <span style="font-weight:500; color:#6b7a6b; font-size:12px">vs. média da raça</span>
+              </div>
+              <div class="pick" x-text="(livre.touro && livre.touro.id===t.id) ? '✓ Touro escolhido' : 'Tocar p/ escolher'"></div>
+            </div>
+          </template>
+        </div>
+
+        <!-- 3) RESULTADO na tela (antes de qualquer PDF/registro) -->
+        <div class="card" x-show="livre.touro && livre.vaca && livre.res" style="border:2px solid #2d5a2d; background:#f5faf5">
+          <h3 style="text-align:center; letter-spacing:.5px">🐮 BEZERRO PREVISTO</h3>
+          <div class="muted" style="text-align:center; margin-bottom:8px">
+            Pai: <b x-text="livre.touro && livre.touro.nome"></b> · Mãe: <b x-text="livre.vaca && livre.vaca.nome"></b>
+          </div>
+          <div style="text-align:center; margin:6px 0">
+            <div style="font-size:13px; color:#5a675a">IQGg previsto</div>
+            <div style="font-size:34px; font-weight:900; color:#1a3a1a; line-height:1.1" x-text="(livre.res && livre.res.bezerro_iqgg!=null) ? (+livre.res.bezerro_iqgg).toFixed(1) : '—'"></div>
+            <div style="font-size:13px" x-show="livre.res && (livre.res.vs_mae!=null || livre.res.vs_pai!=null)">
+              <span x-show="livre.res && livre.res.vs_mae!=null" :style="(livre.res && livre.res.vs_mae>=0)?'color:#2d7d2d':'color:#b53b3b'" x-text="livre.res ? ('vs mãe '+(livre.res.vs_mae>=0?'+':'')+livre.res.vs_mae) : ''"></span>
+              <span x-show="livre.res && livre.res.vs_pai!=null" :style="(livre.res && livre.res.vs_pai>=0)?'color:#2d7d2d':'color:#b53b3b'" x-text="livre.res ? ('  vs pai '+(livre.res.vs_pai>=0?'+':'')+livre.res.vs_pai) : ''"></span>
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; margin:10px 0">
+            <div style="flex:1; text-align:center; background:#fff; border-radius:10px; padding:8px">
+              <div style="font-size:12px; color:#5a675a">Ganho genético/cria</div>
+              <div style="font-size:20px; font-weight:900; color:#2d5a2d" x-text="(livre.res && livre.res.ganho!=null) ? ('R$ '+livre.res.ganho) : '—'"></div>
+              <div style="font-size:11px; color:#8a978a" x-show="livre.res && livre.res.roi">ROI <span x-text="livre.res ? (livre.res.roi+'×') : ''"></span></div>
+            </div>
+            <div style="flex:1; text-align:center; background:#fff; border-radius:10px; padding:8px">
+              <div style="font-size:12px; color:#5a675a">Prenhez estimada</div>
+              <div style="font-size:20px; font-weight:900; color:#1a3a1a" x-text="(livre.res && livre.res.prenhez!=null) ? ('~'+livre.res.prenhez+'%') : '—'"></div>
+            </div>
+          </div>
+          <div style="display:flex; gap:8px">
+            <button class="btn" style="flex:1" :disabled="livre.gerando" @click="gerarPdfLivre()"
+                    x-text="livre.gerando ? 'Gerando…' : '📄 Gerar PDF'"></button>
+            <button class="btn sec" style="flex:1" :disabled="livre.registrando || livre.registrado" @click="registrarLivre()"
+                    x-text="livre.registrado ? '✓ Registrado' : (livre.registrando ? 'Registrando…' : '✓ Registrar')"></button>
+          </div>
+          <p class="muted" style="margin:6px 0 0; font-size:11px; text-align:center" x-show="livre.vaca && !livre.vaca.animalId">Registrar exige vaca do rebanho — esta é do catálogo (só PDF).</p>
+        </div>
+      </div>
+
+      <!-- ============ MODO SUGESTÕES (acasalamento dirigido — fluxo original) ============ -->
+      <div x-show="cmode==='sugestoes'">
       <div class="card">
         <h3>Acasalamento ao vivo</h3>
         <div class="empty" x-show="!cruza.dam">Na aba <b>Rebanho</b>, toque <b>♥ Cruzar</b> numa fêmea.</div>
@@ -517,6 +613,7 @@
         <button class="btn" :disabled="venda.salvando" @click="salvarVenda()"
                 x-text="venda.salvando ? 'Registrando…' : '💰 Registrar venda'"></button>
       </div>
+      </div><!-- /modo sugestões -->
     </div>
 
     <!-- ====================== AGENDA SANITÁRIA ====================== -->
@@ -750,7 +847,7 @@
       <span x-show="agendaUrgentes()>0" x-text="agendaUrgentes()"
             style="position:absolute; top:4px; right:50%; transform:translateX(20px); background:#c0392b; color:#fff; font-size:10px; font-weight:800; min-width:16px; height:16px; line-height:16px; border-radius:9px; padding:0 4px"></span>
     </button>
-    <button :class="{on:tab==='cruzar'}"  @click="tab='cruzar'; if(cliente) carregaDG()"><span class="ic">♥</span>Cruzar</button>
+    <button :class="{on:tab==='cruzar'}"  @click="tab='cruzar'; if(cliente) carregaDG(); if(!mscat.touros.length) carregaCatalogo()"><span class="ic">♥</span>Cruzar</button>
     <button :class="{on:tab==='monta'}"   @click="tab='monta'; if(cliente) carregaEstacoes()"><span class="ic">🔁</span>Monta</button>
   </div>
 
@@ -780,6 +877,9 @@ function campo() {
     MAX_TRIES:5,  // após N tentativas falhas, vira dead-letter (não some, exige atenção)
     armazenamentoCheio:false,  // localStorage estourou a quota -> trava capturas
     cruza:{dam:null, prioridade:'geral', recs:[], loading:false, chosen:null, vacaId:null, registrando:false, registrado:false},
+    cmode:'livre',  // aba Cruzar: 'livre' (catálogo touro×vaca → resultado na tela) | 'sugestoes' (acasalamento dirigido)
+    mscat:{touros:[], arroba:null, prenhez_base:65, prenhez_coef:0.3},  // catálogo Monte Sião sincronizado p/ cálculo offline
+    livre:{ vaca:null, touro:null, vacaQ:'', vacaRes:[], buscando:false, res:null, registrando:false, registrado:false, gerando:false },
     venda:{tipo:'semen', quantidade:1, valor_unitario:null, salvando:false},
     dg:{pendentes:[]},
     nascimentos:[],   // Brief A/F1: cruzamentos prenhes p/ vincular no cadastro do bezerro
@@ -840,7 +940,9 @@ function campo() {
           this.cliente = saved;
           await this.onCliente();
         }
+        await this.carregaCatalogo();   // touros do Monte Sião p/ o cruzamento (offline-first)
       } catch(e){ /* offline: segue com o que tem */ }
+      this.carregaCatalogo();           // garante o catálogo mesmo sem fazenda selecionada
       this.sync();
     },
 
@@ -1371,6 +1473,106 @@ function campo() {
       if(!r) return;
       this.cruza.chosen = (this.cruza.chosen && this.cruza.chosen.id===r.id) ? null : r;
       if(this.cruza.chosen) this.flash('Touro escolhido: '+(r.nome||'—'));
+    },
+
+    // ---------- MODO LIVRE: cruzar do catálogo (resultado na tela, offline) ----------
+    async carregaCatalogo(){
+      // restaura o cache offline primeiro (app abre sem rede e já tem os touros)
+      try{ const c=JSON.parse(localStorage.getItem('wins_catalogo')||'null'); if(c && c.touros) this.mscat=c; }catch(e){}
+      if(this.mscat.touros.length && !this.livre.touro) this.selTouroLivre(this.mscat.touros[0]);
+      if(!this.online) return;
+      try{
+        const c = await this.api('GET','/api/campo/catalogo');
+        // ordena por R$/cria desc (o que mais retorna pro produtor lidera) — touro #1 pré-escolhido
+        c.touros = (c.touros||[]).sort((a,b)=>(b.ganho_cria||0)-(a.ganho_cria||0));
+        this.mscat = c;
+        try{ localStorage.setItem('wins_catalogo', JSON.stringify(c)); }catch(e){}
+        if(c.touros.length && !this.livre.touro) this.selTouroLivre(c.touros[0]);
+      }catch(e){ /* offline: segue com o cache */ }
+    },
+    // matrizes da fazenda que JÁ têm espelho no catálogo (crucial p/ cruzar/registrar)
+    minhasMatrizes(){ return (this.animais||[]).filter(a=>a.sexo==='F' && a.reprodutor_espelho_id && (a.status||'ativo')==='ativo'); },
+    selVacaMinha(a){
+      this.livre.vaca = {catId:a.reprodutor_espelho_id, animalId:a.id, nome:a.nome||a.brinco||('#'+a.id),
+                         registro:a.brinco||null, iqgg:(a.iqgg!=null?+a.iqgg:null), raca:a.raca, fonte:'rebanho'};
+      this.livre.vacaRes=[]; this.livre.vacaQ=''; this.livre.registrado=false; this.calcLivre();
+    },
+    selVacaBusca(r){
+      this.livre.vaca = {catId:r.id, animalId:null, nome:r.nome||r.registro, registro:r.registro||null,
+                         iqgg:(r.iqgg!=null?+r.iqgg:null), raca:r.raca_sigla, fonte:'catalogo'};
+      this.livre.vacaRes=[]; this.livre.vacaQ=''; this.livre.registrado=false; this.calcLivre();
+    },
+    selTouroLivre(t){ this.livre.touro=t; this.livre.registrado=false; this.calcLivre(); },
+    async buscarVacaLivre(){
+      const q=(this.livre.vacaQ||'').trim();
+      if(q.length<2){ this.livre.vacaRes=[]; return; }
+      if(!this.online){ this.flash('Busca no catálogo exige conexão'); return; }
+      this.livre.buscando=true;
+      try{ this.livre.vacaRes = await this.api('GET','/api/campo/catalogo/busca?sexo=F&q='+encodeURIComponent(q)); }
+      catch(e){ this.livre.vacaRes=[]; }
+      this.livre.buscando=false;
+    },
+    // cálculo do bezerro previsto — 100% client-side (offline). Mesmas fórmulas do servidor:
+    // IQGg = midparent; ganho/cria e prenhez são touro-dirigidos (já vêm do catálogo sincronizado).
+    calcLivre(){
+      const t=this.livre.touro, v=this.livre.vaca;
+      if(!t){ this.livre.res=null; return; }
+      const iqT=(t.iqgg!=null)?+t.iqgg:null, iqV=(v && v.iqgg!=null)?+v.iqgg:null;
+      // se só um lado tem IQGg, o ausente entra como 0 (= média da raça, já que DEP é desvio)
+      // valor cheio (sem arredondar) p/ os deltas baterem com o servidor; só o display arredonda
+      const raw=(iqT!=null||iqV!=null) ? 0.5*((iqT||0)+(iqV||0)) : null;
+      this.livre.res = {
+        bezerro_iqgg: raw!=null ? +raw.toFixed(1) : null,
+        vs_mae: (raw!=null && iqV!=null) ? +(raw-iqV).toFixed(1) : null,
+        vs_pai: (raw!=null && iqT!=null) ? +(raw-iqT).toFixed(1) : null,
+        ganho: (t.ganho_cria ?? null),
+        prenhez: (t.prenhez_est ?? null),
+        roi: (t.ganho_cria && t.preco_dose) ? +(t.ganho_cria/(+t.preco_dose)).toFixed(1) : null,
+      };
+    },
+    registrarLivre(){
+      const t=this.livre.touro, v=this.livre.vaca, r=this.livre.res;
+      if(!t || !v){ this.flash('Escolha touro e vaca'); return; }
+      if(!v.animalId){ this.flash('Registrar exige vaca do rebanho (esta é do catálogo)'); return; }
+      if(!this.cliente){ this.flash('Selecione a fazenda'); return; }
+      this.livre.registrando=true;
+      const aceito = this.enqueue('/api/campo/cruzamento', {
+        uuid:this.uuid(), cliente_id:this.cliente, vaca_id:v.animalId, data_cruzamento:this.hojeISO(),
+        touro_id:t.id, touro_nome:t.nome||null,
+        ganho_cria:(r?r.ganho:null), prog_iqgg:(r?r.bezerro_iqgg:null), prenhez_est:(r?r.prenhez:null),
+      });
+      this.livre.registrando=false;
+      if(!aceito) return;
+      this.livre.registrado=true;
+      this.flash('Cruzamento registrado'+(this.online?'':' (offline)'));
+      if(this.online) setTimeout(()=>this.carregaDG(), 900);
+    },
+    async gerarPdfLivre(){
+      const t=this.livre.touro, v=this.livre.vaca;
+      if(!t || !v){ this.flash('Escolha touro e vaca'); return; }
+      if(!v.catId){ this.flash('Esta vaca não está no catálogo'); return; }
+      if(!this.online){ this.flash('Conecte-se para gerar o PDF'); return; }
+      const url='/api/cruzamento/pdf?touro_id='+t.id+'&vaca_id='+v.catId;
+      // no APK o WebView não baixa blob -> aciona a URL e o DownloadManager assume
+      if(this.isApp()){ this.flash('Gerando PDF — compartilhe pela pasta Downloads'); window.location.href=url; return; }
+      this.livre.gerando=true; this.flash('Gerando PDF…');
+      try{
+        const res=await fetch(url,{credentials:'same-origin'});
+        if(res.status===401){ location.href='/login'; return; }
+        if(!res.ok) throw new Error('falha');
+        const blob=await res.blob();
+        const nome=((v.nome||'vaca')+'_x_'+(t.nome||'touro')).replace(/[^a-z0-9]+/gi,'_').slice(0,40);
+        const file=new File([blob],'parecer_'+nome+'.pdf',{type:'application/pdf'});
+        if(navigator.canShare && navigator.canShare({files:[file]})){
+          await navigator.share({files:[file], title:'Parecer de cruzamento', text:'Bezerro previsto — '+(v.nome||'')+' × '+(t.nome||'')});
+          this.flash('Compartilhado');
+        } else {
+          const u=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=u; a.download=file.name;
+          document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),5000);
+          this.flash('PDF gerado');
+        }
+      }catch(e){ this.flash('Erro ao gerar PDF (precisa de conexão)'); }
+      this.livre.gerando=false;
     },
     cotacaoUrl(){
       return '/api/campo/cotacao/pdf?matriz_id='+this.cruza.rid+'&prioridade='+this.cruza.prioridade

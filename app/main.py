@@ -28,7 +28,7 @@ logger = logging.getLogger("wins_agro")
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 # Versão do shell — bumpar a cada deploy de front. O cliente compara com /api/version e
 # se auto-atualiza (limpa cache + reload) se estiver velho. Mata o "downgrade pra v1".
-APP_VERSION = "2026-06-11.7"
+APP_VERSION = "2026-06-11.8"
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 
@@ -2751,6 +2751,42 @@ def campo_clientes():
         return _error(e)
 
 
+@app.get("/api/campo/catalogo")
+def campo_catalogo(request: Request):
+    """Catálogo p/ o cruzamento do app (offline-first): touros do Monte Sião (central 24)
+    com DEPs + preço + a arroba + as constantes de prenhez. O app guarda isto no
+    localStorage e CALCULA o bezerro previsto no próprio celular (sem rede) — só o PDF
+    final precisa de conexão. As vacas vêm do rebanho da fazenda (já sincronizado) ou da
+    busca online do catálogo; não bulk-sincronizamos as 45k matrizes."""
+    try:
+        touros = query(
+            f"""
+            SELECT r.id, r.nome, r.registro, ra.sigla AS raca_sigla, ra.nome AS raca,
+                   MAX(a.valor) FILTER (WHERE a.caracteristica_id = {PD_ID})   AS pd,
+                   MAX(a.valor) FILTER (WHERE a.caracteristica_id = {PES_ID})  AS pes,
+                   MAX(a.valor) FILTER (WHERE a.caracteristica_id = {IQGG_ID}) AS iqgg,
+                   MIN(o.preco_dose_brl) AS preco_dose
+            FROM mercado.reprodutor r
+            JOIN catalogo.raca ra ON ra.id = r.raca_id
+            JOIN mercado.touro_oferta o ON o.reprodutor_id = r.id
+                 AND o.preco_dose_brl > 0 AND o.central_id = %(central)s
+            LEFT JOIN mercado.avaliacao a ON a.reprodutor_id = r.id
+                 AND a.caracteristica_id IN ({PD_ID}, {PES_ID}, {IQGG_ID})
+            WHERE r.sexo = 'M'
+            GROUP BY r.id, r.nome, r.registro, ra.sigla, ra.nome
+            ORDER BY MAX(a.valor) FILTER (WHERE a.caracteristica_id = {IQGG_ID}) DESC NULLS LAST
+            """, {"central": MONTE_SIAO_CENTRAL_ID})
+        arroba = (external_apis.boi_gordo() or {}).get("valor")
+        for t in touros:
+            t["prenhez_est"] = _prenhez_est(t.get("pes"))
+            pd = t.get("pd")
+            t["ganho_cria"] = round(float(pd) * arroba / 30) if (pd and pd > 0 and arroba) else None
+        return {"touros": touros, "arroba": arroba,
+                "prenhez_base": PRENHEZ_BASE, "prenhez_coef": PRENHEZ_COEF}
+    except Exception as e:
+        return _error(e)
+
+
 @app.get("/api/campo/catalogo/busca")
 def campo_catalogo_busca(q: str, sexo: str | None = None, limit: int = 15):
     """Busca um animal nos 104k registros do catálogo (por nome OU registro) p/ a
@@ -2913,7 +2949,10 @@ def campo_animais(cliente_id: int):
             """SELECT a.id, a.nome, a.brinco, a.eid, a.sexo, a.peso_atual_kg, a.escore_corporal,
                       ra.sigla AS raca, a.reprodutor_espelho_id,
                       COALESCE(a.status, 'ativo') AS status, a.eh_doadora, a.motivo_descarte,
-                      (SELECT max(data_medicao) FROM fazenda.medicao m WHERE m.animal_id = a.id) AS ultima_medicao
+                      (SELECT max(data_medicao) FROM fazenda.medicao m WHERE m.animal_id = a.id) AS ultima_medicao,
+                      -- IQGg próprio (espelho genotipado) p/ a vaca entrar no cálculo offline do cruzamento
+                      (SELECT MAX(av.valor) FROM mercado.avaliacao av
+                         WHERE av.reprodutor_id = a.reprodutor_espelho_id AND av.caracteristica_id = 20) AS iqgg
                FROM fazenda.animal a LEFT JOIN catalogo.raca ra ON ra.id = a.raca_id
                WHERE a.cliente_id = %(c)s
                ORDER BY (COALESCE(a.status,'ativo') <> 'ativo'), a.coletado_em DESC LIMIT 500""",
