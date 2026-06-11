@@ -2719,9 +2719,12 @@ def campo_page(request: Request):
 
 
 @app.get("/baixar/campo.apk")
-def baixar_apk():
-    """Download público do APK (wrapper do app de campo) — alvo do QR code.
-    Força o content-type de pacote Android e o download (em vez de exibir)."""
+def baixar_apk(request: Request):
+    """Download do APK (wrapper do app de campo). Exige sessão desde 11/06 (pós-demo):
+    o middleware só gateia /api/*, então o check é manual aqui. Quem não está logado
+    cai no /login e baixa depois de entrar."""
+    if not get_current_user(request):
+        return RedirectResponse("/login")
     return FileResponse(
         "frontend/dl/WiNS_Campo.apk",
         media_type="application/vnd.android.package-archive",

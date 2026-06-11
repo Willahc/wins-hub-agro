@@ -40,6 +40,8 @@ fi
 find "$DEST" -name 'wins_agro_*.dump' -mtime +"$KEEP_DAYS" -delete
 
 if [ -n "$OFFSITE_TARGET" ]; then
+  # garante o diretório remoto (user@host:/path -> ssh user@host mkdir -p /path)
+  ssh -o BatchMode=yes -o ConnectTimeout=15 "${OFFSITE_TARGET%%:*}" "mkdir -p '${OFFSITE_TARGET#*:}'" >> "$LOG" 2>&1
   if scp -o BatchMode=yes -o ConnectTimeout=15 "$FILE" "$OFFSITE_TARGET/" >> "$LOG" 2>&1; then
     say "OK: $FILE (${SIZE} bytes) + offsite $OFFSITE_TARGET"
   else
