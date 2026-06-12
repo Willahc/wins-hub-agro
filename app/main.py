@@ -2363,8 +2363,14 @@ _TEC_SCORE = ("((nome !~ '^[0-9]' AND nome <> '(sem nome fantasia)')::int "
 _TEC_COLS = (f"nome, {_TEC_PROF} AS profissao, categoria, tier, municipio, uf, "
              "tel_melhor AS telefone, whatsapp, celular, instagram, email_receita AS email, "
              f"{_TEC_ZAP_RFB} AS whatsapp_rfb, "
-             f"crmv_uf, crmv, crmv_cat, crmv_confiavel, sinal_corte, cnpj14 AS cnpj, {_TEC_SCORE} AS score")
-_TEC_BASE = ("FROM prospeccao.v_tecnico_full WHERE categoria IS NOT NULL "
+             "crmv_uf, crmv, crmv_cat, crmv_confiavel, sinal_corte, cnpj14 AS cnpj, "
+             # vínculo técnico↔fazenda: posse real (C1) + valor-canal por proximidade (C3)
+             "tem_fazenda_propria, n_fazendas_posse, fazendas_posse, "
+             "bovinos_100km, fazendas_100km, score_canal, "
+             # fazendas REAIS (CAR/SICAR, >=100ha) no raio do técnico — coordenada real, não centroide
+             "fazendas_real_50km, ha_real_50km, "
+             f"{_TEC_SCORE} AS score")
+_TEC_BASE = ("FROM prospeccao.v_tecnico_fazenda_ui WHERE categoria IS NOT NULL "
              "AND tier IN ('A-inseminador','B-corte-alto','C-corte-medio','D-corte-baixo') "
              "AND nome !~ '^[0-9]'")
 _TEC_ORDER = (f"ORDER BY {_TEC_SCORE} DESC, crmv_confiavel DESC NULLS LAST, "
@@ -2374,7 +2380,9 @@ _TEC_ORDER = (f"ORDER BY {_TEC_SCORE} DESC, crmv_confiavel DESC NULLS LAST, "
 _TEC_SORT = {"score": _TEC_SCORE, "nome": "nome", "profissao": "profissao", "atividade": "categoria",
              "tier": "tier", "uf": "uf", "telefone": "telefone",
              "whatsapp": "COALESCE(whatsapp,celular)", "instagram": "instagram",
-             "crmv": "crmv_confiavel", "sinal": "sinal_corte"}
+             "crmv": "crmv_confiavel", "sinal": "sinal_corte",
+             "fazenda": "tem_fazenda_propria", "canal": "score_canal", "rebanho": "bovinos_100km",
+             "fazreal": "fazendas_real_50km"}
 
 
 def _tec_where(uf, prof, canal, q, params):
@@ -2391,6 +2399,10 @@ def _tec_where(uf, prof, canal, q, params):
         w.append("crmv_confiavel")
     elif canal == "instagram":
         w.append("instagram IS NOT NULL")
+    elif canal == "fazenda":          # vet/zootec que POSSUI CNPJ de gado (vínculo real)
+        w.append("tem_fazenda_propria")
+    elif canal == "canal_alto":       # top-20% por rebanho ao alcance (valor de canal)
+        w.append("score_canal >= 80")
     if q:
         w.append("(nome ILIKE %(q)s OR municipio ILIKE %(q)s)"); params["q"] = f"%{q}%"
     return (" AND " + " AND ".join(w)) if w else ""
@@ -2405,7 +2417,9 @@ def tecnicos_stats():
                count(*) FILTER (WHERE {_TEC_PROF}='zootecnista') AS zootecnistas,
                count(*) FILTER (WHERE COALESCE(whatsapp,celular) IS NOT NULL) AS com_whatsapp,
                count(*) FILTER (WHERE COALESCE(whatsapp,celular) IS NULL AND {_TEC_ZAP_RFB} IS NOT NULL) AS com_celular_rfb,
-               count(*) FILTER (WHERE crmv_confiavel) AS com_crmv
+               count(*) FILTER (WHERE crmv_confiavel) AS com_crmv,
+               count(*) FILTER (WHERE tem_fazenda_propria) AS com_fazenda,
+               count(*) FILTER (WHERE score_canal >= 80) AS canal_alto
            {_TEC_BASE}""")
 
 
@@ -2447,7 +2461,8 @@ def tecnicos_csv(uf: str = None, prof: str = None, canal: str = None, q: str = N
     buf = io.StringIO()
     cols = ["score", "nome", "profissao", "categoria", "tier", "municipio", "uf", "telefone",
             "whatsapp", "celular", "whatsapp_rfb", "instagram", "email", "crmv_uf", "crmv", "crmv_cat",
-            "crmv_confiavel", "sinal_corte", "cnpj"]
+            "crmv_confiavel", "sinal_corte", "tem_fazenda_propria", "n_fazendas_posse", "fazendas_posse",
+            "bovinos_100km", "fazendas_100km", "score_canal", "fazendas_real_50km", "ha_real_50km", "cnpj"]
     w = _csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
     w.writeheader()
     for r in rows:
@@ -2455,6 +2470,95 @@ def tecnicos_csv(uf: str = None, prof: str = None, canal: str = None, q: str = N
     buf.seek(0)
     return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": "attachment; filename=tecnicos.csv"})
+
+
+# fórmula haversine (km) reutilizável: distância entre o centroide do técnico e a fazenda CAR
+_HAVERSINE_KM = (
+    "6371*acos(least(1,greatest(-1, "
+    "sin(radians(%(lat)s))*sin(radians(i.latitude))+"
+    "cos(radians(%(lat)s))*cos(radians(i.latitude))*cos(radians(i.longitude-%(lon)s)))))")
+
+
+@app.get("/api/tecnicos/fazendas")
+def tecnicos_fazendas(cnpj: str, raio: float = 50, area_min: float = 100, limit: int = 400):
+    """Fazendas CAR concretas (cod_imovel, área, distância) no raio do técnico — drill-down/mapa.
+    O técnico é geolocalizado no centroide do município (mv_tecnico_geo); as fazendas vêm da
+    base CAR nacional (prospeccao.imovel_rural, ≥area_min ha)."""
+    geo = query("SELECT nome, mun, uf, lat, lon FROM prospeccao.mv_tecnico_geo WHERE cnpj14=%(c)s LIMIT 1",
+                {"c": cnpj})
+    if isinstance(geo, dict):
+        return geo
+    if not geo:
+        return {"tecnico": None, "fazendas": [], "total": 0}
+    g = geo[0]
+    import math
+    dlat = float(raio) / 111.0 + 0.02
+    dlon = float(raio) / (111.0 * max(0.2, math.cos(math.radians(float(g["lat"]))))) + 0.02
+    p = {"lat": g["lat"], "lon": g["lon"], "raio": raio, "amin": area_min, "lim": min(max(limit, 1), 2000),
+         "latlo": float(g["lat"]) - dlat, "lathi": float(g["lat"]) + dlat,
+         "lonlo": float(g["lon"]) - dlon, "lonhi": float(g["lon"]) + dlon}
+    rows = query(
+        f"""SELECT i.codigo_car, i.municipio, i.uf, i.area_total_ha,
+                   i.latitude, i.longitude, round(({_HAVERSINE_KM})::numeric,1) AS km
+            FROM prospeccao.imovel_rural i
+            WHERE i.fonte_principal='SICAR' AND i.area_total_ha >= %(amin)s
+              AND i.latitude BETWEEN %(latlo)s AND %(lathi)s
+              AND i.longitude BETWEEN %(lonlo)s AND %(lonhi)s
+              AND ({_HAVERSINE_KM}) <= %(raio)s
+            ORDER BY km ASC LIMIT %(lim)s""", p)
+    if isinstance(rows, dict):
+        return rows
+    return {"tecnico": {"nome": g["nome"], "municipio": g["mun"], "uf": g["uf"],
+                        "lat": g["lat"], "lon": g["lon"]},
+            "fazendas": rows, "total": len(rows),
+            "ha_total": round(sum(float(r["area_total_ha"] or 0) for r in rows))}
+
+
+def _ndvi_anual(lat, lon):
+    """Média anual do NDVI (0-1) via INPE Brazil Data Cube WTSS (MODIS mod13q1, grátis, sem auth).
+    Proxy de vigor de pasto: ~0.7 verde/vigoroso, ~0.4 seco/degradado. None se falhar/nodata."""
+    try:
+        import urllib.request
+        import json as _json
+        url = ("https://data.inpe.br/bdc/wtss/v4/time_series?coverage=mod13q1-6.1&attributes=NDVI"
+               f"&latitude={float(lat)}&longitude={float(lon)}&start_date=2023-06-01&end_date=2024-06-01")
+        with urllib.request.urlopen(url, timeout=30) as r:
+            d = _json.load(r)
+        vals = [v for v in d["result"]["attributes"][0]["values"] if v is not None and v > 0]
+        return round(sum(vals) / len(vals) / 10000.0, 3) if vals else None
+    except Exception:
+        return None
+
+
+class NdviReq(BaseModel):
+    pontos: list = []   # [{codigo_car, lat, lon}]
+
+
+@app.post("/api/fazendas/ndvi")
+def fazendas_ndvi(req: NdviReq):
+    """NDVI anual (vigor de pasto) das fazendas pedidas. Cache em imovel_rural.ndvi_medio_12m;
+    o que falta busca no WTSS (paralelo) e persiste. Subset sob demanda — 8,3M por API é inviável."""
+    import concurrent.futures as _fut
+    pts = (req.pontos or [])[:30]
+    cars = [p.get("codigo_car") for p in pts if p.get("codigo_car")]
+    out = {}
+    if cars:
+        cached = query("SELECT codigo_car, ndvi_medio_12m FROM prospeccao.imovel_rural "
+                       "WHERE codigo_car = ANY(%(c)s) AND ndvi_medio_12m IS NOT NULL", {"c": cars})
+        if isinstance(cached, list):
+            out = {r["codigo_car"]: r["ndvi_medio_12m"] for r in cached}
+    todo = [p for p in pts if p.get("codigo_car") not in out and p.get("lat") and p.get("lon")]
+
+    def work(p):
+        return (p.get("codigo_car"), _ndvi_anual(p["lat"], p["lon"]))
+    with _fut.ThreadPoolExecutor(max_workers=8) as ex:
+        for car, n in ex.map(work, todo):
+            if n is not None:
+                out[car] = n
+                if car:
+                    query("UPDATE prospeccao.imovel_rural SET ndvi_medio_12m=%(n)s "
+                          "WHERE codigo_car=%(c)s RETURNING 1", {"n": n, "c": car})
+    return {"ndvi": out}
 
 
 @app.get("/api/leads/enriquecido")

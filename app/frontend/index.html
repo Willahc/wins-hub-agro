@@ -586,6 +586,8 @@
                     <div class="kpi k2"><div><div class="value" x-text="fmt(tecStats.zootecnistas||0)"></div><div class="label">zootecnistas</div></div></div>
                     <div class="kpi k2"><div><div class="value" x-text="fmt((tecStats.com_whatsapp||0)+(tecStats.com_celular_rfb||0))"></div><div class="label">WhatsApp/celular<span x-show="tecStats.com_celular_rfb" style="color:#a07a00;" x-text="' ('+fmt(tecStats.com_whatsapp||0)+' conf.+'+fmt(tecStats.com_celular_rfb||0)+' Receita)'"></span></div></div></div>
                     <div class="kpi k2"><div><div class="value" x-text="fmt(tecStats.com_crmv||0)"></div><div class="label">CRMV confiável</div></div></div>
+                    <div class="kpi k2"><div><div class="value" x-text="fmt(tecStats.com_fazenda||0)"></div><div class="label">🐂 possuem gado (CNPJ rural)</div></div></div>
+                    <div class="kpi k2"><div><div class="value" x-text="fmt(tecStats.canal_alto||0)"></div><div class="label">canal top-20% (rebanho ao alcance)</div></div></div>
                 </div>
                 <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
                     <select @change="tecUf=$event.target.value; tecFiltrar()" style="padding:8px;">
@@ -602,6 +604,8 @@
                         <option value="whatsapp">Com WhatsApp/celular</option>
                         <option value="crmv">Com CRMV confiável</option>
                         <option value="instagram">Com Instagram</option>
+                        <option value="fazenda">🐂 Possui gado (CNPJ rural)</option>
+                        <option value="canal_alto">Canal top-20% (rebanho ao alcance)</option>
                     </select>
                     <input type="text" placeholder="buscar nome / município" x-model="tecQ" @keydown.enter="tecFiltrar()" style="padding:8px;flex:1;min-width:200px;">
                     <button class="run-btn" @click="tecFiltrar()" style="padding:8px 14px;font-size:13px;">Filtrar</button>
@@ -621,6 +625,9 @@
                         <th class="sortable" @click="setTecSort('instagram')">📷 Instagram<span x-text="tecArrow('instagram')"></span></th>
                         <th class="sortable" @click="setTecSort('crmv')">CRMV<span x-text="tecArrow('crmv')"></span></th>
                         <th class="sortable" @click="setTecSort('sinal')">Sinal<span x-text="tecArrow('sinal')"></span></th>
+                        <th class="sortable" @click="setTecSort('fazenda')" title="possui CNPJ de gado (vínculo de posse real)">🐂 Fazenda<span x-text="tecArrow('fazenda')"></span></th>
+                        <th class="sortable" @click="setTecSort('canal')" title="rebanho bovino (IBGE) no raio de 100 km — valor do técnico como canal">Canal<span x-text="tecArrow('canal')"></span></th>
+                        <th class="sortable" @click="setTecSort('fazreal')" title="fazendas reais (CAR ≥100ha) georreferenciadas no raio de 50 km">🌾 Fazendas 50km<span x-text="tecArrow('fazreal')"></span></th>
                     </tr></thead>
                     <tbody>
                         <template x-for="(t,i) in tec" :key="t.cnpj || i">
@@ -660,6 +667,25 @@
                                     <template x-if="t.sinal_corte==='corte'"><span class="badge" style="background:#e8f5e9;color:#2e7d32;">corte</span></template>
                                     <template x-if="t.sinal_corte==='corte+pet'"><span class="badge" style="background:#fff8e1;color:#a07a00;">corte+pet</span></template>
                                     <template x-if="t.sinal_corte!=='corte' && t.sinal_corte!=='corte+pet'"><span style="color:#ccc;">—</span></template>
+                                </td>
+                                <td data-label="Fazenda">
+                                    <template x-if="t.tem_fazenda_propria"><span class="badge" style="background:#e8f5e9;color:#2e7d32;font-weight:600;" :title="t.fazendas_posse || ''" x-text="'🐂 '+(t.n_fazendas_posse>1 ? t.n_fazendas_posse+' faz.' : 'possui')"></span></template>
+                                    <template x-if="!t.tem_fazenda_propria"><span style="color:#ccc;">—</span></template>
+                                </td>
+                                <td data-label="Canal">
+                                    <template x-if="t.score_canal!=null">
+                                        <span :title="(t.bovinos_100km!=null?fmt(t.bovinos_100km)+' bovinos no raio 100km':'')+(t.fazendas_100km?' · '+fmt(t.fazendas_100km)+' fazendas-CNPJ':'')"
+                                              class="badge" :style="'font-weight:600;'+(t.score_canal>=80?'background:#e8f5e9;color:#2e7d32':(t.score_canal>=50?'background:#fff8e1;color:#a07a00':'background:#f0f0f0;color:#999'))"
+                                              x-text="t.score_canal"></span>
+                                    </template>
+                                    <template x-if="t.score_canal==null"><span style="color:#ccc;">—</span></template>
+                                </td>
+                                <td data-label="Fazendas 50km">
+                                    <template x-if="t.fazendas_real_50km>0">
+                                        <a href="#" @click.prevent="abrirFazendas(t)" style="color:#2e7d32;font-weight:600;text-decoration:none;"
+                                           :title="(t.ha_real_50km?fmt(t.ha_real_50km)+' ha — clique p/ ver no mapa':'')"><span x-text="fmt(t.fazendas_real_50km)"></span> 🗺️</a>
+                                    </template>
+                                    <template x-if="!(t.fazendas_real_50km>0)"><span style="color:#ccc;">—</span></template>
                                 </td>
                             </tr>
                         </template>
@@ -2122,6 +2148,51 @@
         </div>
     </div>
 
+    <!-- Modal: fazendas reais (CAR) no raio do técnico — drill-down + mapa -->
+    <div class="modal-overlay" x-show="fazModal" @click="fecharFazendas()" style="display:none;">
+        <div class="modal" @click.stop x-show="fazModal" style="width:min(95vw,1000px);max-width:1000px;">
+            <div class="modal-shell">
+                <div class="modal-head">
+                    <div>
+                        <h2 style="font-size:19px;">🌾 Fazendas no raio de <span x-text="fazRaio"></span> km</h2>
+                        <p class="subtitle" style="margin:2px 0 0;">
+                            <span x-show="fazData && fazData.tecnico" x-text="(fazData&&fazData.tecnico?fazData.tecnico.nome+' · '+fazData.tecnico.municipio+'/'+fazData.tecnico.uf:'')"></span>
+                            <span x-show="fazData" style="color:#2e7d32;font-weight:600;" x-text="fazData? ' · '+fmt(fazData.total)+' fazendas CAR ≥100ha · '+fmt(fazData.ha_total)+' ha':''"></span>
+                        </p>
+                    </div>
+                    <span class="modal-close" @click="fecharFazendas()">✕</span>
+                </div>
+                <div class="modal-body">
+                    <div x-show="fazLoading" class="empty">Carregando fazendas…</div>
+                    <div x-show="!fazLoading" style="display:grid;grid-template-columns:1.3fr 1fr;gap:16px;align-items:start;">
+                        <div id="fazMap" style="height:440px;border-radius:10px;border:1px solid #e0e6e0;"></div>
+                        <div style="max-height:440px;overflow-y:auto;">
+                            <table class="mini">
+                                <thead><tr><th>Fazenda (CAR)</th><th>Município</th><th class="num">Área</th><th class="num">Dist.</th><th class="num" title="NDVI anual — vigor do pasto (verde≥0,6 / amarelo≥0,45 / marrom abaixo)">🌱</th></tr></thead>
+                                <tbody>
+                                    <template x-for="(f,i) in (fazData? fazData.fazendas:[])" :key="i">
+                                        <tr>
+                                            <td style="font-family:monospace;font-size:11px;" x-text="f.codigo_car.slice(-8)"></td>
+                                            <td x-text="f.municipio"></td>
+                                            <td class="num" x-text="fmt(Math.round(f.area_total_ha))+' ha'"></td>
+                                            <td class="num" x-text="f.km+' km'"></td>
+                                            <td class="num">
+                                                <template x-if="f.ndvi!=null"><span class="badge" :style="'font-weight:600;'+(f.ndvi>=0.6?'background:#e8f5e9;color:#2e7d32':(f.ndvi>=0.45?'background:#fff8e1;color:#a07a00':'background:#efebe9;color:#795548'))" x-text="f.ndvi.toFixed(2)"></span></template>
+                                                <template x-if="f.ndvi==null"><span style="color:#ccc;" x-text="ndviLoading?'…':'—'"></span></template>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                            <p x-show="ndviLoading" style="font-size:11px;color:#777;margin-top:6px;">🌱 buscando NDVI das mais próximas (INPE/MODIS)…</p>
+                            <p x-show="fazData && fazData.total>=400" style="font-size:11px;color:#a07a00;margin-top:8px;">Mostrando as 400 fazendas mais próximas.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal: ficha da matriz (progênie) -->
     <div class="modal-overlay" x-show="matrizModal" @click="fecharMatriz()" style="display:none;">
         <div class="modal" @click.stop x-show="matrizModal" style="width:min(94vw,760px);max-width:760px;">
@@ -2316,6 +2387,7 @@
                 tec: [], tecStats: {}, tecUf: '', tecProf: '', tecCanal: '', tecQ: '',
                 tecPage: 1, tecTotal: 0, tecPages: 1, tecLoading: false,
                 tecSort: 'score', tecOrder: 'desc',
+                fazModal: false, fazData: null, fazLoading: false, fazRaio: 50, ndviLoading: false,
                 demUf: '', tendencia: [], lotacao: [], whales: [],
                 terUf: 'TO', territorio: null,
                 mapUf: '', mapMin: 100000, mapLayer: 'rebanho', _map: null, _mapLayer: null,
@@ -2374,6 +2446,12 @@
                 // finally do loader reseta o spinner e o usuário vê o erro, não fica travado.
                 async jget(url, opts = {}) {
                     const res = await fetch(url, { credentials: 'same-origin', ...opts });
+                    if (!res.ok) throw new Error('HTTP ' + res.status + ' em ' + url);
+                    return res.json();
+                },
+                async jpost(url, body) {
+                    const res = await fetch(url, { method: 'POST', credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
                     if (!res.ok) throw new Error('HTTP ' + res.status + ' em ' + url);
                     return res.json();
                 },
@@ -2910,6 +2988,56 @@
                     const arr = this._mapPts || [];
                     const target = this.mapUf && arr.length ? [arr[0].lat, arr[0].lng] : [-15.0, -55.0];
                     this._map.setView(target, this.mapUf ? 6 : 4);
+                },
+
+                // ---- Fazendas reais (CAR) no raio do técnico: drill-down + mini-mapa ----
+                async abrirFazendas(t) {
+                    this.fazData = null; this.fazLoading = true; this.fazModal = true;
+                    try { this.fazData = await this.jget('/api/tecnicos/fazendas?cnpj=' + encodeURIComponent(t.cnpj) + '&raio=' + this.fazRaio); }
+                    catch (e) { this.setErr(e); this.fazModal = false; return; }
+                    finally { this.fazLoading = false; }
+                    this._drawAfterPaint(() => this.renderFazMap());
+                    this.enrichNdvi();
+                },
+                async enrichNdvi() {
+                    // NDVI sob demanda das 25 fazendas mais próximas (a lista já vem ordenada por km)
+                    if (!this.fazData || !this.fazData.fazendas.length) return;
+                    const top = this.fazData.fazendas.slice(0, 25)
+                        .map(f => ({ codigo_car: f.codigo_car, lat: f.latitude, lon: f.longitude }));
+                    this.ndviLoading = true;
+                    try {
+                        const r = await this.jpost('/api/fazendas/ndvi', { pontos: top });
+                        const m = (r && r.ndvi) || {};
+                        this.fazData.fazendas.forEach(f => { if (m[f.codigo_car] != null) f.ndvi = m[f.codigo_car]; });
+                        this.renderFazMap();   // recolore os marcadores com NDVI
+                    } catch (e) { /* NDVI é best-effort */ }
+                    finally { this.ndviLoading = false; }
+                },
+                fecharFazendas() {
+                    this.fazModal = false;
+                    if (this._fazMap) { this._fazMap.remove(); this._fazMap = null; }
+                },
+                renderFazMap() {
+                    if (typeof L === 'undefined' || !this.fazData || !this.fazData.tecnico) return;
+                    const tc = this.fazData.tecnico, fz = this.fazData.fazendas || [];
+                    if (this._fazMap) { this._fazMap.remove(); this._fazMap = null; }
+                    const map = this._fazMap = L.map('fazMap').setView([tc.lat, tc.lon], 9);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap' }).addTo(map);
+                    // círculo do raio
+                    L.circle([tc.lat, tc.lon], { radius: this.fazRaio * 1000, color: '#2e7d32', weight: 1, fillOpacity: 0.04 }).addTo(map);
+                    // fazendas (tamanho ∝ área; cor = NDVI quando enriquecido, senão verde neutro)
+                    fz.forEach(f => {
+                        const r = Math.max(3, Math.min(14, Math.sqrt(Number(f.area_total_ha)) / 6));
+                        const col = f.ndvi == null ? '#43a047' : (f.ndvi >= 0.6 ? '#1b7837' : f.ndvi >= 0.45 ? '#d9a441' : '#8d6e63');
+                        L.circleMarker([f.latitude, f.longitude], { radius: r, color: col, fillColor: col, fillOpacity: 0.6, weight: 1 })
+                         .bindPopup(`<b>${this.esc(f.municipio)}</b><br>${Math.round(f.area_total_ha).toLocaleString('pt-BR')} ha · ${f.km} km`
+                            + (f.ndvi != null ? `<br>NDVI: <b>${f.ndvi.toFixed(2)}</b>` : '')
+                            + `<br><span style="font-family:monospace;font-size:11px">${this.esc(f.codigo_car)}</span>`).addTo(map);
+                    });
+                    // técnico (marcador vermelho, por cima)
+                    L.circleMarker([tc.lat, tc.lon], { radius: 9, color: '#fff', fillColor: '#c62828', fillOpacity: 1, weight: 2 })
+                     .bindPopup(`<b>🩺 ${this.esc(tc.nome)}</b><br>${this.esc(tc.municipio)}/${this.esc(tc.uf)}`).addTo(map);
+                    setTimeout(() => { if (this._fazMap) this._fazMap.invalidateSize(); }, 200);
                 },
 
                 // ---- Ficha do touro (modal + radar) ----
