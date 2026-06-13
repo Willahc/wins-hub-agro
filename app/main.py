@@ -1806,6 +1806,16 @@ def fazendas_page(request: Request):
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
+@app.get("/tecnica", response_class=HTMLResponse)
+def tecnica_page(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    resp = templates.TemplateResponse("tecnica.html",
+        {"request": request, "user": user, "active": "tecnica", "app_version": APP_VERSION})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
 @app.get("/api/farms")
 def api_fazendas(uf:str=None, sinal:str=None, canal:str=None, q:str=None,
                  page:int=1, page_size:int=50, sort:str="prioridade", order:str="asc"):
