@@ -2480,15 +2480,23 @@ _TEC_ZAP_RFB = "prospeccao.cel_whats(tel_melhor)"
 # empresa (não a reconstrução do RFB). Prioridade sobre o RFB inferido.
 _TEC_ZAP_PUB = "(SELECT z.whatsapp FROM prospeccao.tecnico_zap z WHERE z.cnpj14=v_tecnico_fazenda_ui.cnpj14)"
 _TEC_TEL_GOOGLE = "(SELECT z.tel_google FROM prospeccao.tecnico_zap z WHERE z.cnpj14=v_tecnico_fazenda_ui.cnpj14)"
+# RESGATE (skill check-data-before-external): a view pega 1 estabelecimento por CNPJ, mas e-mail/tel
+# podem estar em OUTRO estabelecimento do mesmo cnpj_basico — recupera o melhor entre todos (+126 email/+115 tel).
+_TEC_EMAIL_ANY = ("(SELECT max(NULLIF(ev.correio_eletronico,'')) FROM cnpj.estabelecimento_vet ev "
+                  "WHERE ev.cnpj_basico=v_tecnico_fazenda_ui.cnpj_basico AND ev.correio_eletronico ~* '@')")
+_TEC_TEL_ANY = ("(SELECT max(NULLIF(ev.ddd_1,'')||NULLIF(ev.telefone_1,'')) FROM cnpj.estabelecimento_vet ev "
+                "WHERE ev.cnpj_basico=v_tecnico_fazenda_ui.cnpj_basico AND NULLIF(ev.telefone_1,'') IS NOT NULL)")
+_TEC_EMAIL = f"COALESCE(email_receita, {_TEC_EMAIL_ANY})"
+_TEC_TEL = f"COALESCE(tel_melhor, {_TEC_TEL_ANY})"
 # score = nº de canais de contato confirmados (nome real + tel + whatsapp/cel(confirmado/publicado OU celular-RFB) + email + instagram + CRMV)
 _TEC_SCORE = ("((nome !~ '^[0-9]' AND nome <> '(sem nome fantasia)')::int "
-              "+ (tel_melhor IS NOT NULL)::int "
+              f"+ ({_TEC_TEL} IS NOT NULL)::int "
               f"+ (COALESCE(whatsapp,celular) IS NOT NULL OR {_TEC_ZAP_PUB} IS NOT NULL OR {_TEC_ZAP_RFB} IS NOT NULL)::int "
-              "+ (email_receita IS NOT NULL)::int "
+              f"+ ({_TEC_EMAIL} IS NOT NULL)::int "
               "+ (instagram IS NOT NULL)::int "
               "+ COALESCE(crmv_confiavel,false)::int)")
 _TEC_COLS = (f"nome, {_TEC_PROF} AS profissao, categoria, tier, municipio, uf, "
-             "tel_melhor AS telefone, whatsapp, celular, instagram, email_receita AS email, site, "
+             f"{_TEC_TEL} AS telefone, whatsapp, celular, instagram, {_TEC_EMAIL} AS email, site, "
              f"{_TEC_ZAP_RFB} AS whatsapp_rfb, {_TEC_ZAP_PUB} AS zap_pub, {_TEC_TEL_GOOGLE} AS tel_google, "
              # CNAE principal do estabelecimento (matriz) — código bruto p/ o front formatar/descrever
              "(SELECT ev.cnae_fiscal_principal FROM cnpj.estabelecimento_vet ev "
