@@ -2484,8 +2484,11 @@ _TEC_SCORE = ("((nome !~ '^[0-9]' AND nome <> '(sem nome fantasia)')::int "
               "+ (instagram IS NOT NULL)::int "
               "+ COALESCE(crmv_confiavel,false)::int)")
 _TEC_COLS = (f"nome, {_TEC_PROF} AS profissao, categoria, tier, municipio, uf, "
-             "tel_melhor AS telefone, whatsapp, celular, instagram, email_receita AS email, "
+             "tel_melhor AS telefone, whatsapp, celular, instagram, email_receita AS email, site, "
              f"{_TEC_ZAP_RFB} AS whatsapp_rfb, "
+             # CNAE principal do estabelecimento (matriz) — código bruto p/ o front formatar/descrever
+             "(SELECT ev.cnae_fiscal_principal FROM cnpj.estabelecimento_vet ev "
+             " WHERE ev.cnpj_basico = v_tecnico_fazenda_ui.cnpj_basico ORDER BY ev.cnpj_ordem LIMIT 1) AS cnae, "
              "crmv_uf, crmv, crmv_cat, crmv_confiavel, sinal_corte, cnpj14 AS cnpj, "
              # vínculo técnico↔fazenda: posse real (C1) + valor-canal por proximidade (C3)
              "tem_fazenda_propria, n_fazendas_posse, fazendas_posse, "
@@ -2587,8 +2590,8 @@ def tecnicos_csv(uf: str = None, prof: str = None, canal: str = None, q: str = N
         return rows
     import csv as _csv
     buf = io.StringIO()
-    cols = ["score", "nome", "profissao", "categoria", "tier", "municipio", "uf", "telefone",
-            "whatsapp", "celular", "whatsapp_rfb", "instagram", "email", "crmv_uf", "crmv", "crmv_cat",
+    cols = ["score", "nome", "profissao", "categoria", "cnae", "tier", "municipio", "uf", "telefone",
+            "whatsapp", "celular", "whatsapp_rfb", "instagram", "email", "site", "crmv_uf", "crmv", "crmv_cat",
             "crmv_confiavel", "sinal_corte", "tem_fazenda_propria", "n_fazendas_posse", "fazendas_posse",
             "bovinos_100km", "fazendas_100km", "score_canal", "fazendas_real_50km", "ha_real_50km", "cnpj"]
     w = _csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")

@@ -29,7 +29,7 @@
   <div class="filters">
     <div class="search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg>
-      <input class="input" placeholder="Buscar nome ou município…" x-model.debounce.400ms="f.q" @input="page=1;load()">
+      <input class="input" placeholder="Buscar nome ou município…" x-model="f.q" @input.debounce.400ms="page=1;load()">
     </div>
     <select class="select" x-model="f.uf" @change="page=1;load()">
       <option value="">UF (todas)</option>
@@ -74,6 +74,8 @@
               </td>
               <td>
                 <span class="badge" :class="tierBadge(r)" x-text="ativLabel(r)"></span>
+                <div class="fz-sub mono" x-show="r.cnae" :title="'CNAE '+cnaeFmt(r.cnae)+' — '+cnaeLabel(r.cnae)" x-text="'CNAE '+cnaeFmt(r.cnae)"></div>
+                <div class="fz-sub" x-show="r.cnae" x-text="cnaeLabel(r.cnae)"></div>
                 <div class="fz-sub" x-show="r.sinal_corte && r.sinal_corte!=='(nao enriquecido)'" x-text="r.sinal_corte"></div>
               </td>
               <td>
@@ -88,10 +90,11 @@
                     <a class="badge" :class="r.whatsapp||r.celular ? 'ok' : 'warn'" :href="'https://wa.me/55'+zapNum(r)" target="_blank" :title="r.whatsapp||r.celular ? 'WhatsApp/celular confirmado' : 'celular inferido da Receita (a confirmar)'">
                       <span x-text="(r.whatsapp||r.celular) ? 'WhatsApp' : 'WhatsApp Receita'"></span></a>
                   </template>
+                  <a x-show="r.telefone && !r.whatsapp_rfb" class="badge neutral mono" :href="'tel:+55'+telDigits(r.telefone)" :title="'telefone (Receita)'" x-text="fmtTel(r.telefone)"></a>
                   <a x-show="r.email" class="badge info" :href="'mailto:'+r.email" :title="r.email">e-mail</a>
                   <a x-show="r.instagram" class="badge neutral" :href="'https://instagram.com/'+igHandle(r.instagram)" target="_blank" x-text="'@'+igHandle(r.instagram)"></a>
-                  <span x-show="!zapNum(r)&&!r.email&&!r.instagram&&r.telefone" class="badge neutral mono" x-text="r.telefone"></span>
-                  <span x-show="!zapNum(r)&&!r.email&&!r.instagram&&!r.telefone" style="color:#ccc">sem canal</span>
+                  <a x-show="r.site" class="badge neutral" :href="siteUrl(r.site)" target="_blank">site</a>
+                  <span x-show="!zapNum(r)&&!r.telefone&&!r.email&&!r.instagram&&!r.site" style="color:#ccc">sem canal</span>
                 </div>
               </td>
             </tr>
@@ -139,7 +142,19 @@ function tecnica(){
     cleanNome(s){ return s? s.replace(/\s*\(.*$/,'').trim() : '—' },
     profLabel(p){ return {veterinario:'Veterinário',zootecnista:'Zootecnista'}[p]||(p||'Técnico') },
     zapNum(r){ const z=r.whatsapp||r.celular||r.whatsapp_rfb; return z? String(z).replace(/\D/g,'') : '' },
+    telDigits(t){ return t? String(t).replace(/\D/g,'') : '' },
+    fmtTel(t){ const d=this.telDigits(t); if(d.length===10) return '('+d.slice(0,2)+') '+d.slice(2,6)+'-'+d.slice(6); if(d.length===11) return '('+d.slice(0,2)+') '+d.slice(2,7)+'-'+d.slice(7); return t },
     igHandle(s){ return s? String(s).replace(/^@/,'').replace(/^.*instagram\.com\//,'').replace(/\/.*$/,'') : '' },
+    siteUrl(s){ s=String(s||''); return /^https?:\/\//.test(s)? s : 'http://'+s },
+    cnaeFmt(c){ const d=String(c||'').replace(/\D/g,'').padStart(7,'0'); return d.slice(0,4)+'-'+d.slice(4,5)+'/'+d.slice(5,7) },
+    cnaeLabel(c){ return {
+      '7500100':'Atividades veterinárias','0162899':'Apoio à pecuária','0162801':'Inseminação artificial',
+      '0162802':'Tosquiamento de ovinos','0162803':'Manejo de animais','0161099':'Apoio à agricultura',
+      '4771704':'Com. medicamentos veterinários','7490103':'Agronomia e consultoria',
+      '0151201':'Criação de bovinos p/ corte','0151202':'Criação de bovinos p/ leite','0151203':'Criação de bovinos',
+      '4619200':'Representante agropecuário','4611700':'Repres. matérias-primas agríc.','4623199':'Com. atacado agropecuário',
+      '0159802':'Criação de outros animais','0161003':'Serviços pós-colheita','0161001':'Serviço de pulverização'
+    }[String(c||'').replace(/\D/g,'')] || 'Outra atividade agro' },
     scoreClass(s){ s=s||0; return s>=5?'alta':(s>=3?'media':'baixa') },
     catLabel(c){ return {'apoio_pecuaria':'Apoio à pecuária','inseminacao':'Inseminação','repro_secundario':'Reprodução','veterinaria':'Veterinária'}[c]||c },
     ativLabel(r){
