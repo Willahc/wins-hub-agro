@@ -20,7 +20,7 @@
     <div class="stat"><div class="k">Técnicos na fila</div><div class="v" x-text="fmt(st.total)"></div></div>
     <div class="stat"><div class="k">Veterinários</div><div class="v" x-text="fmt(st.veterinarios)"></div><div class="d" x-text="pct(st.veterinarios,st.total)"></div></div>
     <div class="stat"><div class="k">Zootecnistas</div><div class="v" x-text="fmt(st.zootecnistas)"></div><div class="d" x-text="pct(st.zootecnistas,st.total)"></div></div>
-    <div class="stat"><div class="k">Com WhatsApp</div><div class="v" x-text="fmt((st.com_whatsapp||0)+(st.com_celular_rfb||0))"></div><div class="d"><span x-text="fmt(st.com_whatsapp)+' conf.'"></span><span x-show="st.com_celular_rfb" style="color:#a07a00" x-text="' + '+fmt(st.com_celular_rfb)+' Receita'"></span></div></div>
+    <div class="stat"><div class="k">WhatsApp confirmado</div><div class="v" x-text="fmt(st.com_whatsapp)"></div><div class="d"><span x-show="st.com_celular_rfb" style="color:#a07a00" x-text="'+ '+fmt(st.com_celular_rfb)+' cel. RFB a verificar'"></span></div></div>
     <div class="stat"><div class="k">Com CRMV</div><div class="v" x-text="fmt(st.com_crmv)"></div><div class="d" x-text="pct(st.com_crmv,st.total)"></div></div>
     <div class="stat"><div class="k">Têm fazenda própria</div><div class="v" x-text="fmt(st.com_fazenda)"></div><div class="d" x-text="'decisor direto'"></div></div>
   </div>
@@ -87,8 +87,8 @@
               <td>
                 <div style="display:flex;gap:6px;flex-wrap:wrap">
                   <template x-if="zapNum(r)">
-                    <a class="badge" :class="r.whatsapp||r.celular ? 'ok' : 'warn'" :href="'https://wa.me/55'+zapNum(r)" target="_blank" :title="r.whatsapp||r.celular ? 'WhatsApp/celular confirmado' : 'celular inferido da Receita (a confirmar)'">
-                      <span x-text="(r.whatsapp||r.celular) ? 'WhatsApp' : 'WhatsApp Receita'"></span></a>
+                    <a class="badge" :class="r.whatsapp||r.celular ? 'ok' : 'warn'" :href="'https://wa.me/55'+zapNum(r)" target="_blank" :title="r.whatsapp||r.celular ? 'WhatsApp/celular confirmado' : 'celular RECONSTRUÍDO de número antigo de 8 díg. da Receita (9º dígito inserido) — não verificado, pode estar morto'">
+                      <span x-text="(r.whatsapp||r.celular) ? 'WhatsApp' : 'cel. RFB?'"></span></a>
                   </template>
                   <a x-show="r.telefone && !r.whatsapp_rfb" class="badge neutral mono" :href="'tel:+55'+telDigits(r.telefone)" :title="'telefone (Receita)'" x-text="fmtTel(r.telefone)"></a>
                   <a x-show="r.email" class="badge info" :href="'mailto:'+r.email" :title="r.email">e-mail</a>
