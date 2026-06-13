@@ -2476,16 +2476,20 @@ _TEC_PROF = ("COALESCE(NULLIF(profissao,''), "
 # celular INFERIDO do telefone da Receita via prospeccao.cel_whats(): tira DDI 55, aceita
 # assinante 6/7/8/9 (fixo é 2-5), insere o 9º dígito nos antigos de 8 díg → 11 díg WhatsApp-able.
 _TEC_ZAP_RFB = "prospeccao.cel_whats(tel_melhor)"
-# score = nº de canais de contato confirmados (nome real + tel + whatsapp/cel(confirmado OU celular-RFB) + email + instagram + CRMV)
+# WhatsApp/telefone PUBLICADO achado no Serper (#3, prospeccao.tecnico_zap) — número REAL da
+# empresa (não a reconstrução do RFB). Prioridade sobre o RFB inferido.
+_TEC_ZAP_PUB = "(SELECT z.whatsapp FROM prospeccao.tecnico_zap z WHERE z.cnpj14=v_tecnico_fazenda_ui.cnpj14)"
+_TEC_TEL_GOOGLE = "(SELECT z.tel_google FROM prospeccao.tecnico_zap z WHERE z.cnpj14=v_tecnico_fazenda_ui.cnpj14)"
+# score = nº de canais de contato confirmados (nome real + tel + whatsapp/cel(confirmado/publicado OU celular-RFB) + email + instagram + CRMV)
 _TEC_SCORE = ("((nome !~ '^[0-9]' AND nome <> '(sem nome fantasia)')::int "
               "+ (tel_melhor IS NOT NULL)::int "
-              f"+ (COALESCE(whatsapp,celular) IS NOT NULL OR {_TEC_ZAP_RFB} IS NOT NULL)::int "
+              f"+ (COALESCE(whatsapp,celular) IS NOT NULL OR {_TEC_ZAP_PUB} IS NOT NULL OR {_TEC_ZAP_RFB} IS NOT NULL)::int "
               "+ (email_receita IS NOT NULL)::int "
               "+ (instagram IS NOT NULL)::int "
               "+ COALESCE(crmv_confiavel,false)::int)")
 _TEC_COLS = (f"nome, {_TEC_PROF} AS profissao, categoria, tier, municipio, uf, "
              "tel_melhor AS telefone, whatsapp, celular, instagram, email_receita AS email, site, "
-             f"{_TEC_ZAP_RFB} AS whatsapp_rfb, "
+             f"{_TEC_ZAP_RFB} AS whatsapp_rfb, {_TEC_ZAP_PUB} AS zap_pub, {_TEC_TEL_GOOGLE} AS tel_google, "
              # CNAE principal do estabelecimento (matriz) — código bruto p/ o front formatar/descrever
              "(SELECT ev.cnae_fiscal_principal FROM cnpj.estabelecimento_vet ev "
              " WHERE ev.cnpj_basico = v_tecnico_fazenda_ui.cnpj_basico ORDER BY ev.cnpj_ordem LIMIT 1) AS cnae, "
@@ -2525,7 +2529,9 @@ def _tec_where(uf, prof, canal, q, params):
     elif prof == "veterinario":
         w.append("(profissao='veterinario' OR crmv_cat='V')")
     if canal == "whatsapp":
-        w.append(f"(COALESCE(whatsapp,celular) IS NOT NULL OR {_TEC_ZAP_RFB} IS NOT NULL)")
+        w.append(f"(COALESCE(whatsapp,celular) IS NOT NULL OR {_TEC_ZAP_PUB} IS NOT NULL OR {_TEC_ZAP_RFB} IS NOT NULL)")
+    elif canal == "whatsapp_pub":     # só o WhatsApp PUBLICADO achado (número real, não reconstrução)
+        w.append(f"{_TEC_ZAP_PUB} IS NOT NULL")
     elif canal == "crmv":
         w.append("crmv_confiavel")
     elif canal == "instagram":
@@ -2546,8 +2552,8 @@ def tecnicos_stats():
         f"""SELECT count(*) AS total,
                count(*) FILTER (WHERE {_TEC_PROF}='veterinario') AS veterinarios,
                count(*) FILTER (WHERE {_TEC_PROF}='zootecnista') AS zootecnistas,
-               count(*) FILTER (WHERE COALESCE(whatsapp,celular) IS NOT NULL) AS com_whatsapp,
-               count(*) FILTER (WHERE COALESCE(whatsapp,celular) IS NULL AND {_TEC_ZAP_RFB} IS NOT NULL) AS com_celular_rfb,
+               count(*) FILTER (WHERE COALESCE(whatsapp,celular) IS NOT NULL OR {_TEC_ZAP_PUB} IS NOT NULL) AS com_whatsapp,
+               count(*) FILTER (WHERE COALESCE(whatsapp,celular) IS NULL AND {_TEC_ZAP_PUB} IS NULL AND {_TEC_ZAP_RFB} IS NOT NULL) AS com_celular_rfb,
                count(*) FILTER (WHERE crmv_confiavel) AS com_crmv,
                count(*) FILTER (WHERE tem_fazenda_propria) AS com_fazenda,
                count(*) FILTER (WHERE score_canal >= 80) AS canal_alto
@@ -2591,7 +2597,7 @@ def tecnicos_csv(uf: str = None, prof: str = None, canal: str = None, q: str = N
     import csv as _csv
     buf = io.StringIO()
     cols = ["score", "nome", "profissao", "categoria", "cnae", "tier", "municipio", "uf", "telefone",
-            "whatsapp", "celular", "whatsapp_rfb", "instagram", "email", "site", "crmv_uf", "crmv", "crmv_cat",
+            "whatsapp", "celular", "zap_pub", "tel_google", "whatsapp_rfb", "instagram", "email", "site", "crmv_uf", "crmv", "crmv_cat",
             "crmv_confiavel", "sinal_corte", "tem_fazenda_propria", "n_fazendas_posse", "fazendas_posse",
             "bovinos_100km", "fazendas_100km", "score_canal", "fazendas_real_50km", "ha_real_50km", "cnpj"]
     w = _csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")

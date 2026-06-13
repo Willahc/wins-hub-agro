@@ -43,6 +43,7 @@
     <select class="select" x-model="f.canal" @change="page=1;load()">
       <option value="">Filtro de canal</option>
       <option value="whatsapp">Com WhatsApp/celular</option>
+      <option value="whatsapp_pub">WhatsApp publicado (achado)</option>
       <option value="crmv">Com CRMV confirmado</option>
       <option value="instagram">Com Instagram</option>
       <option value="fazenda">Tem fazenda própria</option>
@@ -87,10 +88,11 @@
               <td>
                 <div style="display:flex;gap:6px;flex-wrap:wrap">
                   <template x-if="zapNum(r)">
-                    <a class="badge" :class="r.whatsapp||r.celular ? 'ok' : 'warn'" :href="'https://wa.me/55'+zapNum(r)" target="_blank" :title="r.whatsapp||r.celular ? 'WhatsApp/celular confirmado' : 'celular RECONSTRUÍDO de número antigo de 8 díg. da Receita (9º dígito inserido) — não verificado, pode estar morto'">
-                      <span x-text="(r.whatsapp||r.celular) ? 'WhatsApp' : 'cel. RFB?'"></span></a>
+                    <a class="badge" :class="zapConf(r) ? 'ok' : 'warn'" :href="'https://wa.me/55'+zapNum(r)" target="_blank" :title="zapConf(r) ? (r.zap_pub ? 'WhatsApp PUBLICADO (achado no Google/Serper) — número real' : 'WhatsApp/celular confirmado') : 'celular RECONSTRUÍDO de número antigo de 8 díg. da Receita (9º dígito inserido) — não verificado, pode estar morto'">
+                      <span x-text="zapConf(r) ? 'WhatsApp' : 'cel. RFB?'"></span><span x-show="r.zap_pub" title="achado público"> ✓</span></a>
                   </template>
-                  <a x-show="r.telefone && !r.whatsapp_rfb" class="badge neutral mono" :href="'tel:+55'+telDigits(r.telefone)" :title="'telefone (Receita)'" x-text="fmtTel(r.telefone)"></a>
+                  <a x-show="r.tel_google" class="badge neutral mono" :href="'tel:+55'+telDigits(r.tel_google)" title="telefone atual (Google)" x-text="fmtTel(r.tel_google)"></a>
+                  <a x-show="r.telefone && !r.whatsapp_rfb && !r.tel_google" class="badge neutral mono" :href="'tel:+55'+telDigits(r.telefone)" :title="'telefone (Receita)'" x-text="fmtTel(r.telefone)"></a>
                   <a x-show="r.email" class="badge info" :href="'mailto:'+r.email" :title="r.email">e-mail</a>
                   <a x-show="r.instagram" class="badge neutral" :href="'https://instagram.com/'+igHandle(r.instagram)" target="_blank" x-text="'@'+igHandle(r.instagram)"></a>
                   <a x-show="r.site" class="badge neutral" :href="siteUrl(r.site)" target="_blank">site</a>
@@ -141,7 +143,8 @@ function tecnica(){
     pct(a,b){ return b?Math.round(100*a/b)+'%':'' },
     cleanNome(s){ return s? s.replace(/\s*\(.*$/,'').trim() : '—' },
     profLabel(p){ return {veterinario:'Veterinário',zootecnista:'Zootecnista'}[p]||(p||'Técnico') },
-    zapNum(r){ const z=r.whatsapp||r.celular||r.whatsapp_rfb; return z? String(z).replace(/\D/g,'') : '' },
+    zapConf(r){ return !!(r.whatsapp||r.celular||r.zap_pub) },
+    zapNum(r){ const z=r.whatsapp||r.celular||r.zap_pub||r.whatsapp_rfb; return z? String(z).replace(/\D/g,'') : '' },
     telDigits(t){ return t? String(t).replace(/\D/g,'') : '' },
     fmtTel(t){ const d=this.telDigits(t); if(d.length===10) return '('+d.slice(0,2)+') '+d.slice(2,6)+'-'+d.slice(6); if(d.length===11) return '('+d.slice(0,2)+') '+d.slice(2,7)+'-'+d.slice(7); return t },
     igHandle(s){ return s? String(s).replace(/^@/,'').replace(/^.*instagram\.com\//,'').replace(/\/.*$/,'') : '' },
