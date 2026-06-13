@@ -93,7 +93,7 @@
                   </template>
                   <a x-show="r.tel_google" class="badge neutral mono" :href="'tel:+55'+telDigits(r.tel_google)" title="telefone atual (Google)" x-text="fmtTel(r.tel_google)"></a>
                   <a x-show="r.telefone && !r.whatsapp_rfb && !r.tel_google" class="badge neutral mono" :href="'tel:+55'+telDigits(r.telefone)" :title="'telefone (Receita)'" x-text="fmtTel(r.telefone)"></a>
-                  <a x-show="r.email" class="badge info" :href="'mailto:'+r.email" :title="r.email">e-mail</a>
+                  <a x-show="r.email" class="badge" :class="r.email_tier==='contador' ? 'warn' : 'info'" :href="'mailto:'+r.email" :title="r.email_tier==='contador' ? r.email+' (parece contador/escritório)' : r.email" x-text="r.email_tier==='contador' ? 'e-mail contador' : 'e-mail'"></a>
                   <a x-show="r.instagram" class="badge neutral" :href="'https://instagram.com/'+igHandle(r.instagram)" target="_blank" x-text="'@'+igHandle(r.instagram)"></a>
                   <a x-show="r.site" class="badge neutral" :href="siteUrl(r.site)" target="_blank">site</a>
                   <span x-show="!zapNum(r)&&!r.telefone&&!r.email&&!r.instagram&&!r.site" style="color:#ccc">sem canal</span>

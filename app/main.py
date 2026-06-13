@@ -2482,8 +2482,11 @@ _TEC_ZAP_PUB = "(SELECT z.whatsapp FROM prospeccao.tecnico_zap z WHERE z.cnpj14=
 _TEC_TEL_GOOGLE = "(SELECT z.tel_google FROM prospeccao.tecnico_zap z WHERE z.cnpj14=v_tecnico_fazenda_ui.cnpj14)"
 # RESGATE (skill check-data-before-external): a view pega 1 estabelecimento por CNPJ, mas e-mail/tel
 # podem estar em OUTRO estabelecimento do mesmo cnpj_basico — recupera o melhor entre todos (+126 email/+115 tel).
-_TEC_EMAIL_ANY = ("(SELECT max(NULLIF(ev.correio_eletronico,'')) FROM cnpj.estabelecimento_vet ev "
-                  "WHERE ev.cnpj_basico=v_tecnico_fazenda_ui.cnpj_basico AND ev.correio_eletronico ~* '@')")
+# melhor e-mail entre os estab. do CNPJ: prefere NÃO-contador, depois domínio próprio (sobre free-mail)
+_TEC_EMAIL_ANY = ("(SELECT lower(btrim(ev.correio_eletronico)) FROM cnpj.estabelecimento_vet ev "
+                  "WHERE ev.cnpj_basico=v_tecnico_fazenda_ui.cnpj_basico AND ev.correio_eletronico ~* '@' "
+                  "ORDER BY (ev.correio_eletronico !~* 'cont(abil|ador|abilidade)|escritorio|fiscal') DESC, "
+                  "(ev.correio_eletronico !~* '@(gmail|hotmail|outlook|yahoo|bol|uol|terra|ig|live)\\.') DESC LIMIT 1)")
 _TEC_TEL_ANY = ("(SELECT max(NULLIF(ev.ddd_1,'')||NULLIF(ev.telefone_1,'')) FROM cnpj.estabelecimento_vet ev "
                 "WHERE ev.cnpj_basico=v_tecnico_fazenda_ui.cnpj_basico AND NULLIF(ev.telefone_1,'') IS NOT NULL)")
 _TEC_EMAIL = f"COALESCE(email_receita, {_TEC_EMAIL_ANY})"
@@ -2496,7 +2499,9 @@ _TEC_SCORE = ("((nome !~ '^[0-9]' AND nome <> '(sem nome fantasia)')::int "
               "+ (instagram IS NOT NULL)::int "
               "+ COALESCE(crmv_confiavel,false)::int)")
 _TEC_COLS = (f"nome, {_TEC_PROF} AS profissao, categoria, tier, municipio, uf, "
-             f"{_TEC_TEL} AS telefone, whatsapp, celular, instagram, {_TEC_EMAIL} AS email, site, "
+             f"{_TEC_TEL} AS telefone, whatsapp, celular, instagram, {_TEC_EMAIL} AS email, "
+             f"CASE WHEN {_TEC_EMAIL} ~* 'cont(abil|ador|abilidade)|escritorio|fiscal' THEN 'contador' "
+             f"WHEN {_TEC_EMAIL} IS NOT NULL THEN 'ok' END AS email_tier, site, "
              f"{_TEC_ZAP_RFB} AS whatsapp_rfb, {_TEC_ZAP_PUB} AS zap_pub, {_TEC_TEL_GOOGLE} AS tel_google, "
              # CNAE principal do estabelecimento (matriz) — código bruto p/ o front formatar/descrever
              "(SELECT ev.cnae_fiscal_principal FROM cnpj.estabelecimento_vet ev "
@@ -2605,7 +2610,7 @@ def tecnicos_csv(uf: str = None, prof: str = None, canal: str = None, q: str = N
     import csv as _csv
     buf = io.StringIO()
     cols = ["score", "nome", "profissao", "categoria", "cnae", "tier", "municipio", "uf", "telefone",
-            "whatsapp", "celular", "zap_pub", "tel_google", "whatsapp_rfb", "instagram", "email", "site", "crmv_uf", "crmv", "crmv_cat",
+            "whatsapp", "celular", "zap_pub", "tel_google", "whatsapp_rfb", "instagram", "email", "email_tier", "site", "crmv_uf", "crmv", "crmv_cat",
             "crmv_confiavel", "sinal_corte", "tem_fazenda_propria", "n_fazendas_posse", "fazendas_posse",
             "bovinos_100km", "fazendas_100km", "score_canal", "fazendas_real_50km", "ha_real_50km", "cnpj"]
     w = _csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
