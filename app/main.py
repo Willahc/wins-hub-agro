@@ -196,6 +196,32 @@ def scalar(sql, params=None):
     return _fetch(sql, params, False)[0][0]
 
 
+def audit(request, acao, detalhe=None, n_linhas=None):
+    """Trilha de auditoria — quem (usuário do cookie) fez o quê (login/view/export),
+    quando, de qual IP, quantas linhas. Dado é valioso: tudo que toca PII em volume é logado.
+    Falha de log NUNCA derruba a requisição (best-effort)."""
+    try:
+        u = get_current_user(request)
+        usuario = (u or {}).get("sub") if isinstance(u, dict) else None
+        ip = (request.headers.get("x-forwarded-for") or
+              (request.client.host if request.client else None))
+        if ip:
+            ip = ip.split(",")[0].strip()
+        pool = _get_pool()
+        conn = pool.getconn()
+        try:
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO prospeccao.audit_log(usuario,acao,detalhe,ip,n_linhas) "
+                "VALUES (%s,%s,%s,%s,%s)",
+                (usuario, acao, detalhe, ip, n_linhas))
+        finally:
+            pool.putconn(conn)
+    except Exception:
+        logger.warning("audit falhou (acao=%s)", acao)
+
+
 def get_current_user(request: Request):
     token = request.cookies.get("access_token")
     if not token:
@@ -1750,6 +1776,77 @@ def _leads_total(uf, segmento):
     return rows[0]["total"] if rows else 0
 
 
+# ---------------------------------------------------------------------------
+# FAZENDAS — página de mercado #1 (lead DB: decisor + canais + porte). master_montesiao.
+# ---------------------------------------------------------------------------
+FAZ_COLS = ("prioridade","nome_fazenda","razao","cnpj_completo","uf","municipio","decisor",
+    "operador_jovem","n_decisores","dono_n_fazendas","capital_mi","sinal_genetico","touros_nelore",
+    "whatsapp","whats_alta_conf","celular","instagram","followers","porte_digital","email","email_tier",
+    "telefone_rfb","dominio","linkedin","canal_recomendado","cnpj_basico")
+FAZ_SORT = {"prioridade":"prioridade","capital":"capital_mi","touros":"touros_nelore",
+    "followers":"followers","nome":"nome_fazenda","uf":"uf"}
+
+def _faz_where(uf, sinal, canal, q):
+    w=["TRUE"]; p={}
+    if uf: w.append("uf=%(uf)s"); p["uf"]=uf.upper()
+    if sinal: w.append("sinal_genetico=%(sinal)s"); p["sinal"]=sinal
+    if canal: w.append("canal_recomendado=%(canal)s"); p["canal"]=canal
+    if q:
+        w.append("(nome_fazenda ILIKE %(q)s OR razao ILIKE %(q)s OR COALESCE(decisor,'') ILIKE %(q)s OR municipio ILIKE %(q)s)")
+        p["q"]=f"%{q}%"
+    return " AND ".join(w), p
+
+@app.get("/fazendas", response_class=HTMLResponse)
+def fazendas_page(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    resp = templates.TemplateResponse("fazendas.html",
+        {"request": request, "user": user, "active": "fazendas", "app_version": APP_VERSION})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+@app.get("/api/farms")
+def api_fazendas(uf:str=None, sinal:str=None, canal:str=None, q:str=None,
+                 page:int=1, page_size:int=50, sort:str="prioridade", order:str="asc"):
+    try:
+        page=max(1,page); page_size=min(max(page_size,1),100); off=(page-1)*page_size
+        where,p=_faz_where(uf,sinal,canal,q)
+        col=FAZ_SORT.get(sort,"prioridade"); od="DESC" if order=="desc" else "ASC"
+        rows=query(f"SELECT {','.join(FAZ_COLS)} FROM prospeccao.fazenda_nacional WHERE {where} "
+                   f"ORDER BY {col} {od} NULLS LAST, touros_nelore DESC NULLS LAST LIMIT %(lim)s OFFSET %(off)s",
+                   {**p,"lim":page_size,"off":off})
+        total=scalar(f"SELECT count(*) FROM prospeccao.fazenda_nacional WHERE {where}", p)
+        kpi=query(f"SELECT count(*) n, count(*) FILTER (WHERE whatsapp IS NOT NULL) wa, "
+                  f"count(*) FILTER (WHERE email IS NOT NULL) em, count(*) FILTER (WHERE instagram IS NOT NULL) ig "
+                  f"FROM prospeccao.fazenda_nacional WHERE {where}", p)[0]
+        return {"rows":rows,"total":total,"page":page,"page_size":page_size,
+                "total_pages":max(1,(total+page_size-1)//page_size),"kpi":kpi}
+    except Exception as e:
+        return _error(e)
+
+@app.get("/api/farms/export")
+def api_fazendas_export(request: Request, uf:str=None, sinal:str=None, canal:str=None, q:str=None):
+    """Export GATED: teto de 2000 linhas, marca d'água (usuário) e AUDITORIA. Dado é valioso —
+    sem dump infinito do banco."""
+    try:
+        import io, csv
+        EXPORT_CAP=2000
+        where,p=_faz_where(uf,sinal,canal,q)
+        rows=query(f"SELECT {','.join(FAZ_COLS)} FROM prospeccao.fazenda_nacional WHERE {where} "
+                   f"ORDER BY prioridade, touros_nelore DESC NULLS LAST LIMIT {EXPORT_CAP}", p)
+        who=(get_current_user(request) or {}).get('sub','?')
+        audit(request, "export_fazendas", f"uf={uf} sinal={sinal} canal={canal} q={q}", len(rows))
+        buf=io.StringIO()
+        buf.write(f"# WiNS Hub Agro - export confidencial - usuario={who} - linhas={len(rows)} (teto {EXPORT_CAP})\n")
+        w=csv.DictWriter(buf, fieldnames=list(FAZ_COLS)); w.writeheader()
+        for r in rows: w.writerow(r)
+        return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv",
+            headers={"Content-Disposition":"attachment; filename=fazendas_wins.csv"})
+    except Exception as e:
+        return _error(e)
+
+
 @app.get("/api/leads")
 def leads(uf: str = None, segmento: str = "corte", page: int = 1,
                 page_size: int = 100, sort: str = None, order: str = "asc"):
@@ -2243,6 +2340,21 @@ _PROS_ZAP_RFB = "prospeccao.cel_whats(telefone)"
 # WhatsApp recuperado via Serper(decisor+fazenda)/link-externo do IG — só alta confiança (DDD bate UF, ou wa.me/linktree)
 _PROS_ZAP_IG = ("(SELECT z.whatsapp FROM prospeccao.cabanha_zap z WHERE z.cnpj=v_fila_prospeccao.cnpj "
                 "AND z.whatsapp IS NOT NULL AND (z.uf_match OR z.fonte IN ('wa.me','extlink')))")
+# operador jovem que toca a fazenda (filho/administrador 31-50) — quem atende, ≠ patriarca registrado
+_PROS_OPERADOR = ("(SELECT cc.nome FROM prospeccao.contato_candidatos cc "
+                  "WHERE cc.cnpj_basico=v_fila_prospeccao.cnpj AND cc.faixa BETWEEN 3 AND 5 "
+                  "ORDER BY cc.score_alcancavel DESC, cc.faixa LIMIT 1)")
+# melhor e-mail VERIFICADO do Hunter (operador jovem primeiro, senão decisor) — só valid/accept_all
+_PROS_EMAIL_HUNTER = ("COALESCE("
+   "(SELECT ho.email_operador FROM prospeccao.hunter_operador ho WHERE ho.cnpj_basico=v_fila_prospeccao.cnpj "
+   "AND ho.email_operador IS NOT NULL AND ho.verif_status IN ('valid','accept_all') LIMIT 1),"
+   "(SELECT he.email_decisor FROM prospeccao.hunter_email he WHERE he.cnpj_basico=v_fila_prospeccao.cnpj "
+   "AND he.email_decisor IS NOT NULL AND he.verif_status IN ('valid','accept_all') LIMIT 1))")
+_PROS_EMAIL_HUNTER_V = ("COALESCE("
+   "(SELECT ho.verif_status FROM prospeccao.hunter_operador ho WHERE ho.cnpj_basico=v_fila_prospeccao.cnpj "
+   "AND ho.email_operador IS NOT NULL AND ho.verif_status IN ('valid','accept_all') LIMIT 1),"
+   "(SELECT he.verif_status FROM prospeccao.hunter_email he WHERE he.cnpj_basico=v_fila_prospeccao.cnpj "
+   "AND he.email_decisor IS NOT NULL AND he.verif_status IN ('valid','accept_all') LIMIT 1))")
 # melhor canal de abordagem (cascata): WhatsApp > Instagram > e-mail > telefone
 _PROS_CANAL = (f"CASE WHEN (whatsapp IS NOT NULL AND whatsapp<>'') OR {_PROS_ZAP_RFB} IS NOT NULL OR {_PROS_ZAP_IG} IS NOT NULL THEN 'whatsapp' "
                "WHEN instagram IS NOT NULL AND instagram<>'' THEN 'instagram' "
@@ -2250,13 +2362,14 @@ _PROS_CANAL = (f"CASE WHEN (whatsapp IS NOT NULL AND whatsapp<>'') OR {_PROS_ZAP
                "WHEN telefone IS NOT NULL AND telefone<>'' THEN 'telefone' ELSE 'nenhum' END")
 # score = nº de canais confirmados (decisor + email + whatsapp(confirmado/celular-sede/IG-web) + telefone + instagram + linkedin)
 _PROS_SCORE = ("((decisor IS NOT NULL AND decisor <> '')::int "
-               "+ (email IS NOT NULL AND email <> '')::int "
+               f"+ ((email IS NOT NULL AND email <> '') OR {_PROS_EMAIL_HUNTER} IS NOT NULL)::int "
                f"+ ((whatsapp IS NOT NULL AND whatsapp <> '') OR {_PROS_ZAP_RFB} IS NOT NULL OR {_PROS_ZAP_IG} IS NOT NULL)::int "
                "+ (telefone IS NOT NULL AND telefone <> '')::int "
                "+ (instagram IS NOT NULL AND instagram <> '')::int "
                "+ (linkedin IS NOT NULL AND linkedin <> '')::int)")
 _PROS_COLS = ("tier, cabanha AS fazenda, fazenda AS razao_social, decisor, uf, municipio, nelore, "
               "email, email_origem, whatsapp, telefone, instagram, linkedin, cnpj, "
+              f"{_PROS_OPERADOR} AS operador, {_PROS_EMAIL_HUNTER} AS email_hunter, {_PROS_EMAIL_HUNTER_V} AS email_hunter_v, "
               f"{_PROS_ZAP_RFB} AS whatsapp_rfb, {_PROS_ZAP_IG} AS whatsapp_ig, {_PROS_CANAL} AS melhor_canal, {_PROS_SCORE} AS score")
 _PROS_ORDER = (f"ORDER BY {_PROS_SCORE} DESC, (whatsapp IS NOT NULL) DESC, "
                "(email_origem='decisor') DESC, (tier='ALTA') DESC, nelore DESC NULLS LAST")

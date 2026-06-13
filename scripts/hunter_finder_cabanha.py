@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Hunter Email Finder usando o DOMÍNIO DO SITE da fazenda (cab_site) — pros leads que usam
-gmail no e-mail mas têm site próprio achado no harvest. Estende a cobertura de e-mail de decisor."""
+"""Hunter Email Finder nos STUDS ELITE (prospeccao.cabanha_extra): site próprio + nome do decisor
+-> e-mail real do decisor + score. Esses studs entraram por QSA/Serper (sem e-mail RFB) e nunca
+passaram pelo Hunter (que só leu icp527/icp_media). Grava em prospeccao.hunter_email (chave = left(cnpj14,8))."""
 import os, re, sys, time
 import psycopg2, psycopg2.extras, httpx
 KEY=os.environ['HK']; LIMIT=int(os.environ.get('LIM','99999'))
@@ -21,18 +22,20 @@ def split_nome(d):
 def main():
     conn=psycopg2.connect(**DB); conn.autocommit=True
     cur=conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""SELECT cnpj_basico, decisor, cab_site FROM (
-      SELECT cnpj_basico, decisor, cab_site FROM prospeccao.icp527_screen
-      UNION ALL SELECT cnpj_basico, decisor, cab_site FROM prospeccao.icp_media_screen) x
-      WHERE decisor IS NOT NULL AND cab_site IS NOT NULL
-        AND cnpj_basico NOT IN (SELECT cnpj_basico FROM prospeccao.hunter_email)
+    cur.execute("""SELECT left(regexp_replace(cnpj14,'\\D','','g'),8) AS cnpj_basico,
+                          decisor, site, cabanha
+      FROM prospeccao.cabanha_extra
+      WHERE decisor IS NOT NULL AND decisor<>''
+        AND site IS NOT NULL AND site<>''
+        AND cnpj14 IS NOT NULL AND length(regexp_replace(cnpj14,'\\D','','g'))>=8
+        AND left(regexp_replace(cnpj14,'\\D','','g'),8) NOT IN (SELECT cnpj_basico FROM prospeccao.hunter_email)
       ORDER BY cnpj_basico LIMIT %s""", (LIMIT,))
     rows=cur.fetchall()
     proc=[]
     for r in rows:
-        dom=dom_of(r['cab_site'])
+        dom=dom_of(r['site'])
         if dom and not any(b in dom for b in BADDOM): proc.append((r,dom))
-    print(f"[Hunter site finder: {len(proc)} leads com site próprio válido]", file=sys.stderr, flush=True)
+    print(f"[Hunter cabanha finder: {len(proc)} studs com site próprio válido]", file=sys.stderr, flush=True)
     achou=0
     with httpx.Client(timeout=25) as cl:
         for i,(r,dom) in enumerate(proc,1):

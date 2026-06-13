@@ -9,7 +9,7 @@ import os, re, sys, json, time
 import psycopg2, psycopg2.extras, httpx
 TOKEN=os.environ['APIFY_TOKEN']
 ACTOR=os.environ.get('ACTOR','apify~instagram-profile-scraper')
-DB=dict(host="db",dbname="wins_agro",user="postgres",password=os.environ['PGPW'])
+DB=dict(host="db",dbname="wins_agro",user="postgres",password=os.environ.get('PGPW') or os.environ['POSTGRES_PASSWORD'])
 RE_WA=re.compile(r'(?:wa\.me/|api\.whatsapp\.com/send\?phone=)(\+?\d{10,13})',re.I)
 RE_TEL=re.compile(r'\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}')
 
@@ -43,11 +43,18 @@ def main():
         username text PRIMARY KEY, bio text, ext text, business_phone text, business_email text,
         whatsapp text, followers int, raw jsonb, capturado_em timestamptz DEFAULT now());""")
     cur.execute("""WITH h AS (
-        SELECT cab_instagram ig FROM prospeccao.icp527_screen WHERE cab_instagram IS NOT NULL
+        SELECT instagram ig FROM prospeccao.resto_referencia WHERE instagram IS NOT NULL AND instagram<>''
+        UNION SELECT cab_instagram FROM prospeccao.icp527_screen WHERE cab_instagram IS NOT NULL
         UNION SELECT cab_instagram FROM prospeccao.icp_media_screen WHERE cab_instagram IS NOT NULL
         UNION SELECT instagram FROM prospeccao.cabanha_extra WHERE instagram IS NOT NULL)
-        SELECT DISTINCT ig FROM h WHERE ig NOT IN (SELECT username FROM prospeccao.ig_contato)""")
+        SELECT DISTINCT lower(btrim(ig)) ig FROM h
+        WHERE lower(btrim(ig)) NOT IN (SELECT username FROM prospeccao.ig_contato)
+          AND ig !~ '^(p|explore|reel|reels|tv|accounts|stories)$'""")
     handles=[r['ig'] for r in cur.fetchall()]
+    NSHARD=int(os.environ.get('NSHARD','1')); SHARD=int(os.environ.get('SHARD','0'))
+    handles=[h for i,h in enumerate(handles) if i % NSHARD == SHARD]   # fatia disjunta
+    LIM=int(os.environ.get('LIM','0'))
+    if LIM: handles=handles[:LIM]
     if test: handles=handles[:3]
     print(f"[Apify IG: {len(handles)} handles{' (TESTE)' if test else ''}]", file=sys.stderr, flush=True)
     BATCH=50; wa=ph=em=0

@@ -522,6 +522,7 @@
                         <th class="sortable" @click="setProsSort('score')" title="canais de contato confirmados">Score<span x-text="prosArrow('score')"></span></th>
                         <th class="sortable" @click="setProsSort('fazenda')">Fazenda<span x-text="prosArrow('fazenda')"></span></th>
                         <th class="sortable" @click="setProsSort('decisor')">👤 Decisor<span x-text="prosArrow('decisor')"></span></th>
+                        <th title="operador jovem que toca a fazenda (filho/administrador 31-50) — quem atende">🧑‍🌾 Operador</th>
                         <th class="sortable" @click="setProsSort('uf')">UF<span x-text="prosArrow('uf')"></span></th>
                         <th class="sortable" @click="setProsSort('nelore')">Nelore<span x-text="prosArrow('nelore')"></span></th>
                         <th class="sortable" @click="setProsSort('email')">✉ E-mail<span x-text="prosArrow('email')"></span></th>
@@ -544,12 +545,19 @@
                                     <div style="font-size:11px;color:#999;" x-text="(p.razao_social||'') + (p.municipio ? ' · '+p.municipio : '')"></div>
                                 </td>
                                 <td data-label="Decisor" x-text="p.decisor || '—'"></td>
+                                <td data-label="Operador">
+                                    <template x-if="p.operador && p.operador!==p.decisor"><span><span x-text="p.operador"></span>
+                                        <span class="badge" style="background:#e3f2fd;color:#1565c0;font-size:10px;margin-left:4px;" title="quem opera a fazenda (mais jovem que o decisor registrado)">opera</span></span></template>
+                                    <template x-if="!p.operador || p.operador===p.decisor"><span style="color:#ccc;">—</span></template>
+                                </td>
                                 <td data-label="UF" x-text="p.uf"></td>
                                 <td data-label="Nelore" x-text="p.nelore || ''"></td>
                                 <td data-label="E-mail">
-                                    <template x-if="p.email"><span><span x-text="p.email"></span>
-                                        <span class="badge" :style="p.email_origem==='decisor' ? 'background:#e8f5e9;color:#2e7d32' : 'background:#f0f0f0;color:#888'" x-text="p.email_origem"></span></span></template>
-                                    <template x-if="!p.email"><span style="color:#ccc;">—</span></template>
+                                    <template x-if="p.email_hunter"><div><a :href="'mailto:'+p.email_hunter" style="color:#5e35b1;font-weight:600;text-decoration:none;" x-text="p.email_hunter"></a>
+                                        <span class="badge" :style="p.email_hunter_v==='valid' ? 'background:#e8f5e9;color:#2e7d32' : 'background:#fff8e1;color:#a07a00'" :title="p.email_hunter_v==='valid' ? 'verificado entregável (Hunter)' : 'domínio catch-all — entregável, caixa não confirmada'" x-text="p.email_hunter_v==='valid' ? '✓ válido' : 'catch-all'"></span></div></template>
+                                    <template x-if="p.email"><div :style="p.email_hunter ? 'font-size:11px;color:#999;margin-top:2px;' : ''"><span x-text="p.email"></span>
+                                        <span class="badge" :style="p.email_origem==='decisor' ? 'background:#e8f5e9;color:#2e7d32' : 'background:#f0f0f0;color:#888'" x-text="p.email_origem"></span></div></template>
+                                    <template x-if="!p.email && !p.email_hunter"><span style="color:#ccc;">—</span></template>
                                 </td>
                                 <td data-label="WhatsApp">
                                     <template x-if="p.whatsapp"><a :href="'https://wa.me/55'+zapDigits(p.whatsapp)" target="_blank" style="color:#1faa52;font-weight:600;text-decoration:none;" x-text="fmtZap(p.whatsapp)"></a></template>
