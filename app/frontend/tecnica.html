@@ -68,13 +68,13 @@
               <td><span class="tier" :class="scoreClass(r.score)" x-text="(r.score||0)+'/6'"></span></td>
               <td>
                 <div class="fz-nome" x-text="cleanNome(r.nome)"></div>
-                <div class="fz-sub" x-text="(profLabel(r.profissao))+(r.categoria ? ' · '+r.categoria : '')"></div>
+                <div class="fz-sub" x-text="(profLabel(r.profissao))+(r.categoria ? ' · '+catLabel(r.categoria) : '')"></div>
                 <div class="fz-sub mono" x-text="(r.municipio||'')+'/'+r.uf"></div>
                 <div class="fz-sub" x-show="r.crmv_confiavel"><span class="badge ok" x-text="'CRMV '+(r.crmv_uf||'')+' '+(r.crmv||'')"></span></div>
               </td>
               <td>
-                <span class="badge" :class="tierBadge(r.tier)" x-text="tierLabel(r.tier)"></span>
-                <div class="fz-sub" x-show="r.sinal_corte" x-text="r.sinal_corte"></div>
+                <span class="badge" :class="tierBadge(r)" x-text="ativLabel(r)"></span>
+                <div class="fz-sub" x-show="r.sinal_corte && r.sinal_corte!=='(nao enriquecido)'" x-text="r.sinal_corte"></div>
               </td>
               <td>
                 <div x-show="r.tem_fazenda_propria"><span class="badge gold" x-text="(r.n_fazendas_posse||1)+' fazenda'+((r.n_fazendas_posse>1)?'s':'')+' própria'+((r.n_fazendas_posse>1)?'s':'')"></span></div>
@@ -141,8 +141,13 @@ function tecnica(){
     zapNum(r){ const z=r.whatsapp||r.celular||r.whatsapp_rfb; return z? String(z).replace(/\D/g,'') : '' },
     igHandle(s){ return s? String(s).replace(/^@/,'').replace(/^.*instagram\.com\//,'').replace(/\/.*$/,'') : '' },
     scoreClass(s){ s=s||0; return s>=5?'alta':(s>=3?'media':'baixa') },
-    tierLabel(t){ return {'A-inseminador':'Inseminador','B-corte-alto':'Corte alto','C-corte-medio':'Corte médio','D-corte-baixo':'Corte baixo'}[t]||(t||'—') },
-    tierBadge(t){ return t==='A-inseminador'?'ok':(t==='B-corte-alto'?'gold':'neutral') }
+    catLabel(c){ return {'apoio_pecuaria':'Apoio à pecuária','inseminacao':'Inseminação','repro_secundario':'Reprodução','veterinaria':'Veterinária'}[c]||c },
+    ativLabel(r){
+      const t={'A-inseminador':'Inseminador','B-corte-alto':'Corte alto','C-corte-medio':'Corte médio','D-corte-baixo':'Corte baixo'}[r.tier];
+      if(t) return t;
+      return {'apoio_pecuaria':'Apoio à pecuária','inseminacao':'Inseminação','repro_secundario':'Reprodução'}[r.categoria]||'Pecuária';
+    },
+    tierBadge(r){ if(r.tier==='A-inseminador')return 'ok'; if(r.tier==='B-corte-alto')return 'gold'; if(r.tier==='C-corte-medio'||r.tier==='D-corte-baixo')return 'neutral'; return 'info' }
   }
 }
 </script>

@@ -2493,9 +2493,14 @@ _TEC_COLS = (f"nome, {_TEC_PROF} AS profissao, categoria, tier, municipio, uf, "
              # fazendas REAIS (CAR/SICAR, >=100ha) no raio do técnico — coordenada real, não centroide
              "fazendas_real_50km, ha_real_50km, "
              f"{_TEC_SCORE} AS score")
-_TEC_BASE = ("FROM prospeccao.v_tecnico_fazenda_ui WHERE categoria IS NOT NULL "
-             "AND tier IN ('A-inseminador','B-corte-alto','C-corte-medio','D-corte-baixo') "
-             "AND nome !~ '^[0-9]'")
+# Fila "agropecuária nível Brasil": todo técnico voltado à pecuária — vet/zootec
+# classificado em tier de gado (A/B/C/D corte) OU estabelecimento de CNAE pecuário
+# (apoio à pecuária, inseminação, reprodução) em QUALQUER tier (resgata os que o
+# heurístico de tier jogou em urbano/pet, ex. Lagoa da Serra, AZ Assessoria Pecuária).
+# Fora só o veterinária urbano/pet sem sinal de gado (clínica de cidade/animal de estimação).
+_TEC_BASE = ("FROM prospeccao.v_tecnico_fazenda_ui WHERE nome !~ '^[0-9]' AND ("
+             "(categoria IS NOT NULL AND tier IN ('A-inseminador','B-corte-alto','C-corte-medio','D-corte-baixo')) "
+             "OR categoria IN ('apoio_pecuaria','inseminacao','repro_secundario'))")
 _TEC_ORDER = (f"ORDER BY {_TEC_SCORE} DESC, crmv_confiavel DESC NULLS LAST, "
               "(COALESCE(whatsapp,celular) IS NOT NULL) DESC, "
               "(sinal_corte IN ('corte','corte+pet')) DESC, nome")
