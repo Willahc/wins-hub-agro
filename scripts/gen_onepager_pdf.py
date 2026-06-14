@@ -27,22 +27,22 @@ def bars(items, maxv, color="#2e7d32", hi="#d9a441", w=560, rowh=36, gap=15, lab
     return "".join(out)
 
 # ===== dados reais =====
-DECISORES = 146298
-# WhatsApp/Celular = confirmado (38.743) + telefone que é celular, distinto, na MESMA base.
-DEC_TEL, DEC_WA, DEC_EMAIL, DEC_IG = 144965, 41253, 108063, 7493
-TECNICOS = 14926
-TEC_EMAIL, TEC_WA, TEC_TEL = 12551, 9438, 13879
+DECISORES = 200489
+# WhatsApp/Celular = confirmado + telefone que é celular (tel1/tel2), distinto, na MESMA base.
+DEC_TEL, DEC_WA, DEC_EMAIL, DEC_IG = 199142, 70222, 143852, 7598
+TECNICOS = 15964            # fila técnica curada (canal técnico amplo = 53.270)
+TEC_EMAIL, TEC_WA = 13480, 10094
 DEP, ICP = 1242711, 1461
+DESERTO, BAIXA = 22204, 73055   # fazendas em deserto vet / baixa cobertura
 
 chart_dec = bars([
     ("Telefone", DEC_TEL, "99% das fazendas"),
-    ("E-mail", DEC_EMAIL, "74% — base ampla (Receita)"),
-    ("WhatsApp / celular", DEC_WA, "28% — confirmado + celular"),
-    ("Instagram", DEC_IG, "5% — fazenda-marca"),
+    ("E-mail", DEC_EMAIL, "72%"),
+    ("WhatsApp / celular", DEC_WA, "35% — confirmado + celular"),
+    ("Instagram", DEC_IG, "4% — fazenda-marca"),
 ], maxv=DEC_TEL)
 
 chart_tec = bars([
-    ("Telefone", TEC_TEL, "93%"),
     ("E-mail", TEC_EMAIL, "84%"),
     ("WhatsApp / cel.", TEC_WA, "63%"),
 ], maxv=TECNICOS, color="#235c2e", w=420, lab=12)
@@ -84,7 +84,7 @@ DOC = f"""<!doctype html><html><head><meta charset="utf-8"><style>{CSS}</style><
 <div class="stats">
   <div class="stat"><div class="v">{br(DECISORES)}</div><div class="k">Decisores identificados</div></div>
   <div class="stat"><div class="v">99%</div><div class="k">Fazendas com contato</div></div>
-  <div class="stat"><div class="v">{br(TECNICOS)}</div><div class="k">Técnicos no canal</div></div>
+  <div class="stat"><div class="v">{br(DESERTO)}</div><div class="k">Em deserto vet</div></div>
   <div class="stat"><div class="v">1,24&nbsp;mi</div><div class="k">Avaliações genéticas</div></div>
 </div>
 
@@ -103,7 +103,7 @@ DOC = f"""<!doctype html><html><head><meta charset="utf-8"><style>{CSS}</style><
       <div class="row"><b>Ache o decisor certo</b> — não o telefone da portaria; o dono/administrador que assina a compra.</div>
       <div class="row"><b>Fale na hora</b> — WhatsApp, e-mail e Instagram já prontos pra abordar.</div>
       <div class="row"><b>Prove o retorno</b> — cruzamento, bezerro previsto e <span class="gold">ROI por dose</span> na tela, no campo.</div>
-      <div class="row"><b>{br(ICP)} fazendas</b> já qualificadas como compradoras de genética.</div>
+      <div class="row"><b>{br(DESERTO)} fazendas em deserto vet</b> — gado sem veterinário local: mercado sem concorrência.</div>
     </div>
   </div>
 </div>
