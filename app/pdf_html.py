@@ -938,6 +938,8 @@ def gerar_dossie_fazenda(data: dict) -> bytes:
     f = data.get("fazenda") or {}
     tec = data.get("tecnicos") or {}
     gen = data.get("genetica") or {}
+    linha_prod = data.get("linha_producao") or "—"
+    porte = data.get("porte_estimado") or "—"
     nome = _esc((f.get("nome_fazenda") or f.get("razao") or "Fazenda")).split(" (")[0]
 
     def linha(rotulo, valor, extra=""):
@@ -1001,6 +1003,18 @@ def gerar_dossie_fazenda(data: dict) -> bytes:
     else:
         b3 = '<div style="color:#9aa39a">Sinal genético não mapeado para esta fazenda.</div>'
 
-    body = bloco("Fazenda", b1) + bloco("Técnicos", b2) + bloco("Genética", b3)
+    of = data.get("oferta") or {}
+    rows4 = ""
+    for t in (of.get("touros") or []):
+        rows4 += (f'<tr><td style="font-weight:600">{_esc(t.get("nome"))}</td><td>{_esc(t.get("raca"))}</td>'
+                  f'<td style="color:{VERDE_MEDIO}">{_esc(t.get("indice_tipo"))} {_f(t.get("indice"),1)}</td>'
+                  f'<td>{_brl(t.get("preco_dose"))}/dose · {_esc(t.get("central"))}</td></tr>')
+    b4 = ((f'<div style="font-size:9pt;color:#6b7a6b;margin-bottom:6px">Recomendação para a linha <b>{_esc(linha_prod)}</b> ({_esc(of.get("tipo"))}):</div>'
+           f'<table style="width:100%;border-collapse:collapse;font-size:9.5pt">{rows4}</table>')
+          if rows4 else '<div style="color:#9aa39a">Sem oferta vendável catalogada para esta linha.</div>')
+    head = (f'<div style="margin:-4px 0 10px;font-size:9.5pt;color:#283428"><b>Linha de produção:</b> {_esc(linha_prod)} '
+            f'&nbsp;·&nbsp; <b>Porte estimado:</b> {_esc(porte)} '
+            f'<span style="color:#8a948a;font-size:8pt">(estimativa por cruzamento, não headcount)</span></div>')
+    body = head + bloco("Fazenda", b1) + bloco("Técnicos", b2) + bloco("Genética", b3) + bloco("O que oferecer", b4)
     sub = f'{_esc(f.get("municipio"))}/{_esc(f.get("uf"))} · {_esc(f.get("cnpj_completo"))} · {datetime.now().strftime("%d/%m/%Y")}'
     return _render("Dossiê da Fazenda", nome, sub, body)

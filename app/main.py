@@ -1845,6 +1845,11 @@ def mapa_page(request: Request):
 _APTIDAO = ("CASE WHEN ra.nome IN ('Holandês','Jersey','Gir Leiteiro','Girolando') THEN 'leite' "
             "WHEN ra.nome IN ('Guzerá','Sindi','Senepol','Caracu','Guzera Leiteiro') THEN 'dupla' "
             "ELSE 'corte' END")
+# raças por linha de produção (p/ a oferta "o que oferecer" e o match de técnico)
+_RACAS_LEITE = ['Holandês', 'Jersey', 'Gir Leiteiro', 'Girolando']
+_RACAS_CORTE = ['Nelore', 'Aberdeen Angus', 'Brahman', 'Brangus', 'Braford', 'Canchim', 'Charolês',
+                'Hereford', 'Limousin', 'Montana', 'Santa Gertrudis', 'Tabapuã', 'Ultrablack', 'Wagyu',
+                'Senepol', 'Caracu', 'Guzerá', 'Sindi']
 
 def _so_digitos(s): return "".join(c for c in (s or "") if c.isdigit())
 
@@ -1866,48 +1871,84 @@ def api_farm(cnpj: str):
         if not fz:
             return {"error": "Fazenda não encontrada"}
         f = fz[0]
-        # BLOCO 2 — técnicos. socio_tecnico = provável vínculo; tecnico_municipio = sugestão.
-        vinc = query("""SELECT tecnico_nome AS nome, contato, crmv, uf, tipo
-            FROM prospeccao.canal_tecnico WHERE cnpj_basico=%(c)s AND tipo='socio_tecnico'""", {"c": cb})
-        regiao = query("""SELECT tecnico_nome AS nome, contato, crmv, uf, tipo
-            FROM prospeccao.canal_tecnico WHERE cnpj_basico=%(c)s AND tipo='tecnico_municipio' LIMIT 6""", {"c": cb})
-        regiao_fonte = "vínculo_municipio" if regiao else None
-        if not regiao and f.get("municipio"):   # fallback ao vivo: técnicos do mesmo município
-            regiao = query("""SELECT nome, COALESCE(NULLIF(profissao,''),
-                       CASE crmv_cat WHEN 'Z' THEN 'zootecnista' WHEN 'V' THEN 'veterinario' END) AS prof,
-                       crmv, COALESCE(whatsapp,celular,prospeccao.cel_whats(tel_melhor)) AS contato, email_receita AS email
-                FROM prospeccao.v_tecnico_fazenda_ui
-                WHERE upper(municipio)=upper(%(m)s) AND uf=%(uf)s AND categoria IS NOT NULL AND nome !~ '^[0-9]'
-                ORDER BY (COALESCE(whatsapp,celular) IS NOT NULL) DESC, crmv_confiavel DESC NULLS LAST LIMIT 6""",
-                {"m": f["municipio"], "uf": f["uf"]})
-            regiao_fonte = "municipio" if regiao else None
-        # BLOCO 3 — genética (sinal por NOME; só agrega se houver match em prospect_genetica)
+        # --- GENÉTICA + LINHA DE PRODUÇÃO (corte/leite) — sinal por NOME (prospect_genetica) ---
         pg = query("SELECT touros_nelore, confianca, nucleo, match_fazenda FROM prospeccao.prospect_genetica WHERE cnpj_basico=%(c)s", {"c": cb})
         genetica = {"sinal": f.get("sinal_genetico") if f.get("sinal_genetico") in ("alta","media","baixa") else None,
                     "por_aptidao": [], "matrizes": 0, "touros": 0, "match_fazenda": None, "semen": [], "embriao": []}
+        linha = None
         if pg:
             g = pg[0]; genetica["match_fazenda"] = g["match_fazenda"]; genetica["confianca"] = g["confianca"]
             nuc = (g["nucleo"] or "").strip()
             if nuc:
-                genetica["por_aptidao"] = query(f"""
-                    SELECT {_APTIDAO} AS aptidao, r.sexo, ra.nome AS raca, count(*) AS n
+                genetica["por_aptidao"] = query(f"""SELECT {_APTIDAO} AS aptidao, r.sexo, ra.nome AS raca, count(*) AS n
                     FROM mercado.reprodutor r JOIN catalogo.raca ra ON ra.id=r.raca_id
-                    WHERE upper(unaccent(r.fazenda_origem))=upper(unaccent(%(n)s))
-                    GROUP BY 1,2,3 ORDER BY n DESC""", {"n": g["match_fazenda"]})
+                    WHERE upper(unaccent(r.fazenda_origem))=upper(unaccent(%(n)s)) GROUP BY 1,2,3 ORDER BY n DESC""",
+                    {"n": g["match_fazenda"]})
                 genetica["touros"] = sum(r["n"] for r in genetica["por_aptidao"] if r["sexo"] == "M")
                 genetica["matrizes"] = sum(r["n"] for r in genetica["por_aptidao"] if r["sexo"] == "F")
-                # sêmen/embrião dessa fazenda (raro): touros com oferta + embrião por doadora
                 genetica["semen"] = query("""SELECT r.nome, o.preco_dose_brl AS preco, c.nome AS central
                     FROM mercado.reprodutor r JOIN mercado.touro_oferta o ON o.reprodutor_id=r.id
                     LEFT JOIN catalogo.central c ON c.id=o.central_id
                     WHERE upper(unaccent(r.fazenda_origem))=upper(unaccent(%(n)s)) AND o.preco_dose_brl>0 LIMIT 8""",
                     {"n": g["match_fazenda"]})
-        # criador de elite pelo LADO FÊMEA (prospect_matriz) — intensidade genética
+                ap = {}
+                for x in genetica["por_aptidao"]: ap[x["aptidao"]] = ap.get(x["aptidao"], 0) + x["n"]
+                if ap: linha = max(ap, key=ap.get)
         pm = query("SELECT n_matrizes, melhor_iqgg FROM prospeccao.prospect_matriz WHERE cnpj_basico=%(c)s ORDER BY n_matrizes DESC LIMIT 1", {"c": cb})
-        if pm:
-            genetica["matriz_elite"] = {"n_matrizes": pm[0]["n_matrizes"], "melhor_iqgg": pm[0]["melhor_iqgg"]}
-        return {"fazenda": f, "tecnicos": {"vinculados": vinc, "regiao": regiao, "regiao_fonte": regiao_fonte},
-                "genetica": genetica}
+        if pm: genetica["matriz_elite"] = {"n_matrizes": pm[0]["n_matrizes"], "melhor_iqgg": pm[0]["melhor_iqgg"]}
+        if not linha:   # sem sinal genético → infere pela CNAE da fazenda
+            cn = scalar("SELECT cnae_fiscal_principal FROM cnpj.estabelecimento_rural WHERE cnpj_basico=%(c)s LIMIT 1", {"c": cb})
+            linha = "leite" if cn in ("0151202",) else ("corte" if cn in ("0151201", "0151203") else "indef")
+        eh_leite = linha == "leite"
+
+        # --- TÉCNICOS: vínculo (sócio-técnico) + SUGESTÃO por linha+especialidade ---
+        vinc = query("""SELECT tecnico_nome AS nome, contato, crmv, uf, tipo FROM prospeccao.canal_tecnico
+            WHERE cnpj_basico=%(c)s AND tipo='socio_tecnico'""", {"c": cb})
+        regiao = []; regiao_fonte = None
+        if f.get("municipio"):   # corte: prioriza INSEMINADOR (tier A); senão melhor contato/CRMV
+            regiao = query("""SELECT nome, COALESCE(NULLIF(profissao,''),
+                       CASE crmv_cat WHEN 'Z' THEN 'zootecnista' WHEN 'V' THEN 'veterinario' END) AS prof,
+                       crmv, COALESCE(whatsapp,celular,prospeccao.cel_whats(tel_melhor)) AS contato, email_receita AS email
+                FROM prospeccao.v_tecnico_fazenda_ui
+                WHERE upper(municipio)=upper(%(m)s) AND uf=%(uf)s AND categoria IS NOT NULL AND nome !~ '^[0-9]'
+                ORDER BY (tier='A-inseminador') DESC, (COALESCE(whatsapp,celular) IS NOT NULL) DESC,
+                         crmv_confiavel DESC NULLS LAST LIMIT 6""", {"m": f["municipio"], "uf": f["uf"]})
+            regiao_fonte = "municipio" if regiao else None
+        if eh_leite:   # leite → técnicos de Controle Leiteiro da ABCZ na UF (especialidade casada)
+            leite_tec = query("""SELECT nome, papel AS prof, NULL::text AS crmv, telefone AS contato, email
+                FROM prospeccao.canal_central WHERE papel ILIKE %(lp)s AND uf=%(uf)s LIMIT 5""",
+                {"lp": "%leiteiro%", "uf": f.get("uf")})
+            if leite_tec:
+                regiao = leite_tec + (regiao or []); regiao_fonte = "leite_abcz"
+
+        # --- OFERTA: o que PODEMOS OFERECER (touros vendáveis da linha do fazendeiro) ---
+        breeds = _RACAS_LEITE if eh_leite else _RACAS_CORTE
+        oferta_touros = query("""SELECT r.nome, ra.nome AS raca, round(idx.indice,1) AS indice,
+              CASE WHEN idx.iqgg IS NOT NULL THEN 'IQGg' ELSE 'MGTe' END AS indice_tipo, prc.preco AS preco_dose, c.nome AS central
+            FROM mercado.reprodutor r JOIN catalogo.raca ra ON ra.id=r.raca_id
+            JOIN (SELECT reprodutor_id, COALESCE(max(valor) FILTER (WHERE caracteristica_id=20),max(valor) FILTER (WHERE caracteristica_id=56)) AS indice,
+                    max(valor) FILTER (WHERE caracteristica_id=20) AS iqgg FROM mercado.avaliacao WHERE caracteristica_id IN (20,56) GROUP BY reprodutor_id) idx ON idx.reprodutor_id=r.id
+            JOIN (SELECT reprodutor_id, min(preco_dose_brl) AS preco, (array_agg(central_id ORDER BY preco_dose_brl))[1] AS central_id FROM mercado.touro_oferta WHERE preco_dose_brl>0 GROUP BY reprodutor_id) prc ON prc.reprodutor_id=r.id
+            LEFT JOIN catalogo.central c ON c.id=prc.central_id
+            WHERE r.sexo='M' AND ra.nome = ANY(%(b)s) AND idx.indice IS NOT NULL
+            ORDER BY idx.indice DESC LIMIT 5""", {"b": breeds})
+        oferta_embrioes = query("""SELECT oe.doadora_nome, oe.touro_nome, ra.nome AS raca, oe.preco_brl AS preco
+            FROM mercado.oferta_embriao oe LEFT JOIN catalogo.raca ra ON ra.id=oe.raca_id
+            WHERE oe.preco_brl>0 AND (ra.nome = ANY(%(b)s) OR ra.nome IS NULL) ORDER BY oe.preco_brl LIMIT 3""", {"b": breeds})
+
+        # --- PORTE estimado (FAIXA honesta: capital + piso de matrizes) ---
+        cap = float(f.get("capital_mi") or 0)
+        floor_mat = (genetica.get("matriz_elite") or {}).get("n_matrizes", 0)
+        if floor_mat >= 300 or cap >= 50: porte = "grande"
+        elif floor_mat >= 50 or cap >= 5: porte = "médio"
+        elif cap > 0 or genetica["touros"] > 0: porte = "pequeno-médio"
+        else: porte = "indefinido"
+
+        return {"fazenda": f, "linha_producao": linha, "porte_estimado": porte,
+                "tecnicos": {"vinculados": vinc, "regiao": regiao, "regiao_fonte": regiao_fonte},
+                "genetica": genetica,
+                "oferta": {"touros": oferta_touros, "embrioes": oferta_embrioes,
+                           "tipo": ("sêmen de leite" if eh_leite else "sêmen de corte")}}
     except Exception as e:
         return _error(e)
 

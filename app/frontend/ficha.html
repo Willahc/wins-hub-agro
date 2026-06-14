@@ -37,6 +37,17 @@
 
   <template x-if="d.fazenda">
     <div>
+      <!-- FAIXA PREDITIVA — linha de produção + porte estimado -->
+      <div class="ficha-block" style="background:#f3f8f3;border-color:#d6e2d6">
+        <div style="display:flex;gap:28px;flex-wrap:wrap;align-items:center">
+          <div><div class="rotulo" style="font-size:11px;text-transform:uppercase;color:#2d5a2d">Linha de produção</div>
+            <div class="nome" style="font-size:17px" x-text="linhaLabel(d.linha_producao)"></div></div>
+          <div><div class="rotulo" style="font-size:11px;text-transform:uppercase;color:#2d5a2d">Porte estimado</div>
+            <div class="nome" style="font-size:17px;text-transform:capitalize" x-text="d.porte_estimado||'—'"></div></div>
+          <div class="fz-sub" style="color:#888;max-width:420px">Estimativa por cruzamento (capital + genética + região) — orienta a abordagem; não é headcount confirmado.</div>
+        </div>
+      </div>
+
       <!-- BLOCO 1 — FAZENDA -->
       <div class="ficha-block">
         <h2>🐄 Fazenda</h2>
@@ -91,31 +102,57 @@
         </div>
       </div>
 
-      <!-- BLOCO 3 — GENÉTICA -->
+      <!-- BLOCO 3 — GENÉTICA (boi/vaca/sêmen/embrião — pendente quando não há) -->
       <div class="ficha-block">
-        <h2>🧬 Genética</h2>
-        <div x-show="d.genetica.matriz_elite" style="margin-bottom:12px">
-          <span class="badge gold">⭐ Criador de elite (lado fêmea)</span>
-          <span class="fz-sub" x-text="d.genetica.matriz_elite ? (d.genetica.matriz_elite.n_matrizes+' matrizes avaliadas no Geneplus · melhor IQGg '+(d.genetica.matriz_elite.melhor_iqgg||'')) : ''"></span>
+        <h2>🧬 Genética da fazenda</h2>
+        <div style="margin-bottom:12px">
+          <span x-show="d.genetica.matriz_elite" class="badge gold">⭐ Criador de elite (matriz)</span>
+          <span x-show="d.genetica.sinal" class="badge" :class="d.genetica.sinal==='alta'?'ok':(d.genetica.sinal==='media'?'gold':'neutral')" x-text="'Sinal genético: '+d.genetica.sinal"></span>
+          <span class="fz-sub" x-show="d.genetica.sinal" x-text="' · por correspondência de nome ('+(d.genetica.match_fazenda||'')+'), não posse confirmada'"></span>
+          <span class="fz-sub" x-show="!d.genetica.sinal" style="color:#999">Sinal genético não mapeado — pode ser produtor comercial sem registro.</span>
         </div>
-        <template x-if="d.genetica.sinal">
-          <div>
-            <div style="margin-bottom:12px">
-              <span class="badge" :class="d.genetica.sinal==='alta'?'ok':(d.genetica.sinal==='media'?'gold':'neutral')" x-text="'Sinal genético: '+d.genetica.sinal"></span>
-              <span class="fz-sub" x-text="' · atribuído por correspondência de nome ('+(d.genetica.match_fazenda||'')+'), não posse confirmada'"></span>
-            </div>
-            <div class="apt-grid">
-              <div class="apt-card"><div class="k">🐂 Touros</div><div class="big" x-text="fmt(d.genetica.touros)"></div>
-                <div class="fz-sub" x-text="racasDe('M')"></div></div>
-              <div class="apt-card"><div class="k">🐄 Vacas/Matrizes</div><div class="big" x-text="fmt(d.genetica.matrizes)"></div>
-                <div class="fz-sub" x-text="racasDe('F')"></div></div>
-              <div class="apt-card" x-show="d.genetica.semen.length"><div class="k">💧 Sêmen à venda</div><div class="big" x-text="fmt(d.genetica.semen.length)"></div>
-                <div class="fz-sub" x-text="'a partir de R$ '+menorPreco()"></div></div>
-            </div>
-            <div class="fz-sub" style="margin-top:10px" x-text="aptidaoResumo()"></div>
-          </div>
-        </template>
-        <div x-show="!d.genetica.sinal" style="color:#999">Sinal genético não mapeado para esta fazenda.</div>
+        <div class="apt-grid">
+          <div class="apt-card"><div class="k">🐂 Touros</div><div class="big" x-text="d.genetica.touros||'—'"></div>
+            <div class="fz-sub" x-text="d.genetica.touros ? racasDe('M') : 'pendente'"></div></div>
+          <div class="apt-card"><div class="k">🐄 Vacas/Matrizes</div><div class="big" x-text="d.genetica.matrizes||'—'"></div>
+            <div class="fz-sub" x-text="d.genetica.matrizes ? racasDe('F') : 'pendente'"></div></div>
+          <div class="apt-card"><div class="k">💧 Sêmen</div><div class="big" x-text="(d.genetica.semen&&d.genetica.semen.length)||'—'"></div>
+            <div class="fz-sub" x-text="(d.genetica.semen&&d.genetica.semen.length) ? ('à venda · a partir de R$ '+menorPreco()) : 'pendente'"></div></div>
+          <div class="apt-card"><div class="k">🧫 Embrião</div><div class="big" x-text="(d.genetica.embriao&&d.genetica.embriao.length)||'—'"></div>
+            <div class="fz-sub" x-text="(d.genetica.embriao&&d.genetica.embriao.length) ? 'à venda' : 'pendente'"></div></div>
+        </div>
+        <div class="fz-sub" style="margin-top:10px" x-show="d.genetica.sinal" x-text="aptidaoResumo()"></div>
+      </div>
+
+      <!-- BLOCO 4 — O QUE OFERECER (recomendação pela linha de produção) -->
+      <div class="ficha-block" style="border-color:#cdd6cd;background:#fbfdfb">
+        <h2>🎯 O que podemos oferecer</h2>
+        <div class="fz-sub" style="margin-bottom:10px">
+          Recomendação para fazenda de <b x-text="linhaLabel(d.linha_producao)"></b><span x-show="d.oferta" x-text="' · '+d.oferta.tipo"></span> — melhores touros vendáveis da linha:
+        </div>
+        <div class="table-scroll" x-show="d.oferta && d.oferta.touros.length">
+          <table class="data">
+            <thead><tr><th>Índice</th><th>Touro</th><th>Raça</th><th>Sêmen (dose)</th></tr></thead>
+            <tbody>
+              <template x-for="t in (d.oferta?d.oferta.touros:[])" :key="t.nome">
+                <tr>
+                  <td><span class="tier alta" x-text="fmtN(t.indice)"></span> <span class="fz-sub" x-text="t.indice_tipo"></span></td>
+                  <td class="fz-nome" x-text="cleanNome(t.nome)"></td>
+                  <td><span class="badge neutral" x-text="t.raca"></span></td>
+                  <td><span class="badge ok" x-text="'R$ '+fmtN(t.preco_dose)"></span> <span class="fz-sub" x-text="t.central"></span></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+        <div x-show="d.oferta && d.oferta.embrioes && d.oferta.embrioes.length" style="margin-top:10px">
+          <div class="fz-sub" style="margin-bottom:4px">🧫 Embriões disponíveis na linha:</div>
+          <template x-for="e in (d.oferta?d.oferta.embrioes:[])">
+            <span class="badge info" style="margin-right:6px" x-text="(e.doadora_nome||'doadora')+' × '+(e.touro_nome||'touro')+' · R$ '+fmtN(e.preco)"></span>
+          </template>
+        </div>
+        <div x-show="!d.oferta || !d.oferta.touros.length" style="color:#999">Sem oferta vendável catalogada para esta linha ainda.</div>
+        <a class="btn btn-ghost" style="margin-top:12px" :href="'/cruzamento?finalidade='+(d.linha_producao==='leite'?'leite':'corte')">Ver catálogo completo da linha →</a>
       </div>
     </div>
   </template>
@@ -139,6 +176,8 @@ function ficha(){
     cleanNome(s){ return s? String(s).replace(/\s*\(.*$/,'').trim() : '—'; },
     fmt(n){ return (n==null)?'—':Number(n).toLocaleString('pt-BR'); },
     profLabel(p){ return {veterinario:'Veterinário',zootecnista:'Zootecnista',agronomo:'Agrônomo',ambos:'Vet/Zootec'}[p]||(p||'Técnico'); },
+    linhaLabel(l){ return {corte:'🥩 Corte',leite:'🥛 Leite',dupla:'⚖ Dupla aptidão',indef:'— não definida'}[l]||'— não definida'; },
+    fmtN(n){ return (n==null)?'—':Number(n).toLocaleString('pt-BR',{maximumFractionDigits:2}); },
     zapDigits(z){ return z? String(z).replace(/\D/g,'') : ''; },
     igHandle(s){ return s? String(s).replace(/^@/,'').replace(/^.*instagram\.com\//,'').replace(/\/.*$/,'') : ''; },
     contatos(f){
