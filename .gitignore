@@ -32,3 +32,6 @@ data/
 
 # Deliverables de prospecção (PII) movidos da raiz
 deliverables/
+
+# PDF de pricing interno (gerável via scripts/gen_valuation_pdf.py)
+app/frontend/dl/*.pdf

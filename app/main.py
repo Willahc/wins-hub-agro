@@ -3503,6 +3503,15 @@ def campo_page(request: Request):
     return resp
 
 
+@app.get("/baixar/valuation.pdf")
+def baixar_valuation(request: Request):
+    """PDF de valoração & modelo de negócio (interno). Exige sessão."""
+    if not get_current_user(request):
+        return RedirectResponse("/login")
+    return FileResponse("frontend/dl/WiNS_Valoracao.pdf", media_type="application/pdf",
+                        filename="WiNS_Valoracao.pdf")
+
+
 @app.get("/baixar/campo.apk")
 def baixar_apk(request: Request):
     """Download do APK (wrapper do app de campo). Exige sessão desde 11/06 (pós-demo):
