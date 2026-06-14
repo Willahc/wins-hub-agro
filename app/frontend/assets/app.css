@@ -116,7 +116,10 @@ table.data .fz-sub{color:var(--ink-400);font-size:var(--fz-xs)}
 .secure-note{display:flex;align-items:center;gap:8px;font-size:var(--fz-xs);color:var(--ink-400)}
 .secure-note svg{width:13px;height:13px;color:var(--brand-500)}
 
-@media(max-width:880px){
+/* Desktop (≥1024px): sidebar fixa e sempre visível → o ☰ não tem função, some. */
+@media(min-width:1024px){ .nav-toggle{display:none} }
+/* Mobile/tablet (<1024px): sidebar vira gaveta; o ☰ no topbar abre/fecha. */
+@media(max-width:1023.98px){
   .app{grid-template-columns:1fr}
   .sidebar{position:fixed;left:-260px;width:248px;z-index:100;transition:left var(--t)}
   .sidebar.open{left:0}
