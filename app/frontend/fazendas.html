@@ -2,7 +2,7 @@
 {% block title %}Fazendas · WiNS Hub Agro{% endblock %}
 {% block topbar %}Fazendas{% endblock %}
 {% block content %}
-<div x-data="fazendas()" x-init="load()">
+<div x-data="fazendas()" x-init="restoreFilters();load()">
 
   <div class="page-head">
     <div>
@@ -63,7 +63,8 @@
             <tr>
               <td><span class="tier" :class="tierClass(r.prioridade)" x-text="prioLabel(r.prioridade)"></span></td>
               <td>
-                <div class="fz-nome" x-text="r.nome_fazenda"></div>
+                <a class="fz-nome" :href="'/fazendas/'+(r.cnpj_completo||'').replace(/\D/g,'')" @click="saveFilters()"
+                   x-text="r.nome_fazenda" style="cursor:pointer;color:#2d5a2d;text-decoration:none"></a>
                 <div class="fz-sub mono" x-text="(r.municipio||'')+'/'+r.uf+' · '+(r.cnpj_completo||'')"></div>
               </td>
               <td>
@@ -114,6 +115,8 @@ function fazendas(){
     ufs:['MT','MS','GO','PA','TO','MG','BA','RO','SP','PR','RS','SC','ES','RJ','MA','PI','CE','PE','BA','RN','PB','AL','SE','AC','RR','AP','AM','DF'],
     canais:['WhatsApp','E-mail','E-mail (Receita)','Instagram DM','E-mail (risco bounce)','E-mail (contador)','Via técnico','Ligacao (capturar zap)','sem canal'],
     qs(){const p=new URLSearchParams();for(const k in this.f)if(this.f[k])p.set(k,this.f[k]);return p},
+    saveFilters(){ try{ sessionStorage.setItem('faz_filtros', JSON.stringify({f:this.f,page:this.page,sort:this.sort,order:this.order})); }catch(e){} },
+    restoreFilters(){ try{ const s=JSON.parse(sessionStorage.getItem('faz_filtros')||'null'); if(s){ this.f=Object.assign(this.f,s.f||{}); this.page=s.page||1; this.sort=s.sort||this.sort; this.order=s.order||this.order; } }catch(e){} },
     async load(){
       this.loading=true;
       const p=this.qs(); p.set('page',this.page); p.set('page_size',50); p.set('sort',this.sort); p.set('order',this.order);

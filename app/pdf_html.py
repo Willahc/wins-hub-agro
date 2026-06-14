@@ -931,3 +931,76 @@ def gerar_proposta_simulador(d: dict) -> bytes:
     """
     return _render("Proposta · Simulador", "Proposta de Retorno",
                    "Genética Monte Sião · WiNS Hub Agro", body)
+
+
+# --- Dossiê da Fazenda (ficha completa) — payload de /api/farm/{cnpj} ---
+def gerar_dossie_fazenda(data: dict) -> bytes:
+    f = data.get("fazenda") or {}
+    tec = data.get("tecnicos") or {}
+    gen = data.get("genetica") or {}
+    nome = _esc((f.get("nome_fazenda") or f.get("razao") or "Fazenda")).split(" (")[0]
+
+    def linha(rotulo, valor, extra=""):
+        return (f'<tr><td style="color:#6b7a6b;font-size:9pt;width:38%">{_esc(rotulo)}</td>'
+                f'<td style="font-weight:600;color:#1a3a1a">{valor or "—"}{extra}</td></tr>')
+
+    def contatos(d):
+        out = []
+        if d.get("whatsapp"): out.append(f'WhatsApp: {_esc(d["whatsapp"])}')
+        if d.get("email"): out.append(f'E-mail: {_esc(d["email"])}')
+        if d.get("instagram"): out.append(f'@{_esc(d["instagram"])}')
+        if d.get("telefone_rfb") and not d.get("whatsapp"): out.append(f'Tel: {_esc(d["telefone_rfb"])}')
+        return " · ".join(out) or "sem canal"
+
+    def bloco(titulo, inner):
+        return (f'<div style="border:1px solid #e0e8e0;border-radius:10px;padding:12px 14px;margin-bottom:12px">'
+                f'<div style="color:{VERDE_MEDIO};font-weight:800;font-size:10.5pt;text-transform:uppercase;'
+                f'letter-spacing:.4px;border-bottom:2px solid #eef2ee;padding-bottom:6px;margin-bottom:9px">{titulo}</div>{inner}</div>')
+
+    # BLOCO 1
+    b1 = ('<table style="width:100%;border-collapse:collapse">'
+          + linha("Nome / Razão social", _esc(f.get("razao") or nome))
+          + linha("CNPJ", _esc(f.get("cnpj_completo")))
+          + linha("Município / UF", f'{_esc(f.get("municipio"))} / {_esc(f.get("uf"))}')
+          + linha("Porte (capital social)", (f'R$ {f.get("capital_mi")} M' if f.get("capital_mi") else "—"))
+          + linha("Dono / Decisor", _esc((f.get("decisor") or "—")))
+          + linha("Operador / Admin", _esc(f.get("operador_jovem") or "—"))
+          + linha("Contato da fazenda", _esc(contatos(f)))
+          + linha("Canal recomendado", _esc(f.get("canal_recomendado")))
+          + '</table>')
+
+    # BLOCO 2
+    rows2 = ""
+    for t in (tec.get("vinculados") or []):
+        rows2 += (f'<tr><td style="font-weight:600">{_esc(t.get("nome"))}</td>'
+                  f'<td style="color:{VERDE_MEDIO};font-size:8.5pt">VINCULADO (sócio-técnico)</td>'
+                  f'<td>{("CRMV "+_esc(t.get("crmv"))) if t.get("crmv") else ""}</td>'
+                  f'<td>{_esc(t.get("contato") or "")}</td></tr>')
+    for t in (tec.get("regiao") or []):
+        rows2 += (f'<tr><td style="font-weight:600">{_esc(t.get("nome"))}</td>'
+                  f'<td style="color:#a07a00;font-size:8.5pt">SUGESTÃO · na região</td>'
+                  f'<td>{("CRMV "+_esc(t.get("crmv"))) if t.get("crmv") else ""}</td>'
+                  f'<td>{_esc(t.get("contato") or t.get("email") or "")}</td></tr>')
+    b2 = (f'<table style="width:100%;border-collapse:collapse;font-size:9.5pt">{rows2}</table>'
+          if rows2 else '<div style="color:#9aa39a">Nenhum técnico mapeado para esta fazenda nem no município.</div>')
+
+    # BLOCO 3
+    if gen.get("sinal"):
+        apt = {}
+        for x in (gen.get("por_aptidao") or []): apt[x["aptidao"]] = apt.get(x["aptidao"], 0) + x["n"]
+        racas_m = ", ".join(sorted({x["raca"] for x in (gen.get("por_aptidao") or []) if x["sexo"] == "M"}))
+        racas_f = ", ".join(sorted({x["raca"] for x in (gen.get("por_aptidao") or []) if x["sexo"] == "F"}))
+        b3 = (f'<div style="margin-bottom:8px">Sinal genético: <b>{_esc(gen.get("sinal"))}</b> '
+              f'<span style="color:#8a948a;font-size:8.5pt">· por correspondência de nome ({_esc(gen.get("match_fazenda"))}), não posse confirmada</span></div>'
+              '<table style="width:100%;border-collapse:collapse">'
+              + linha("🐂 Touros", f'<b>{gen.get("touros",0)}</b>', f' <span style="color:#6b7a6b;font-size:8.5pt">{_esc(racas_m)}</span>')
+              + linha("🐄 Vacas / Matrizes", f'<b>{gen.get("matrizes",0)}</b>', f' <span style="color:#6b7a6b;font-size:8.5pt">{_esc(racas_f)}</span>')
+              + (linha("💧 Sêmen à venda", f'{len(gen.get("semen") or [])} touros com oferta') if gen.get("semen") else "")
+              + linha("Aptidão", _esc(" · ".join(f"{k}: {v}" for k, v in apt.items())))
+              + '</table>')
+    else:
+        b3 = '<div style="color:#9aa39a">Sinal genético não mapeado para esta fazenda.</div>'
+
+    body = bloco("Fazenda", b1) + bloco("Técnicos", b2) + bloco("Genética", b3)
+    sub = f'{_esc(f.get("municipio"))}/{_esc(f.get("uf"))} · {_esc(f.get("cnpj_completo"))} · {datetime.now().strftime("%d/%m/%Y")}'
+    return _render("Dossiê da Fazenda", nome, sub, body)

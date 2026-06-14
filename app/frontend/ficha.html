@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Ficha da Fazenda · WiNS Hub Agro{% endblock %}
+{% block topbar %}Ficha da Fazenda{% endblock %}
+{% block head %}
+<style>
+  .ficha-block{ border:1px solid var(--border,#e3e3e3); border-radius:14px; padding:18px 20px; margin-bottom:16px; background:#fff; }
+  .ficha-block h2{ font-size:14px; text-transform:uppercase; letter-spacing:.5px; color:#2d5a2d; margin:0 0 14px; border-bottom:2px solid #eef2ee; padding-bottom:8px; }
+  .pessoa{ display:grid; grid-template-columns:1fr 1.2fr; gap:8px 18px; padding:10px 0; border-bottom:1px dashed #eee; }
+  .pessoa:last-child{ border-bottom:0; }
+  .pessoa .rotulo{ font-size:11px; text-transform:uppercase; color:#999; }
+  .pessoa .nome{ font-weight:600; }
+  .contatos{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .meta-grid{ display:flex; gap:22px; flex-wrap:wrap; margin-bottom:12px; }
+  .meta-grid .m .k{ font-size:11px; text-transform:uppercase; color:#999; }
+  .meta-grid .m .v{ font-weight:600; }
+  .apt-grid{ display:flex; gap:14px; flex-wrap:wrap; }
+  .apt-card{ border:1px solid #e7eee7; border-radius:10px; padding:12px 14px; min-width:150px; }
+  .apt-card .k{ font-size:12px; color:#2d5a2d; font-weight:700; text-transform:uppercase; }
+  .apt-card .big{ font-size:24px; font-weight:800; }
+  @media(max-width:680px){ .pessoa{ grid-template-columns:1fr; } }
+</style>
+{% endblock %}
+{% block content %}
+<div x-data="ficha()" x-init="boot()">
+
+  <div class="page-head">
+    <div>
+      <a href="/fazendas" @click.prevent="voltar()" class="btn btn-ghost" style="margin-bottom:8px">← Voltar para fazendas</a>
+      <h1 x-text="d.fazenda ? cleanNome(d.fazenda.nome_fazenda) : 'Carregando…'"></h1>
+      <div class="sub" x-show="d.fazenda" x-text="d.fazenda ? (d.fazenda.razao+' · '+d.fazenda.cnpj_completo) : ''"></div>
+    </div>
+    <a class="btn btn-gold" x-show="d.fazenda" :href="'/api/farm/'+cnpj+'/pdf'" target="_blank">📄 Exportar PDF</a>
+  </div>
+
+  <div class="loading" x-show="loading"><div class="spinner"></div></div>
+  <div class="empty" x-show="!loading && erro" x-text="erro"></div>
+
+  <template x-if="d.fazenda">
+    <div>
+      <!-- BLOCO 1 — FAZENDA -->
+      <div class="ficha-block">
+        <h2>🐄 Fazenda</h2>
+        <div class="meta-grid">
+          <div class="m"><div class="k">CNPJ</div><div class="v mono" x-text="d.fazenda.cnpj_completo"></div></div>
+          <div class="m"><div class="k">Município / UF</div><div class="v" x-text="(d.fazenda.municipio||'—')+' / '+d.fazenda.uf"></div></div>
+          <div class="m"><div class="k">Porte (capital)</div><div class="v" x-text="d.fazenda.capital_mi ? 'R$ '+d.fazenda.capital_mi+' M' : '—'"></div></div>
+          <div class="m" x-show="d.fazenda.dono_n_fazendas>1"><div class="k">Grupo</div><div class="v" x-text="d.fazenda.dono_n_fazendas+' fazendas do dono'"></div></div>
+        </div>
+        <div class="pessoa">
+          <div><div class="rotulo">Nome / Razão social</div><div class="nome" x-text="cleanNome(d.fazenda.nome_fazenda)"></div></div>
+          <div><div class="rotulo">Contato da fazenda</div><div class="contatos" x-html="contatos(d.fazenda)"></div></div>
+        </div>
+        <div class="pessoa">
+          <div><div class="rotulo">Dono / Decisor</div><div class="nome" x-text="cleanNome(d.fazenda.decisor)||'—'"></div></div>
+          <div><div class="rotulo">Canal recomendado</div><div class="contatos"><span class="badge info" x-text="d.fazenda.canal_recomendado"></span></div></div>
+        </div>
+        <div class="pessoa" x-show="d.fazenda.operador_jovem && d.fazenda.operador_jovem!==cleanNome(d.fazenda.decisor)">
+          <div><div class="rotulo">Operador / Administrador</div><div class="nome" x-text="d.fazenda.operador_jovem"></div>
+            <span class="badge" style="background:#e3f2fd;color:#1565c0;font-size:10px">opera a fazenda</span></div>
+          <div><div class="rotulo">Contato</div><div class="contatos"><span style="color:#999;font-size:12px">usar o canal da fazenda (sem contato pessoal próprio na base)</span></div></div>
+        </div>
+      </div>
+
+      <!-- BLOCO 2 — TÉCNICOS -->
+      <div class="ficha-block">
+        <h2>🩺 Técnicos</h2>
+        <template x-if="d.tecnicos.vinculados.length">
+          <div style="margin-bottom:10px">
+            <div class="rotulo" style="font-size:11px;color:#2d5a2d;font-weight:700;margin-bottom:4px">VINCULADO (sócio que é técnico)</div>
+            <template x-for="t in d.tecnicos.vinculados">
+              <div class="pessoa"><div><div class="nome" x-text="cleanNome(t.nome)"></div>
+                <span x-show="t.crmv" class="badge ok" x-text="'CRMV '+t.crmv"></span></div>
+                <div class="contatos" x-html="contatoTec(t)"></div></div>
+            </template>
+          </div>
+        </template>
+        <template x-if="d.tecnicos.regiao.length">
+          <div>
+            <div class="rotulo" style="font-size:11px;color:#a07a00;font-weight:700;margin-bottom:4px">
+              <span class="badge warn">SUGESTÃO</span> técnicos na região<span x-show="d.tecnicos.regiao_fonte==='municipio'" x-text="' ('+d.fazenda.municipio+')'"></span></div>
+            <template x-for="t in d.tecnicos.regiao">
+              <div class="pessoa"><div><div class="nome" x-text="cleanNome(t.nome)"></div>
+                <span class="fz-sub" x-text="profLabel(t.prof)"></span>
+                <span x-show="t.crmv" class="badge ok" x-text="'CRMV '+t.crmv"></span></div>
+                <div class="contatos" x-html="contatoTec(t)"></div></div>
+            </template>
+          </div>
+        </template>
+        <div x-show="!d.tecnicos.vinculados.length && !d.tecnicos.regiao.length" style="color:#999">
+          Nenhum técnico mapeado para esta fazenda nem no município. <a :href="'/tecnica?uf='+d.fazenda.uf" class="badge info">Buscar técnico na região →</a>
+        </div>
+      </div>
+
+      <!-- BLOCO 3 — GENÉTICA -->
+      <div class="ficha-block">
+        <h2>🧬 Genética</h2>
+        <template x-if="d.genetica.sinal">
+          <div>
+            <div style="margin-bottom:12px">
+              <span class="badge" :class="d.genetica.sinal==='alta'?'ok':(d.genetica.sinal==='media'?'gold':'neutral')" x-text="'Sinal genético: '+d.genetica.sinal"></span>
+              <span class="fz-sub" x-text="' · atribuído por correspondência de nome ('+(d.genetica.match_fazenda||'')+'), não posse confirmada'"></span>
+            </div>
+            <div class="apt-grid">
+              <div class="apt-card"><div class="k">🐂 Touros</div><div class="big" x-text="fmt(d.genetica.touros)"></div>
+                <div class="fz-sub" x-text="racasDe('M')"></div></div>
+              <div class="apt-card"><div class="k">🐄 Vacas/Matrizes</div><div class="big" x-text="fmt(d.genetica.matrizes)"></div>
+                <div class="fz-sub" x-text="racasDe('F')"></div></div>
+              <div class="apt-card" x-show="d.genetica.semen.length"><div class="k">💧 Sêmen à venda</div><div class="big" x-text="fmt(d.genetica.semen.length)"></div>
+                <div class="fz-sub" x-text="'a partir de R$ '+menorPreco()"></div></div>
+            </div>
+            <div class="fz-sub" style="margin-top:10px" x-text="aptidaoResumo()"></div>
+          </div>
+        </template>
+        <div x-show="!d.genetica.sinal" style="color:#999">Sinal genético não mapeado para esta fazenda.</div>
+      </div>
+    </div>
+  </template>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function ficha(){
+  return {
+    cnpj:'', d:{fazenda:null,tecnicos:{vinculados:[],regiao:[],regiao_fonte:null},genetica:{}}, loading:true, erro:'',
+    async boot(){
+      this.cnpj=(location.pathname.split('/').pop()||'').replace(/\D/g,'');
+      try{
+        const r=await fetch('/api/farm/'+this.cnpj); const j=await r.json();
+        if(j.error){ this.erro=j.error; } else { this.d=j; }
+      }catch(e){ this.erro='Erro ao carregar a ficha.'; }
+      this.loading=false;
+    },
+    voltar(){ location.href='/fazendas'; },   // fazendas.html restaura filtros do sessionStorage
+    cleanNome(s){ return s? String(s).replace(/\s*\(.*$/,'').trim() : '—'; },
+    fmt(n){ return (n==null)?'—':Number(n).toLocaleString('pt-BR'); },
+    profLabel(p){ return {veterinario:'Veterinário',zootecnista:'Zootecnista',agronomo:'Agrônomo',ambos:'Vet/Zootec'}[p]||(p||'Técnico'); },
+    zapDigits(z){ return z? String(z).replace(/\D/g,'') : ''; },
+    igHandle(s){ return s? String(s).replace(/^@/,'').replace(/^.*instagram\.com\//,'').replace(/\/.*$/,'') : ''; },
+    contatos(f){
+      let h=[];
+      if(f.whatsapp) h.push(`<a class="badge ok" href="https://wa.me/55${this.zapDigits(f.whatsapp)}" target="_blank">WhatsApp${f.whats_alta_conf?' ✓':''}</a>`);
+      if(f.email) h.push(`<a class="badge ${f.email_tier==='valid'?'info':'neutral'}" href="mailto:${f.email}" title="${f.email}">e-mail${f.email_tier==='rfb'||f.email_tier==='rfb-contador'?' (Receita)':''}</a>`);
+      if(f.instagram) h.push(`<a class="badge neutral" href="https://instagram.com/${this.igHandle(f.instagram)}" target="_blank">@${this.igHandle(f.instagram)}</a>`);
+      if(f.telefone_rfb && !f.whatsapp) h.push(`<a class="badge neutral mono" href="tel:+55${this.zapDigits(f.telefone_rfb)}">${f.telefone_rfb}</a>`);
+      return h.length? h.join(' ') : '<span style="color:#ccc">sem canal</span>';
+    },
+    contatoTec(t){
+      let h=[];
+      if(t.contato) h.push(`<a class="badge ok" href="https://wa.me/55${this.zapDigits(t.contato)}" target="_blank">${this.zapDigits(t.contato).length>=10?'WhatsApp':t.contato}</a>`);
+      if(t.email) h.push(`<a class="badge info" href="mailto:${t.email}">e-mail</a>`);
+      return h.length? h.join(' ') : '<span style="color:#ccc">sem contato</span>';
+    },
+    racasDe(sexo){ const rs=(this.d.genetica.por_aptidao||[]).filter(x=>x.sexo===sexo).map(x=>x.raca); return [...new Set(rs)].join(', '); },
+    aptidaoResumo(){
+      const a={}; (this.d.genetica.por_aptidao||[]).forEach(x=>{ a[x.aptidao]=(a[x.aptidao]||0)+x.n; });
+      return Object.keys(a).map(k=>`${k}: ${this.fmt(a[k])}`).join(' · ');
+    },
+    menorPreco(){ const ps=(this.d.genetica.semen||[]).map(s=>Number(s.preco)).filter(Boolean); return ps.length? Math.min(...ps).toLocaleString('pt-BR') : '—'; }
+  }
+}
+</script>
+{% endblock %}

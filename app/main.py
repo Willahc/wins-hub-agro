@@ -11,7 +11,8 @@ from starlette.concurrency import run_in_threadpool
 from auth import authenticate_user, create_access_token, decode_token
 from pdf_html import (gerar_parecer_cruzamento, gerar_parecer_matching,  # HTML/CSS -> WeasyPrint
                       gerar_cotacao_acasalamento, gerar_briefing_chegada,
-                      gerar_proposta_simulador, gerar_relatorio_territorial)
+                      gerar_proposta_simulador, gerar_relatorio_territorial,
+                      gerar_dossie_fazenda)
 import external_apis
 import psycopg2
 import psycopg2.extras
@@ -1835,6 +1836,87 @@ def mapa_page(request: Request):
         {"request": request, "user": user, "active": "mapa", "app_version": APP_VERSION})
     resp.headers["Cache-Control"] = "no-store"
     return resp
+
+# ---------------------------------------------------------------------------
+# FICHA DA FAZENDA — dossiê consolidado (/fazendas/{cnpj})
+# Honestidade do vínculo: BLOCO 1 = Receita (confirmado); técnico sócio = provável
+# vínculo; técnico no município = SUGESTÃO; genética = sinal por nome (confiança).
+# ---------------------------------------------------------------------------
+_APTIDAO = ("CASE WHEN ra.nome IN ('Holandês','Jersey','Gir Leiteiro','Girolando') THEN 'leite' "
+            "WHEN ra.nome IN ('Guzerá','Sindi','Senepol','Caracu','Guzera Leiteiro') THEN 'dupla' "
+            "ELSE 'corte' END")
+
+def _so_digitos(s): return "".join(c for c in (s or "") if c.isdigit())
+
+@app.get("/fazendas/{cnpj}", response_class=HTMLResponse)
+def ficha_page(request: Request, cnpj: str):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    resp = templates.TemplateResponse("ficha.html",
+        {"request": request, "user": user, "active": "fazendas", "app_version": APP_VERSION})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+@app.get("/api/farm/{cnpj}")
+def api_farm(cnpj: str):
+    try:
+        cb = _so_digitos(cnpj)[:8]
+        fz = query("SELECT * FROM prospeccao.fazenda_nacional WHERE cnpj_basico=%(c)s LIMIT 1", {"c": cb})
+        if not fz:
+            return {"error": "Fazenda não encontrada"}
+        f = fz[0]
+        # BLOCO 2 — técnicos. socio_tecnico = provável vínculo; tecnico_municipio = sugestão.
+        vinc = query("""SELECT tecnico_nome AS nome, contato, crmv, uf, tipo
+            FROM prospeccao.canal_tecnico WHERE cnpj_basico=%(c)s AND tipo='socio_tecnico'""", {"c": cb})
+        regiao = query("""SELECT tecnico_nome AS nome, contato, crmv, uf, tipo
+            FROM prospeccao.canal_tecnico WHERE cnpj_basico=%(c)s AND tipo='tecnico_municipio' LIMIT 6""", {"c": cb})
+        regiao_fonte = "vínculo_municipio" if regiao else None
+        if not regiao and f.get("municipio"):   # fallback ao vivo: técnicos do mesmo município
+            regiao = query("""SELECT nome, COALESCE(NULLIF(profissao,''),
+                       CASE crmv_cat WHEN 'Z' THEN 'zootecnista' WHEN 'V' THEN 'veterinario' END) AS prof,
+                       crmv, COALESCE(whatsapp,celular,prospeccao.cel_whats(tel_melhor)) AS contato, email_receita AS email
+                FROM prospeccao.v_tecnico_fazenda_ui
+                WHERE upper(municipio)=upper(%(m)s) AND uf=%(uf)s AND categoria IS NOT NULL AND nome !~ '^[0-9]'
+                ORDER BY (COALESCE(whatsapp,celular) IS NOT NULL) DESC, crmv_confiavel DESC NULLS LAST LIMIT 6""",
+                {"m": f["municipio"], "uf": f["uf"]})
+            regiao_fonte = "municipio" if regiao else None
+        # BLOCO 3 — genética (sinal por NOME; só agrega se houver match em prospect_genetica)
+        pg = query("SELECT touros_nelore, confianca, nucleo, match_fazenda FROM prospeccao.prospect_genetica WHERE cnpj_basico=%(c)s", {"c": cb})
+        genetica = {"sinal": f.get("sinal_genetico") if f.get("sinal_genetico") in ("alta","media","baixa") else None,
+                    "por_aptidao": [], "matrizes": 0, "touros": 0, "match_fazenda": None, "semen": [], "embriao": []}
+        if pg:
+            g = pg[0]; genetica["match_fazenda"] = g["match_fazenda"]; genetica["confianca"] = g["confianca"]
+            nuc = (g["nucleo"] or "").strip()
+            if nuc:
+                genetica["por_aptidao"] = query(f"""
+                    SELECT {_APTIDAO} AS aptidao, r.sexo, ra.nome AS raca, count(*) AS n
+                    FROM mercado.reprodutor r JOIN catalogo.raca ra ON ra.id=r.raca_id
+                    WHERE upper(unaccent(r.fazenda_origem))=upper(unaccent(%(n)s))
+                    GROUP BY 1,2,3 ORDER BY n DESC""", {"n": g["match_fazenda"]})
+                genetica["touros"] = sum(r["n"] for r in genetica["por_aptidao"] if r["sexo"] == "M")
+                genetica["matrizes"] = sum(r["n"] for r in genetica["por_aptidao"] if r["sexo"] == "F")
+                # sêmen/embrião dessa fazenda (raro): touros com oferta + embrião por doadora
+                genetica["semen"] = query("""SELECT r.nome, o.preco_dose_brl AS preco, c.nome AS central
+                    FROM mercado.reprodutor r JOIN mercado.touro_oferta o ON o.reprodutor_id=r.id
+                    LEFT JOIN catalogo.central c ON c.id=o.central_id
+                    WHERE upper(unaccent(r.fazenda_origem))=upper(unaccent(%(n)s)) AND o.preco_dose_brl>0 LIMIT 8""",
+                    {"n": g["match_fazenda"]})
+        return {"fazenda": f, "tecnicos": {"vinculados": vinc, "regiao": regiao, "regiao_fonte": regiao_fonte},
+                "genetica": genetica}
+    except Exception as e:
+        return _error(e)
+
+@app.get("/api/farm/{cnpj}/pdf")
+async def api_farm_pdf(cnpj: str):
+    data = api_farm(cnpj)
+    if isinstance(data, dict) and "error" in data:
+        return data
+    pdf_bytes = await run_in_threadpool(gerar_dossie_fazenda, data)
+    nm = (data.get("fazenda", {}).get("nome_fazenda") or "fazenda").split()[0]
+    fname = f"dossie_{nm}_{datetime.now().strftime('%Y%m%d')}.pdf"
+    return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
 # Catálogo de genética (página Cruzamento): touros + matrizes avaliados, com índice
 # (IQGg genômico OU MGTe ANCP), preço de dose + central. Espinha = mercado.reprodutor.
