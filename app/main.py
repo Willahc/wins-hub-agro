@@ -3503,6 +3503,15 @@ def campo_page(request: Request):
     return resp
 
 
+@app.get("/baixar/onepager.pdf")
+def baixar_onepager(request: Request):
+    """One-pager de impacto p/ enviar a grandes grupos. Exige sessão."""
+    if not get_current_user(request):
+        return RedirectResponse("/login")
+    return FileResponse("frontend/dl/WiNS_OnePager.pdf", media_type="application/pdf",
+                        filename="WiNS_OnePager.pdf")
+
+
 @app.get("/baixar/valuation.pdf")
 def baixar_valuation(request: Request):
     """PDF de valoração & modelo de negócio (interno). Exige sessão."""
