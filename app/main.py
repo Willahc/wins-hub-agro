@@ -2737,8 +2737,21 @@ def prospeccao_csv(uf: str = None, canal: str = None, q: str = None):
 # Profissão COERENTE = sinal textual do Serper reforçado pelo sufixo do CRMV (/Z=zootecnista, /V=vet).
 # A fila mostra só dado coerente: estabelecimentos de CNAE veterinário (categoria conhecida) e
 # tiers acionáveis de corte — fora o ruído urbano (U) e pet (E).
-_TEC_PROF = ("COALESCE(NULLIF(profissao,''), "
-             "CASE crmv_cat WHEN 'Z' THEN 'zootecnista' WHEN 'V' THEN 'veterinario' END)")
+# Profissão DERIVADA com inferência por CNAE (jun/14): NÃO temos o roster nacional do
+# CFMV (bloqueado) — profissão/CRMV explícitos só vêm da amostra tecnico_social (~4.3k).
+# Mas o CNAE diz, em escala, qual é a atividade: estabelecimento veterinário (7500100) =
+# veterinário (responsável técnico é vet por regra do CFMV); insem/apoio/reprodução =
+# reprodução/manejo. Ordem: explícito/CRMV primeiro (vet/zootec/ambos), depois CNAE.
+# A confiança fica em _TEC_CONF ('confirmado' = cadastro/CRMV; 'provavel' = só CNAE).
+_TEC_PROF = ("CASE "
+             "WHEN profissao='veterinario' OR crmv_cat='V' THEN 'veterinario' "
+             "WHEN profissao='zootecnista' OR crmv_cat='Z' THEN 'zootecnista' "
+             "WHEN NULLIF(profissao,'') IS NOT NULL THEN profissao "      # 'ambos'
+             "WHEN categoria='veterinaria' THEN 'veterinario' "
+             "WHEN categoria IN ('inseminacao','apoio_pecuaria','repro_secundario') THEN 'reproducao_manejo' "
+             "END")
+_TEC_CONF = ("CASE WHEN NULLIF(profissao,'') IS NOT NULL OR crmv_confiavel OR crmv_cat IS NOT NULL "
+             "THEN 'confirmado' ELSE 'provavel' END")
 # celular INFERIDO do telefone da Receita via prospeccao.cel_whats(): tira DDI 55, aceita
 # assinante 6/7/8/9 (fixo é 2-5), insere o 9º dígito nos antigos de 8 díg → 11 díg WhatsApp-able.
 _TEC_ZAP_RFB = "prospeccao.cel_whats(tel_melhor)"
@@ -2764,7 +2777,7 @@ _TEC_SCORE = ("((nome !~ '^[0-9]' AND nome <> '(sem nome fantasia)')::int "
               f"+ ({_TEC_EMAIL} IS NOT NULL)::int "
               "+ (instagram IS NOT NULL)::int "
               "+ COALESCE(crmv_confiavel,false)::int)")
-_TEC_COLS = (f"nome, {_TEC_PROF} AS profissao, categoria, tier, municipio, uf, "
+_TEC_COLS = (f"nome, {_TEC_PROF} AS profissao, {_TEC_CONF} AS prof_conf, categoria, tier, municipio, uf, "
              f"{_TEC_TEL} AS telefone, whatsapp, celular, instagram, {_TEC_EMAIL} AS email, "
              f"CASE WHEN {_TEC_EMAIL} ~* 'cont(abil|ador|abilidade)|escritorio|fiscal' THEN 'contador' "
              f"WHEN {_TEC_EMAIL} IS NOT NULL THEN 'ok' END AS email_tier, site, "
@@ -2805,18 +2818,17 @@ _TEC_SORT = {"score": _TEC_SCORE, "nome": "nome", "profissao": "profissao", "ati
              "fazreal": "fazendas_real_50km"}
 
 
-def _tec_where(uf, prof, canal, q, params, escopo="tecnico"):
+def _tec_where(uf, prof, canal, q, params, escopo="todos"):
     w = []
-    if escopo == "tecnico":
+    # escopo = filtro de CONFIANÇA: confirmado (cadastro/CRMV) vs provavel (só CNAE)
+    if escopo == "confirmado":
         w.append(_TEC_REAL)
-    elif escopo == "setor":
+    elif escopo == "provavel":
         w.append(f"NOT {_TEC_REAL}")
     if uf:
         w.append("uf = %(uf)s"); params["uf"] = uf
-    if prof == "zootecnista":
-        w.append("(profissao='zootecnista' OR crmv_cat='Z')")
-    elif prof == "veterinario":
-        w.append("(profissao='veterinario' OR crmv_cat='V')")
+    if prof in ("veterinario", "zootecnista", "ambos", "reproducao_manejo"):
+        w.append(f"{_TEC_PROF} = %(prof)s"); params["prof"] = prof
     if canal == "whatsapp":
         w.append(f"(COALESCE(whatsapp,celular) IS NOT NULL OR {_TEC_ZAP_PUB} IS NOT NULL OR {_TEC_ZAP_RFB} IS NOT NULL)")
     elif canal == "whatsapp_pub":     # só o WhatsApp PUBLICADO achado (número real, não reconstrução)
@@ -2835,7 +2847,7 @@ def _tec_where(uf, prof, canal, q, params, escopo="tecnico"):
 
 
 @app.get("/api/tecnicos/stats")
-def tecnicos_stats(origem: str = "fila", escopo: str = "tecnico"):
+def tecnicos_stats(origem: str = "fila", escopo: str = "todos"):
     """KPIs do canal técnico (vet/zootec) — fila coerente; ou roster ABCZ/CREA."""
     if origem == "abcz":
         return query("""SELECT count(*) AS total,
@@ -2853,14 +2865,16 @@ def tecnicos_stats(origem: str = "fila", escopo: str = "tecnico"):
               count(*) FILTER (WHERE email IS NOT NULL) AS canal_alto
             FROM prospeccao.tecnico_crea WHERE situacao ILIKE %(sit)s""",
             {"ag": "%agron%", "zo": "%zootec%", "sit": "ativo%"})
-    escopo_w = (f" AND {_TEC_REAL}" if escopo == "tecnico"
-                else f" AND NOT {_TEC_REAL}" if escopo == "setor" else "")
+    escopo_w = (f" AND {_TEC_REAL}" if escopo == "confirmado"
+                else f" AND NOT {_TEC_REAL}" if escopo == "provavel" else "")
     return query(
         f"""SELECT count(*) AS total,
                count(*) FILTER (WHERE {_TEC_PROF}='veterinario') AS veterinarios,
+               count(*) FILTER (WHERE {_TEC_PROF}='veterinario' AND {_TEC_CONF}='confirmado') AS veterinarios_conf,
                count(*) FILTER (WHERE {_TEC_PROF}='zootecnista') AS zootecnistas,
-               count(*) FILTER (WHERE profissao='ambos') AS ambos,
-               count(*) FILTER (WHERE NULLIF(profissao,'') IS NOT NULL) AS com_profissao,
+               count(*) FILTER (WHERE {_TEC_PROF}='ambos') AS ambos,
+               count(*) FILTER (WHERE {_TEC_PROF}='reproducao_manejo') AS reproducao,
+               count(*) FILTER (WHERE {_TEC_REAL}) AS confirmados,
                count(*) FILTER (WHERE COALESCE(whatsapp,celular) IS NOT NULL OR {_TEC_ZAP_PUB} IS NOT NULL) AS com_whatsapp,
                count(*) FILTER (WHERE COALESCE(whatsapp,celular) IS NULL AND {_TEC_ZAP_PUB} IS NULL AND {_TEC_ZAP_RFB} IS NOT NULL) AS com_celular_rfb,
                count(*) FILTER (WHERE crmv_confiavel) AS com_crmv,
@@ -2907,7 +2921,7 @@ def _tecnicos_roster(origem, uf, q, page, page_size):
 @app.get("/api/tecnicos")
 def tecnicos(uf: str = None, prof: str = None, canal: str = None, q: str = None,
              page: int = 1, page_size: int = 50, sort: str = None, order: str = "asc", origem: str = "fila",
-             escopo: str = "tecnico"):
+             escopo: str = "todos"):
     """Fila do canal técnico: vet/zootecnista (fila) ou rosters ABCZ/CREA (origem)."""
     if origem in ("abcz", "crea"):
         return _tecnicos_roster(origem, uf, q, page, page_size)
@@ -2927,7 +2941,7 @@ def tecnicos(uf: str = None, prof: str = None, canal: str = None, q: str = None,
 
 @app.get("/api/tecnicos/csv")
 def tecnicos_csv(uf: str = None, prof: str = None, canal: str = None, q: str = None,
-                 escopo: str = "tecnico"):
+                 escopo: str = "todos"):
     """Exporta a fila técnica filtrada (não só a página) em CSV."""
     params = {}
     where = _tec_where(uf, prof, canal, q, params, escopo)
