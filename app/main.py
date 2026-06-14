@@ -2787,6 +2787,12 @@ _TEC_COLS = (f"nome, {_TEC_PROF} AS profissao, categoria, tier, municipio, uf, "
 _TEC_BASE = ("FROM prospeccao.v_tecnico_fazenda_ui WHERE nome !~ '^[0-9]' AND ("
              "(categoria IS NOT NULL AND tier IN ('A-inseminador','B-corte-alto','C-corte-medio','D-corte-baixo')) "
              "OR categoria IN ('apoio_pecuaria','inseminacao','repro_secundario'))")
+# "Técnico REAL" = pessoa/empresa com PROFISSÃO declarada (vet/zootec/ambos) OU CRMV.
+# O resto da fila (~70%) são estabelecimentos classificados só por CNAE (clínicas, lojas
+# agro, apoio pecuário) puxados da Receita — úteis p/ roteamento por município, mas NÃO
+# são técnicos-pessoa confirmados. escopo='tecnico' (default) restringe a estes; 'setor'
+# mostra o complemento (estabelecimentos); 'todos' não filtra.
+_TEC_REAL = "(NULLIF(profissao,'') IS NOT NULL OR crmv_confiavel OR crmv_cat IS NOT NULL)"
 _TEC_ORDER = (f"ORDER BY {_TEC_SCORE} DESC, crmv_confiavel DESC NULLS LAST, "
               "(COALESCE(whatsapp,celular) IS NOT NULL) DESC, "
               "(sinal_corte IN ('corte','corte+pet')) DESC, nome")
@@ -2799,8 +2805,12 @@ _TEC_SORT = {"score": _TEC_SCORE, "nome": "nome", "profissao": "profissao", "ati
              "fazreal": "fazendas_real_50km"}
 
 
-def _tec_where(uf, prof, canal, q, params):
+def _tec_where(uf, prof, canal, q, params, escopo="tecnico"):
     w = []
+    if escopo == "tecnico":
+        w.append(_TEC_REAL)
+    elif escopo == "setor":
+        w.append(f"NOT {_TEC_REAL}")
     if uf:
         w.append("uf = %(uf)s"); params["uf"] = uf
     if prof == "zootecnista":
@@ -2825,7 +2835,7 @@ def _tec_where(uf, prof, canal, q, params):
 
 
 @app.get("/api/tecnicos/stats")
-def tecnicos_stats(origem: str = "fila"):
+def tecnicos_stats(origem: str = "fila", escopo: str = "tecnico"):
     """KPIs do canal técnico (vet/zootec) — fila coerente; ou roster ABCZ/CREA."""
     if origem == "abcz":
         return query("""SELECT count(*) AS total,
@@ -2843,16 +2853,20 @@ def tecnicos_stats(origem: str = "fila"):
               count(*) FILTER (WHERE email IS NOT NULL) AS canal_alto
             FROM prospeccao.tecnico_crea WHERE situacao ILIKE %(sit)s""",
             {"ag": "%agron%", "zo": "%zootec%", "sit": "ativo%"})
+    escopo_w = (f" AND {_TEC_REAL}" if escopo == "tecnico"
+                else f" AND NOT {_TEC_REAL}" if escopo == "setor" else "")
     return query(
         f"""SELECT count(*) AS total,
                count(*) FILTER (WHERE {_TEC_PROF}='veterinario') AS veterinarios,
                count(*) FILTER (WHERE {_TEC_PROF}='zootecnista') AS zootecnistas,
+               count(*) FILTER (WHERE profissao='ambos') AS ambos,
+               count(*) FILTER (WHERE NULLIF(profissao,'') IS NOT NULL) AS com_profissao,
                count(*) FILTER (WHERE COALESCE(whatsapp,celular) IS NOT NULL OR {_TEC_ZAP_PUB} IS NOT NULL) AS com_whatsapp,
                count(*) FILTER (WHERE COALESCE(whatsapp,celular) IS NULL AND {_TEC_ZAP_PUB} IS NULL AND {_TEC_ZAP_RFB} IS NOT NULL) AS com_celular_rfb,
                count(*) FILTER (WHERE crmv_confiavel) AS com_crmv,
                count(*) FILTER (WHERE tem_fazenda_propria) AS com_fazenda,
                count(*) FILTER (WHERE score_canal >= 80) AS canal_alto
-           {_TEC_BASE}""")
+           {_TEC_BASE}{escopo_w}""")
 
 
 def _tec_order(sort, order):
@@ -2892,12 +2906,13 @@ def _tecnicos_roster(origem, uf, q, page, page_size):
 
 @app.get("/api/tecnicos")
 def tecnicos(uf: str = None, prof: str = None, canal: str = None, q: str = None,
-             page: int = 1, page_size: int = 50, sort: str = None, order: str = "asc", origem: str = "fila"):
+             page: int = 1, page_size: int = 50, sort: str = None, order: str = "asc", origem: str = "fila",
+             escopo: str = "tecnico"):
     """Fila do canal técnico: vet/zootecnista (fila) ou rosters ABCZ/CREA (origem)."""
     if origem in ("abcz", "crea"):
         return _tecnicos_roster(origem, uf, q, page, page_size)
     params = {}
-    where = _tec_where(uf, prof, canal, q, params)
+    where = _tec_where(uf, prof, canal, q, params, escopo)
     tot = query(f"SELECT count(*) AS n {_TEC_BASE}{where}", params)
     if isinstance(tot, dict):
         return tot
@@ -2911,10 +2926,11 @@ def tecnicos(uf: str = None, prof: str = None, canal: str = None, q: str = None,
 
 
 @app.get("/api/tecnicos/csv")
-def tecnicos_csv(uf: str = None, prof: str = None, canal: str = None, q: str = None):
+def tecnicos_csv(uf: str = None, prof: str = None, canal: str = None, q: str = None,
+                 escopo: str = "tecnico"):
     """Exporta a fila técnica filtrada (não só a página) em CSV."""
     params = {}
-    where = _tec_where(uf, prof, canal, q, params)
+    where = _tec_where(uf, prof, canal, q, params, escopo)
     rows = query(f"SELECT {_TEC_COLS} {_TEC_BASE}{where} {_TEC_ORDER} LIMIT 20000", params)
     if isinstance(rows, dict):
         return rows
