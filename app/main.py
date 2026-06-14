@@ -237,12 +237,12 @@ def get_current_user(request: Request):
 # ---------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 def root(request: Request):
+    # Monolito index.html (17 abas) APOSENTADO em jun/14 — substituído pelo redesign
+    # de 5 páginas. A raiz agora leva à 1ª página do funil (Fazendas).
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login")
-    resp = templates.TemplateResponse("index.html", {"request": request, "user": user, "app_version": APP_VERSION})
-    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"  # shell nunca cacheado (mata downgrade do app/WebView)
-    return resp
+    return RedirectResponse("/fazendas")
 
 
 @app.get("/login", response_class=HTMLResponse)
