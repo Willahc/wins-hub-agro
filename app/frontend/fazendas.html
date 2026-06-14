@@ -61,26 +61,26 @@
         <tbody>
           <template x-for="r in rows" :key="r.cnpj_basico">
             <tr>
-              <td><span class="tier" :class="tierClass(r.prioridade)" x-text="prioLabel(r.prioridade)"></span></td>
-              <td>
+              <td data-label="Prioridade"><span class="tier" :class="tierClass(r.prioridade)" x-text="prioLabel(r.prioridade)"></span></td>
+              <td data-label="Fazenda">
                 <a class="fz-nome" :href="'/fazendas/'+(r.cnpj_completo||'').replace(/\D/g,'')" @click="saveFilters()"
                    x-text="r.nome_fazenda" style="cursor:pointer;color:#2d5a2d;text-decoration:none"></a>
                 <div class="fz-sub mono" x-text="(r.municipio||'')+'/'+r.uf+' · '+(r.cnpj_completo||'')"></div>
               </td>
-              <td>
+              <td data-label="Decisor / Operador">
                 <div x-text="cleanNome(r.decisor)||'—'"></div>
                 <div class="fz-sub" x-show="r.operador_jovem && r.operador_jovem!==cleanNome(r.decisor)" x-text="'opera: '+r.operador_jovem"></div>
               </td>
-              <td>
+              <td data-label="Sinal · Touros">
                 <span class="badge" :class="sinalBadge(r.sinal_genetico)" x-text="r.sinal_genetico"></span>
                 <span class="fz-sub" x-show="r.touros_nelore>0" x-text="' '+r.touros_nelore+' touros'"></span>
               </td>
-              <td>
+              <td data-label="Porte">
                 <span x-show="r.capital_mi" x-text="'R$ '+r.capital_mi+' M'"></span>
                 <div class="fz-sub" x-show="r.porte_digital" x-text="'IG '+fmt(r.followers)+' seg.'"></div>
               </td>
-              <td><span class="badge" :class="canalBadge(r.canal_recomendado)" x-text="r.canal_recomendado"></span></td>
-              <td>
+              <td data-label="Canal recomendado"><span class="badge" :class="canalBadge(r.canal_recomendado)" x-text="r.canal_recomendado"></span></td>
+              <td data-label="Contato">
                 <div style="display:flex;gap:6px;flex-wrap:wrap">
                   <a x-show="r.whatsapp" class="badge ok" :href="'https://wa.me/55'+r.whatsapp" target="_blank" title="WhatsApp">WhatsApp<span x-show="r.whats_alta_conf"> ✓</span></a>
                   <a x-show="r.email" class="badge info" :href="'mailto:'+r.email" :title="r.email" x-text="emailLabel(r.email_tier)"></a>
@@ -88,7 +88,7 @@
                   <span x-show="!r.whatsapp&&!r.email&&!r.instagram&&r.telefone_rfb" class="badge neutral mono" x-text="r.telefone_rfb"></span>
                 </div>
               </td>
-              <td><span x-show="r.dono_n_fazendas>1" class="badge gold" x-text="r.dono_n_fazendas+' faz.'"></span></td>
+              <td data-label="Grupo"><span x-show="r.dono_n_fazendas>1" class="badge gold" x-text="r.dono_n_fazendas+' faz.'"></span></td>
             </tr>
           </template>
         </tbody>

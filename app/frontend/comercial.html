@@ -151,16 +151,16 @@
         <tbody>
           <template x-for="r in rows" :key="r.id">
             <tr style="cursor:pointer" @click="abrirTouro(r.id)" title="Ver ficha completa do touro">
-              <td><span class="tier" :class="scoreClass(r.score)" x-text="Number(r.score).toFixed(3)"></span></td>
-              <td><div class="fz-nome" x-text="cleanNome(r.nome)"></div></td>
-              <td><span class="badge neutral" x-text="r.raca"></span></td>
-              <td x-text="r.central||'—'"></td>
-              <td x-text="r.preco_dose?brl(r.preco_dose):'—'"></td>
-              <td x-text="r.iqgg!=null?Number(r.iqgg).toFixed(2):'—'"></td>
-              <td x-text="r.dep_prioritaria!=null?Number(r.dep_prioritaria).toFixed(2):'—'"></td>
-              <td x-text="r.preco_por_iqgg!=null?brl(r.preco_por_iqgg):'—'"></td>
-              <td style="color:#2d5a2d;font-weight:700" x-text="valorAgregado(r)"></td>
-              <td><span x-show="r.roi_dose" class="badge" :class="r.roi_dose>=2?'ok':(r.roi_dose>=1?'warn':'')" x-text="(r.roi_dose||'')+'×'"></span><span x-show="!r.roi_dose">—</span></td>
+              <td data-label="Score"><span class="tier" :class="scoreClass(r.score)" x-text="Number(r.score).toFixed(3)"></span></td>
+              <td data-label="Touro"><div class="fz-nome" x-text="cleanNome(r.nome)"></div></td>
+              <td data-label="Raça"><span class="badge neutral" x-text="r.raca"></span></td>
+              <td data-label="Central" x-text="r.central||'—'"></td>
+              <td data-label="Preço dose" x-text="r.preco_dose?brl(r.preco_dose):'—'"></td>
+              <td data-label="IQGg" x-text="r.iqgg!=null?Number(r.iqgg).toFixed(2):'—'"></td>
+              <td data-label="DEP prior." x-text="r.dep_prioritaria!=null?Number(r.dep_prioritaria).toFixed(2):'—'"></td>
+              <td data-label="R$/IQGg" x-text="r.preco_por_iqgg!=null?brl(r.preco_por_iqgg):'—'"></td>
+              <td data-label="Valor agregado" style="color:#2d5a2d;font-weight:700" x-text="valorAgregado(r)"></td>
+              <td data-label="ROI dose"><span x-show="r.roi_dose" class="badge" :class="r.roi_dose>=2?'ok':(r.roi_dose>=1?'warn':'')" x-text="(r.roi_dose||'')+'×'"></span><span x-show="!r.roi_dose">—</span></td>
             </tr>
           </template>
         </tbody>

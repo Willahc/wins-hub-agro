@@ -124,11 +124,11 @@
         <tbody>
           <template x-for="(r,i) in rows" :key="r.cnpj || r.id || i">
             <tr>
-              <td>
+              <td data-label="Score">
                 <span x-show="!r.origem" class="tier" :class="scoreClass(r.score)" x-text="(r.score||0)+'/6'"></span>
                 <span x-show="r.origem" class="badge info" x-text="r.origem"></span>
               </td>
-              <td>
+              <td data-label="Profissional">
                 <div class="fz-nome" x-text="cleanNome(r.nome)"></div>
                 <div class="fz-sub">
                   <span x-text="profLabel(r.profissao)"></span>
@@ -140,19 +140,19 @@
                 <div class="fz-sub" x-show="r.origem==='CREA' && r.crmv"><span class="badge neutral" x-text="'CREA '+r.crmv"></span></div>
                 <div class="fz-sub" x-show="r.origem==='ABCZ' && r.origem_extra" x-text="r.origem_extra"></div>
               </td>
-              <td>
+              <td data-label="Atividade · Tier">
                 <span class="badge" :class="tierBadge(r)" x-text="ativLabel(r)"></span>
                 <div class="fz-sub mono" x-show="r.cnae" :title="'CNAE '+cnaeFmt(r.cnae)+' — '+cnaeLabel(r.cnae)" x-text="'CNAE '+cnaeFmt(r.cnae)"></div>
                 <div class="fz-sub" x-show="r.cnae" x-text="cnaeLabel(r.cnae)"></div>
                 <div class="fz-sub" x-show="r.sinal_corte && r.sinal_corte!=='(nao enriquecido)'" x-text="r.sinal_corte"></div>
               </td>
-              <td>
+              <td data-label="Alcance">
                 <div x-show="r.tem_fazenda_propria"><span class="badge gold" x-text="(r.n_fazendas_posse||1)+' fazenda'+((r.n_fazendas_posse>1)?'s':'')+' própria'+((r.n_fazendas_posse>1)?'s':'')"></span></div>
                 <div class="fz-sub" x-show="r.bovinos_100km" x-text="fmt(r.bovinos_100km)+' bovinos ~100km'"></div>
                 <div class="fz-sub" x-show="r.fazendas_real_50km" x-text="fmt(r.fazendas_real_50km)+' fazendas CAR ~50km'"></div>
                 <span class="fz-sub" x-show="!r.tem_fazenda_propria && !r.bovinos_100km && !r.fazendas_real_50km" style="color:#ccc">—</span>
               </td>
-              <td>
+              <td data-label="Contato">
                 <div style="display:flex;gap:6px;flex-wrap:wrap">
                   <template x-if="zapNum(r)">
                     <a class="badge" :class="zapConf(r) ? 'ok' : 'warn'" :href="'https://wa.me/55'+zapNum(r)" target="_blank" :title="zapConf(r) ? (r.zap_pub ? 'WhatsApp PUBLICADO (achado no Google/Serper) — número real' : 'WhatsApp/celular confirmado') : 'celular RECONSTRUÍDO de número antigo de 8 díg. da Receita (9º dígito inserido) — não verificado, pode estar morto'">

@@ -122,3 +122,21 @@ table.data .fz-sub{color:var(--ink-400);font-size:var(--fz-xs)}
   .sidebar.open{left:0}
   .content{padding:16px}
 }
+
+/* ===== CELULAR (≤680px): tabela densa vira cards rótulo→valor ===== */
+@media(max-width:680px){
+  /* filtros e busca ocupam a largura toda (alvo de toque maior) */
+  .filters{flex-direction:column;align-items:stretch}
+  .filters>.search,.filters>.select,.filters>.input,.filters>.btn{width:100%}
+  .table-scroll{overflow:visible;max-height:none}
+  table.data thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)} /* esconde cabeçalho */
+  table.data,table.data tbody,table.data tr,table.data td{display:block;width:100%}
+  table.data tr{border:1px solid var(--line-2);border-radius:var(--r-lg);background:var(--surface);
+    margin:0 0 10px;padding:8px 2px;box-shadow:var(--sh-1)}
+  table.data tbody tr:hover{background:var(--surface)}
+  table.data td{border:none;padding:5px 14px}
+  table.data td::before{content:attr(data-label);display:block;font-size:var(--fz-xs);
+    text-transform:uppercase;letter-spacing:.04em;color:var(--ink-400);font-weight:600;margin-bottom:2px}
+  table.data td[data-label=""]::before,table.data td:not([data-label])::before{display:none}
+  .pager{justify-content:center}
+}

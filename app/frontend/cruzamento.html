@@ -202,21 +202,21 @@
         <tbody>
           <template x-for="r in rows" :key="r.id">
             <tr>
-              <td>
+              <td data-label="Índice">
                 <span class="tier" :class="idxClass(r)" x-text="r.indice!=null ? fmtN(r.indice) : '—'"></span>
                 <div class="fz-sub" x-text="r.indice_tipo"></div>
               </td>
-              <td>
+              <td data-label="Animal">
                 <div class="fz-nome link-nome" @click="abrirFicha(r)" x-text="cleanNome(r.nome)" title="Ver ficha completa"></div>
                 <div class="fz-sub mono" x-text="r.registro"></div>
               </td>
-              <td><span class="badge neutral" x-text="r.raca"></span></td>
-              <td><span x-text="r.sexo==='F' ? '🐄 matriz' : '🐂 touro'"></span></td>
-              <td>
+              <td data-label="Raça"><span class="badge neutral" x-text="r.raca"></span></td>
+              <td data-label="Sexo"><span x-text="r.sexo==='F' ? '🐄 matriz' : '🐂 touro'"></span></td>
+              <td data-label="Origem">
                 <div x-text="r.fazenda_origem||'—'"></div>
                 <div class="fz-sub" x-show="r.uf" x-text="r.uf"></div>
               </td>
-              <td>
+              <td data-label="Sêmen (dose)">
                 <template x-if="r.preco_dose">
                   <div><span class="badge ok" x-text="'R$ '+fmtN(r.preco_dose)"></span>
                     <div class="fz-sub" x-text="r.central"></div>
@@ -224,7 +224,7 @@
                 </template>
                 <template x-if="!r.preco_dose"><span style="color:#ccc">cotação</span></template>
               </td>
-              <td>
+              <td data-label="Cruzar">
                 <button x-show="r.sexo==='M'" class="sel-btn" :class="{on:selTouro&&selTouro.id===r.id}" @click="selTouro=r" x-text="(selTouro&&selTouro.id===r.id?'✓ ':'')+'🐂 pai'"></button>
                 <button x-show="r.sexo==='F'" class="sel-btn" :class="{on:selVaca&&selVaca.id===r.id}" @click="selVaca=r" x-text="(selVaca&&selVaca.id===r.id?'✓ ':'')+'🐄 mãe'"></button>
               </td>
