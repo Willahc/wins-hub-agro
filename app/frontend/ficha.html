@@ -94,6 +94,10 @@
       <!-- BLOCO 3 — GENÉTICA -->
       <div class="ficha-block">
         <h2>🧬 Genética</h2>
+        <div x-show="d.genetica.matriz_elite" style="margin-bottom:12px">
+          <span class="badge gold">⭐ Criador de elite (lado fêmea)</span>
+          <span class="fz-sub" x-text="d.genetica.matriz_elite ? (d.genetica.matriz_elite.n_matrizes+' matrizes avaliadas no Geneplus · melhor IQGg '+(d.genetica.matriz_elite.melhor_iqgg||'')) : ''"></span>
+        </div>
         <template x-if="d.genetica.sinal">
           <div>
             <div style="margin-bottom:12px">

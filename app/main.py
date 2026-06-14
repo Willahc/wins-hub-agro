@@ -1902,6 +1902,10 @@ def api_farm(cnpj: str):
                     LEFT JOIN catalogo.central c ON c.id=o.central_id
                     WHERE upper(unaccent(r.fazenda_origem))=upper(unaccent(%(n)s)) AND o.preco_dose_brl>0 LIMIT 8""",
                     {"n": g["match_fazenda"]})
+        # criador de elite pelo LADO FÊMEA (prospect_matriz) — intensidade genética
+        pm = query("SELECT n_matrizes, melhor_iqgg FROM prospeccao.prospect_matriz WHERE cnpj_basico=%(c)s ORDER BY n_matrizes DESC LIMIT 1", {"c": cb})
+        if pm:
+            genetica["matriz_elite"] = {"n_matrizes": pm[0]["n_matrizes"], "melhor_iqgg": pm[0]["melhor_iqgg"]}
         return {"fazenda": f, "tecnicos": {"vinculados": vinc, "regiao": regiao, "regiao_fonte": regiao_fonte},
                 "genetica": genetica}
     except Exception as e:
@@ -2730,8 +2734,24 @@ def _tec_where(uf, prof, canal, q, params):
 
 
 @app.get("/api/tecnicos/stats")
-def tecnicos_stats():
-    """KPIs do canal técnico (vet/zootec) — fila coerente."""
+def tecnicos_stats(origem: str = "fila"):
+    """KPIs do canal técnico (vet/zootec) — fila coerente; ou roster ABCZ/CREA."""
+    if origem == "abcz":
+        return query("""SELECT count(*) AS total,
+              count(*) FILTER (WHERE papel='avaliador') AS veterinarios,
+              count(*) FILTER (WHERE papel<>'avaliador') AS zootecnistas,
+              count(*) FILTER (WHERE telefone IS NOT NULL) AS com_whatsapp, 0 AS com_celular_rfb,
+              0 AS com_crmv, 0 AS com_fazenda, count(*) FILTER (WHERE email IS NOT NULL) AS canal_alto
+            FROM prospeccao.canal_central""")
+    if origem == "crea":
+        return query("""SELECT count(*) AS total,
+              count(*) FILTER (WHERE titulo ILIKE %(ag)s) AS veterinarios,
+              count(*) FILTER (WHERE titulo ILIKE %(zo)s) AS zootecnistas,
+              count(*) FILTER (WHERE telefone IS NOT NULL) AS com_whatsapp, 0 AS com_celular_rfb,
+              count(*) FILTER (WHERE registro_crea IS NOT NULL) AS com_crmv, 0 AS com_fazenda,
+              count(*) FILTER (WHERE email IS NOT NULL) AS canal_alto
+            FROM prospeccao.tecnico_crea WHERE situacao ILIKE %(sit)s""",
+            {"ag": "%agron%", "zo": "%zootec%", "sit": "ativo%"})
     return query(
         f"""SELECT count(*) AS total,
                count(*) FILTER (WHERE {_TEC_PROF}='veterinario') AS veterinarios,
@@ -2752,10 +2772,39 @@ def _tec_order(sort, order):
     return f"ORDER BY {col} {dir_sql} NULLS LAST, nome ASC"
 
 
+def _tecnicos_roster(origem, uf, q, page, page_size):
+    """Rosters alternativos: avaliadores/técnicos de associação (ABCZ, canal_central) e
+    agrônomos/zootecnistas do CREA (tecnico_crea). Mapeados pro mesmo shape da tabela."""
+    ps = min(max(page_size, 1), 200); page = max(page, 1); off = (page - 1) * ps
+    p = {}; w = ["TRUE"]
+    if uf: w.append("uf=%(uf)s"); p["uf"] = uf
+    if q: w.append("(nome ILIKE %(q)s OR COALESCE(municipio,'') ILIKE %(q)s)"); p["q"] = f"%{q}%"
+    if origem == "abcz":
+        base = "FROM prospeccao.canal_central WHERE " + " AND ".join(w)
+        cols = ("id, nome, COALESCE(NULLIF(profissao,''),papel) AS profissao, papel AS categoria, NULL::text AS tier, "
+                "municipio, uf, telefone, prospeccao.cel_whats(telefone) AS whatsapp, telefone AS celular, "
+                "email, 'valid' AS email_tier, empresa AS origem_extra, NULL::text AS crmv, false AS crmv_confiavel, "
+                "'ABCZ' AS origem, ((nome IS NOT NULL)::int+(telefone IS NOT NULL)::int+(email IS NOT NULL)::int) AS score")
+        order = "ORDER BY (telefone IS NOT NULL) DESC, nome"
+    else:  # crea
+        w.append("situacao ILIKE %(sit)s"); p["sit"] = "ativo%"   # default: só ativos (3.900)
+        base = "FROM prospeccao.tecnico_crea WHERE " + " AND ".join(w)
+        cols = ("id, nome, COALESCE(titulo,'agronomo') AS profissao, titulo AS categoria, NULL::text AS tier, "
+                "municipio, uf, telefone, prospeccao.cel_whats(telefone) AS whatsapp, telefone AS celular, "
+                "email, 'valid' AS email_tier, situacao AS origem_extra, registro_crea AS crmv, false AS crmv_confiavel, "
+                "'CREA' AS origem, ((nome IS NOT NULL)::int+(telefone IS NOT NULL)::int+(email IS NOT NULL)::int+(registro_crea IS NOT NULL)::int) AS score")
+        order = "ORDER BY (telefone IS NOT NULL) DESC, (email IS NOT NULL) DESC, nome"
+    total = scalar(f"SELECT count(*) {base}", p)
+    rows = query(f"SELECT {cols} {base} {order} LIMIT %(lim)s OFFSET %(off)s", {**p, "lim": ps, "off": off})
+    if isinstance(rows, dict): return rows
+    return {"rows": rows, "total": total or 0, "total_pages": max(1, ((total or 0) + ps - 1) // ps)}
+
 @app.get("/api/tecnicos")
 def tecnicos(uf: str = None, prof: str = None, canal: str = None, q: str = None,
-             page: int = 1, page_size: int = 50, sort: str = None, order: str = "asc"):
-    """Fila do canal técnico: vet/zootecnista com nome, categoria, tier, contato e CRMV."""
+             page: int = 1, page_size: int = 50, sort: str = None, order: str = "asc", origem: str = "fila"):
+    """Fila do canal técnico: vet/zootecnista (fila) ou rosters ABCZ/CREA (origem)."""
+    if origem in ("abcz", "crea"):
+        return _tecnicos_roster(origem, uf, q, page, page_size)
     params = {}
     where = _tec_where(uf, prof, canal, q, params)
     tot = query(f"SELECT count(*) AS n {_TEC_BASE}{where}", params)

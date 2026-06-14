@@ -17,16 +17,21 @@
 
   <!-- KPIs do canal técnico (totais da fila coerente) -->
   <div class="stats">
-    <div class="stat"><div class="k">Técnicos na fila</div><div class="v" x-text="fmt(st.total)"></div></div>
-    <div class="stat"><div class="k">Veterinários</div><div class="v" x-text="fmt(st.veterinarios)"></div><div class="d" x-text="pct(st.veterinarios,st.total)"></div></div>
-    <div class="stat"><div class="k">Zootecnistas</div><div class="v" x-text="fmt(st.zootecnistas)"></div><div class="d" x-text="pct(st.zootecnistas,st.total)"></div></div>
-    <div class="stat"><div class="k">WhatsApp confirmado</div><div class="v" x-text="fmt(st.com_whatsapp)"></div><div class="d"><span x-show="st.com_celular_rfb" style="color:#a07a00" x-text="'+ '+fmt(st.com_celular_rfb)+' cel. RFB a verificar'"></span></div></div>
-    <div class="stat"><div class="k">Com CRMV</div><div class="v" x-text="fmt(st.com_crmv)"></div><div class="d" x-text="pct(st.com_crmv,st.total)"></div></div>
-    <div class="stat"><div class="k">Têm fazenda própria</div><div class="v" x-text="fmt(st.com_fazenda)"></div><div class="d" x-text="'decisor direto'"></div></div>
+    <div class="stat"><div class="k" x-text="L().total"></div><div class="v" x-text="fmt(st.total)"></div></div>
+    <div class="stat"><div class="k" x-text="L().a"></div><div class="v" x-text="fmt(st.veterinarios)"></div><div class="d" x-text="pct(st.veterinarios,st.total)"></div></div>
+    <div class="stat"><div class="k" x-text="L().b"></div><div class="v" x-text="fmt(st.zootecnistas)"></div><div class="d" x-text="pct(st.zootecnistas,st.total)"></div></div>
+    <div class="stat"><div class="k" x-text="L().wa"></div><div class="v" x-text="fmt(st.com_whatsapp)"></div><div class="d"><span x-show="st.com_celular_rfb" style="color:#a07a00" x-text="'+ '+fmt(st.com_celular_rfb)+' cel. RFB a verificar'"></span></div></div>
+    <div class="stat" x-show="L().crmv"><div class="k" x-text="L().crmv"></div><div class="v" x-text="fmt(st.com_crmv)"></div><div class="d" x-text="pct(st.com_crmv,st.total)"></div></div>
+    <div class="stat" x-show="L().extra"><div class="k" x-text="L().extra"></div><div class="v" x-text="fmt(f.origem==='fila' ? st.com_fazenda : st.canal_alto)"></div><div class="d" x-show="f.origem==='fila'" x-text="'decisor direto'"></div></div>
   </div>
 
   <!-- filtros -->
   <div class="filters">
+    <select class="select" x-model="f.origem" @change="f.prof='';f.canal='';page=1;boot()" title="fonte do técnico">
+      <option value="fila">🩺 Vet/Zootec (fila)</option>
+      <option value="abcz">🏅 Avaliadores/técnicos ABCZ</option>
+      <option value="crea">🌱 Agrônomos CREA</option>
+    </select>
     <div class="search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg>
       <input class="input" placeholder="Buscar nome ou município…" x-model="f.q" @input.debounce.400ms="page=1;load()">
@@ -35,12 +40,12 @@
       <option value="">UF (todas)</option>
       <template x-for="u in ufs"><option :value="u" x-text="u"></option></template>
     </select>
-    <select class="select" x-model="f.prof" @change="page=1;load()">
+    <select class="select" x-show="f.origem==='fila'" x-model="f.prof" @change="page=1;load()">
       <option value="">Profissão (todas)</option>
       <option value="veterinario">Veterinário</option>
       <option value="zootecnista">Zootecnista</option>
     </select>
-    <select class="select" x-model="f.canal" @change="page=1;load()">
+    <select class="select" x-show="f.origem==='fila'" x-model="f.canal" @change="page=1;load()">
       <option value="">Filtro de canal</option>
       <option value="whatsapp">Com WhatsApp/celular</option>
       <option value="whatsapp_pub">WhatsApp publicado (achado)</option>
@@ -49,7 +54,7 @@
       <option value="fazenda">Tem fazenda própria</option>
       <option value="canal_alto">Maior rebanho ao alcance</option>
     </select>
-    <button class="btn btn-ghost" @click="f={q:'',uf:'',prof:'',canal:''};page=1;load()">Limpar</button>
+    <button class="btn btn-ghost" @click="f={q:'',uf:'',prof:'',canal:'',origem:f.origem};page=1;load()">Limpar</button>
   </div>
 
   <!-- tabela -->
@@ -64,14 +69,19 @@
           <th>Contato</th>
         </tr></thead>
         <tbody>
-          <template x-for="r in rows" :key="r.cnpj">
+          <template x-for="(r,i) in rows" :key="r.cnpj || r.id || i">
             <tr>
-              <td><span class="tier" :class="scoreClass(r.score)" x-text="(r.score||0)+'/6'"></span></td>
+              <td>
+                <span x-show="!r.origem" class="tier" :class="scoreClass(r.score)" x-text="(r.score||0)+'/6'"></span>
+                <span x-show="r.origem" class="badge info" x-text="r.origem"></span>
+              </td>
               <td>
                 <div class="fz-nome" x-text="cleanNome(r.nome)"></div>
-                <div class="fz-sub" x-text="(profLabel(r.profissao))+(r.categoria ? ' · '+catLabel(r.categoria) : '')"></div>
+                <div class="fz-sub" x-text="(profLabel(r.profissao))+(!r.origem && r.categoria ? ' · '+catLabel(r.categoria) : '')"></div>
                 <div class="fz-sub mono" x-text="(r.municipio||'')+'/'+r.uf"></div>
                 <div class="fz-sub" x-show="r.crmv_confiavel"><span class="badge ok" x-text="'CRMV '+(r.crmv_uf||'')+' '+(r.crmv||'')"></span></div>
+                <div class="fz-sub" x-show="r.origem==='CREA' && r.crmv"><span class="badge neutral" x-text="'CREA '+r.crmv"></span></div>
+                <div class="fz-sub" x-show="r.origem==='ABCZ' && r.origem_extra" x-text="r.origem_extra"></div>
               </td>
               <td>
                 <span class="badge" :class="tierBadge(r)" x-text="ativLabel(r)"></span>
@@ -121,12 +131,17 @@ function tecnica(){
   return {
     rows:[], st:{}, total:0, total_pages:1, page:1, loading:false,
     sort:'score', order:'desc',
-    f:{q:'',uf:'',prof:'',canal:''},
+    f:{q:'',uf:'',prof:'',canal:'',origem:'fila'},
     ufs:['MT','MS','GO','PA','TO','MG','BA','RO','SP','PR','RS','SC','ES','RJ','MA','PI','CE','PE','RN','PB','AL','SE','AC','RR','AP','AM','DF'],
     async boot(){ await this.stats(); await this.load() },
     qs(){const p=new URLSearchParams();for(const k in this.f)if(this.f[k])p.set(k,this.f[k]);return p},
+    L(){ const o=this.f.origem;
+      if(o==='abcz') return {total:'Avaliadores/técnicos ABCZ',a:'Avaliadores',b:'Técnicos (ctrl leiteiro)',wa:'Com telefone',crmv:'',extra:'Com e-mail'};
+      if(o==='crea') return {total:'Agrônomos CREA (ativos)',a:'Agrônomos',b:'Zootecnistas',wa:'Com telefone',crmv:'Com registro CREA',extra:''};
+      return {total:'Técnicos na fila',a:'Veterinários',b:'Zootecnistas',wa:'WhatsApp confirmado',crmv:'Com CRMV',extra:'Têm fazenda própria'};
+    },
     async stats(){
-      try{ const r=await fetch('/api/tecnicos/stats'); const d=await r.json(); this.st=(Array.isArray(d)?d[0]:d)||{}; }catch(e){ this.st={}; }
+      try{ const r=await fetch('/api/tecnicos/stats?origem='+this.f.origem); const d=await r.json(); this.st=(Array.isArray(d)?d[0]:d)||{}; }catch(e){ this.st={}; }
     },
     async load(){
       this.loading=true;
@@ -142,7 +157,7 @@ function tecnica(){
     fmt(n){ return (n==null)?'—':Number(n).toLocaleString('pt-BR') },
     pct(a,b){ return b?Math.round(100*a/b)+'%':'' },
     cleanNome(s){ return s? s.replace(/\s*\(.*$/,'').trim() : '—' },
-    profLabel(p){ return {veterinario:'Veterinário',zootecnista:'Zootecnista'}[p]||(p||'Técnico') },
+    profLabel(p){ return {veterinario:'Veterinário',zootecnista:'Zootecnista',agronomo:'Agrônomo','agrônomo':'Agrônomo',avaliador:'Avaliador',tecnico:'Técnico','técnico':'Técnico'}[p]||(p||'Técnico') },
     zapConf(r){ return !!(r.whatsapp||r.celular||r.zap_pub) },
     zapNum(r){ const z=r.whatsapp||r.celular||r.zap_pub||r.whatsapp_rfb; return z? String(z).replace(/\D/g,'') : '' },
     telDigits(t){ return t? String(t).replace(/\D/g,'') : '' },
@@ -161,6 +176,7 @@ function tecnica(){
     scoreClass(s){ s=s||0; return s>=5?'alta':(s>=3?'media':'baixa') },
     catLabel(c){ return {'apoio_pecuaria':'Apoio à pecuária','inseminacao':'Inseminação','repro_secundario':'Reprodução','veterinaria':'Veterinária'}[c]||c },
     ativLabel(r){
+      if(r.origem) return this.profLabel(r.categoria||r.profissao);   // ABCZ papel / CREA título
       const t={'A-inseminador':'Inseminador','B-corte-alto':'Corte alto','C-corte-medio':'Corte médio','D-corte-baixo':'Corte baixo'}[r.tier];
       if(t) return t;
       return {'apoio_pecuaria':'Apoio à pecuária','inseminacao':'Inseminação','repro_secundario':'Reprodução'}[r.categoria]||'Pecuária';
