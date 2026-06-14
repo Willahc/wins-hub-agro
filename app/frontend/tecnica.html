@@ -1,6 +1,23 @@
 {% extends "base.html" %}
 {% block title %}Técnica · WiNS Hub Agro{% endblock %}
 {% block topbar %}Técnica{% endblock %}
+{% block head %}
+<style>
+  .kpi3{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:12px; }
+  @media(max-width:860px){ .kpi3{ grid-template-columns:1fr; } }
+  .kpi-main{ background:#fff; border:1px solid #e3e9e3; border-radius:14px; padding:18px 20px; }
+  .kpi-main.focus{ border-color:#2d5a2d; box-shadow:0 0 0 2px rgba(45,90,45,.10); }
+  .kpi-main .lab{ font-size:11px; letter-spacing:.4px; text-transform:uppercase; color:#7a857a; font-weight:600; }
+  .kpi-main .num{ font-size:34px; font-weight:800; color:#1a3a1a; line-height:1.05; margin:8px 0 4px; }
+  .kpi-main .desc{ font-size:12px; color:#5a665a; }
+  .kpi-main .desc .prov{ color:#a07a00; }
+  .quality{ background:#f7faf7; border:1px solid #e3e9e3; border-radius:14px; padding:14px 18px; margin-bottom:14px; }
+  .quality .qh{ font-size:11px; letter-spacing:.4px; text-transform:uppercase; color:#7a857a; font-weight:600; margin-bottom:4px; }
+  .quality .qmain{ font-size:16px; font-weight:700; color:#1a3a1a; }
+  .quality .qsub{ font-size:12px; color:#5a665a; margin-top:3px; }
+  .quality .qnote{ font-size:11px; color:#9aa39a; margin-top:6px; }
+</style>
+{% endblock %}
 {% block content %}
 <div x-data="tecnica()" x-init="boot()">
 
@@ -15,19 +32,43 @@
     </div>
   </div>
 
-  <!-- KPIs do canal técnico — profissão inferida do CNAE com tier de confiança -->
-  <div class="stats">
-    <div class="stat"><div class="k" x-text="L().total"></div><div class="v" x-text="fmt(st.total)"></div>
-      <div class="d" x-show="f.origem==='fila' && st.confirmados!=null" x-text="fmt(st.confirmados)+' confirmados (CRMV/cadastro)'"></div></div>
-    <div class="stat"><div class="k" x-text="L().a"></div><div class="v" x-text="fmt(st.veterinarios)"></div>
-      <div class="d" x-show="f.origem==='fila' && st.veterinarios" style="color:#a07a00" x-text="fmt(st.veterinarios_conf)+' confirmados · resto provável (CNAE)'"></div>
-      <div class="d" x-show="f.origem!=='fila'" x-text="pct(st.veterinarios,st.total)"></div></div>
-    <div class="stat" x-show="f.origem==='fila' && st.reproducao > 0"><div class="k">Reprodução/manejo</div><div class="v" x-text="fmt(st.reproducao)"></div><div class="d" style="color:#a07a00">provável (CNAE)</div></div>
-    <div class="stat" x-show="f.origem==='fila' && st.ambos > 0"><div class="k">Vet+Zootec (não especif.)</div><div class="v" x-text="fmt(st.ambos)"></div><div class="d">profissão declarada</div></div>
+  <!-- FILA: narrativa coerente (funil) — 3 cards + qualidade -->
+  <template x-if="f.origem==='fila'">
+    <div>
+      <div class="kpi3">
+        <div class="kpi-main">
+          <div class="lab">Total no canal</div>
+          <div class="num" x-text="fmt(st.total)"></div>
+          <div class="desc">Vets, zootec e reprodução identificados — o universo</div>
+        </div>
+        <div class="kpi-main focus">
+          <div class="lab">Foco genética</div>
+          <div class="num" x-text="fmt(foco())"></div>
+          <div class="desc">Reprodução/manejo + zootecnistas — quem decide a genética <span x-show="st.total" x-text="'('+pct(foco(),st.total)+' do total)'"></span></div>
+        </div>
+        <div class="kpi-main">
+          <div class="lab">Contato direto</div>
+          <div class="num" x-text="fmt(st.com_whatsapp)"></div>
+          <div class="desc">WhatsApp/celular confirmado — atende agora<span class="prov" x-show="st.com_celular_rfb" x-text="' · +'+fmt(st.com_celular_rfb)+' cel. RFB a verificar'"></span></div>
+        </div>
+      </div>
+      <div class="quality">
+        <div class="qh">Qualidade da base</div>
+        <div class="qmain" x-text="fmt(st.confirmados)+' confirmados por CRMV/cadastro ('+pct(st.confirmados,st.total)+')'"></div>
+        <div class="qsub" x-text="fmt(st.com_crmv)+' com CRMV vinculado · '+fmt(st.com_fazenda)+' com fazenda própria'"></div>
+        <div class="qnote">O restante tem a profissão inferida do CNAE do estabelecimento (provável), já que não há roster nacional do CFMV.</div>
+      </div>
+    </div>
+  </template>
+
+  <!-- ABCZ/CREA: rosters de associação — cards simples -->
+  <div class="stats" x-show="f.origem!=='fila'">
+    <div class="stat"><div class="k" x-text="L().total"></div><div class="v" x-text="fmt(st.total)"></div></div>
+    <div class="stat"><div class="k" x-text="L().a"></div><div class="v" x-text="fmt(st.veterinarios)"></div><div class="d" x-text="pct(st.veterinarios,st.total)"></div></div>
     <div class="stat"><div class="k" x-text="L().b"></div><div class="v" x-text="fmt(st.zootecnistas)"></div><div class="d" x-text="pct(st.zootecnistas,st.total)"></div></div>
-    <div class="stat"><div class="k" x-text="L().wa"></div><div class="v" x-text="fmt(st.com_whatsapp)"></div><div class="d"><span x-show="st.com_celular_rfb" style="color:#a07a00" x-text="'+ '+fmt(st.com_celular_rfb)+' cel. RFB a verificar'"></span></div></div>
+    <div class="stat"><div class="k" x-text="L().wa"></div><div class="v" x-text="fmt(st.com_whatsapp)"></div></div>
     <div class="stat" x-show="L().crmv"><div class="k" x-text="L().crmv"></div><div class="v" x-text="fmt(st.com_crmv)"></div><div class="d" x-text="pct(st.com_crmv,st.total)"></div></div>
-    <div class="stat" x-show="L().extra"><div class="k" x-text="L().extra"></div><div class="v" x-text="fmt(f.origem==='fila' ? st.com_fazenda : st.canal_alto)"></div><div class="d" x-show="f.origem==='fila'" x-text="'decisor direto'"></div></div>
+    <div class="stat" x-show="L().extra"><div class="k" x-text="L().extra"></div><div class="v" x-text="fmt(st.canal_alto)"></div></div>
   </div>
 
   <!-- filtros -->
@@ -159,6 +200,7 @@ function tecnica(){
     },
     unidade(){ if(this.f.origem!=='fila') return 'registros';
       return this.f.escopo==='confirmado' ? 'técnicos confirmados' : this.f.escopo==='provavel' ? 'prováveis' : 'contatos técnicos'; },
+    foco(){ return (this.st.reproducao||0)+(this.st.zootecnistas||0); },  // reprodução/manejo + zootec (baldes disjuntos)
     async stats(){
       try{ const r=await fetch('/api/tecnicos/stats?origem='+this.f.origem+'&escopo='+this.f.escopo); const d=await r.json(); this.st=(Array.isArray(d)?d[0]:d)||{}; }catch(e){ this.st={}; }
     },
