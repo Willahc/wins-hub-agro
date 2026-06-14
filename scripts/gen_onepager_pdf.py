@@ -28,23 +28,24 @@ def bars(items, maxv, color="#2e7d32", hi="#d9a441", w=560, rowh=36, gap=15, lab
 
 # ===== dados reais =====
 DECISORES = 200489
-# WhatsApp/Celular = confirmado + telefone que é celular (tel1/tel2), distinto, na MESMA base.
-DEC_TEL, DEC_WA, DEC_EMAIL, DEC_IG = 199142, 70222, 143852, 7598
+# WhatsApp/Celular = casado com o KPI da página Fazendas (whatsapp OU celular do RFB).
+DEC_TEL, DEC_WA, DEC_EMAIL, DEC_IG = 199406, 70218, 143852, 7598
 TECNICOS = 15964            # fila técnica curada (canal técnico amplo = 53.270)
-TEC_EMAIL, TEC_WA = 13480, 10094
+TEC_EMAIL, TEC_WA = 13607, 10199
 DEP, ICP = 1242711, 1461
-DESERTO, BAIXA = 22204, 73055   # fazendas em deserto vet / baixa cobertura
+# Deserto Vet v3 (regional, raio 75km, carga gado/técnico): municípios + cabeças + fazendas da base
+DESERTO_MUN, DESERTO_CAB, DESERTO_FAZ, BAIXA_FAZ = 539, 91433748, 3190, 7362
 
 chart_dec = bars([
     ("Telefone", DEC_TEL, "99% das fazendas"),
     ("E-mail", DEC_EMAIL, "72%"),
-    ("WhatsApp / celular", DEC_WA, "35% — confirmado + celular"),
+    ("WhatsApp / celular", DEC_WA, "35%"),
     ("Instagram", DEC_IG, "4% — fazenda-marca"),
 ], maxv=DEC_TEL)
 
 chart_tec = bars([
-    ("E-mail", TEC_EMAIL, "84%"),
-    ("WhatsApp / cel.", TEC_WA, "63%"),
+    ("E-mail", TEC_EMAIL, "85%"),
+    ("WhatsApp / cel.", TEC_WA, "64%"),
 ], maxv=TECNICOS, color="#235c2e", w=420, lab=12)
 
 CSS = """
@@ -84,7 +85,7 @@ DOC = f"""<!doctype html><html><head><meta charset="utf-8"><style>{CSS}</style><
 <div class="stats">
   <div class="stat"><div class="v">{br(DECISORES)}</div><div class="k">Decisores identificados</div></div>
   <div class="stat"><div class="v">99%</div><div class="k">Fazendas com contato</div></div>
-  <div class="stat"><div class="v">{br(DESERTO)}</div><div class="k">Em deserto vet</div></div>
+  <div class="stat"><div class="v">91&nbsp;mi</div><div class="k">Cabeças em deserto vet</div></div>
   <div class="stat"><div class="v">1,24&nbsp;mi</div><div class="k">Avaliações genéticas</div></div>
 </div>
 
@@ -103,7 +104,7 @@ DOC = f"""<!doctype html><html><head><meta charset="utf-8"><style>{CSS}</style><
       <div class="row"><b>Ache o decisor certo</b> — não o telefone da portaria; o dono/administrador que assina a compra.</div>
       <div class="row"><b>Fale na hora</b> — WhatsApp, e-mail e Instagram já prontos pra abordar.</div>
       <div class="row"><b>Prove o retorno</b> — cruzamento, bezerro previsto e <span class="gold">ROI por dose</span> na tela, no campo.</div>
-      <div class="row"><b>{br(DESERTO)} fazendas em deserto vet</b> — gado sem veterinário local: mercado sem concorrência.</div>
+      <div class="row"><b>539 municípios em deserto vet</b> (91 mi de cabeças) — regiões sem cobertura veterinária regional: mercado sem concorrência.</div>
     </div>
   </div>
 </div>
