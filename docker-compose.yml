@@ -1,6 +1,7 @@
-# version 2.4 (não 3.x): docker-compose v1.29 só honra mem_limit no formato 2.x
-# (no 3.x ele é silenciosamente ignorado fora de swarm).
-version: "2.4"
+# Compose v2 (docker compose). `mem_limit` continua honrado fora de swarm.
+# ATENÇÃO: o compose v2 interpola `${}` nos valores do env_file. O hash bcrypt
+# (MARI_PASSWORD_HASH) tem `$`, então no .env ele está escapado como `$$` — o
+# compose desexpande `$$`->`$` ao injetar. Se regerar o hash, dobre cada `$`.
 
 services:
   db:

@@ -25,3 +25,7 @@ modal_test.py
 /*.csv
 /*.log
 data/
+
+# Segredos de MFA — QR embute o segredo em claro; .recovery é cifrado mas é artefato local
+*MFA_QR*.png
+*.recovery.asc
