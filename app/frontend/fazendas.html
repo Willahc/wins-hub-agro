@@ -21,6 +21,7 @@
     <div class="stat"><div class="k">Com WhatsApp / Celular</div><div class="v" x-text="fmt(kpi.wa)"></div><div class="d" x-text="pct(kpi.wa,kpi.n)"></div></div>
     <div class="stat"><div class="k">Com e-mail</div><div class="v" x-text="fmt(kpi.em)"></div><div class="d" x-text="pct(kpi.em,kpi.n)"></div></div>
     <div class="stat"><div class="k">Com Instagram</div><div class="v" x-text="fmt(kpi.ig)"></div><div class="d" x-text="pct(kpi.ig,kpi.n)"></div></div>
+    <div class="stat" x-show="kpi.deserto"><div class="k">🏜️ Em deserto vet</div><div class="v" x-text="fmt(kpi.deserto)"></div><div class="d" x-text="pct(kpi.deserto,kpi.n)+' — gado sem vet local'"></div></div>
   </div>
 
   <!-- filtros -->
@@ -41,7 +42,13 @@
       <option value="">Canal recomendado</option>
       <template x-for="c in canais"><option :value="c" x-text="c"></option></template>
     </select>
-    <button class="btn btn-ghost" @click="f={q:'',uf:'',sinal:'',canal:''};page=1;load()">Limpar</button>
+    <select class="select" x-model="f.cobertura" @change="page=1;load()" title="cobertura veterinária do município">
+      <option value="">Cobertura vet (todas)</option>
+      <option value="deserto">🏜️ Deserto vet (gado sem vet)</option>
+      <option value="baixa">Baixa cobertura</option>
+      <option value="normal">Normal</option>
+    </select>
+    <button class="btn btn-ghost" @click="f={q:'',uf:'',sinal:'',canal:'',cobertura:''};page=1;load()">Limpar</button>
   </div>
 
   <!-- tabela -->
@@ -111,7 +118,7 @@ function fazendas(){
   return {
     rows:[], kpi:{n:0,wa:0,em:0,ig:0}, total:0, total_pages:1, page:1, loading:false,
     sort:'prioridade', order:'asc',
-    f:{q:'',uf:'',sinal:'',canal:''},
+    f:{q:'',uf:'',sinal:'',canal:'',cobertura:''},
     ufs:['MT','MS','GO','PA','TO','MG','BA','RO','SP','PR','RS','SC','ES','RJ','MA','PI','CE','PE','BA','RN','PB','AL','SE','AC','RR','AP','AM','DF'],
     canais:['WhatsApp','E-mail','E-mail (Receita)','Instagram DM','E-mail (risco bounce)','E-mail (contador)','Via técnico','Ligacao (capturar zap)','sem canal'],
     qs(){const p=new URLSearchParams();for(const k in this.f)if(this.f[k])p.set(k,this.f[k]);return p},

@@ -2017,11 +2017,16 @@ FAZ_COLS = ("prioridade","nome_fazenda","razao","cnpj_completo","uf","municipio"
 FAZ_SORT = {"prioridade":"prioridade","capital":"capital_mi","touros":"touros_nelore",
     "followers":"followers","nome":"nome_fazenda","uf":"uf"}
 
-def _faz_where(uf, sinal, canal, q):
+def _faz_where(uf, sinal, canal, q, cobertura=None):
     w=["TRUE"]; p={}
     if uf: w.append("uf=%(uf)s"); p["uf"]=uf.upper()
     if sinal: w.append("sinal_genetico=%(sinal)s"); p["sinal"]=sinal
     if canal: w.append("canal_recomendado=%(canal)s"); p["canal"]=canal
+    # cobertura veterinária do município da fazenda (desertos vet = gado sem vet local)
+    _cob={"deserto":"DESERTO VET","baixa":"BAIXA COBERTURA","normal":"NORMAL"}.get(cobertura)
+    if _cob:
+        w.append("cnpj_basico IN (SELECT cnpj_basico FROM prospeccao.fazenda_deserto WHERE classificacao_vet=%(cob)s)")
+        p["cob"]=_cob
     if q:
         w.append("(nome_fazenda ILIKE %(q)s OR razao ILIKE %(q)s OR COALESCE(decisor,'') ILIKE %(q)s OR municipio ILIKE %(q)s)")
         p["q"]=f"%{q}%"
@@ -2273,21 +2278,22 @@ def api_genetica_kpi():
         return _error(e)
 
 @app.get("/api/farms")
-def api_fazendas(uf:str=None, sinal:str=None, canal:str=None, q:str=None,
+def api_fazendas(uf:str=None, sinal:str=None, canal:str=None, q:str=None, cobertura:str=None,
                  page:int=1, page_size:int=50, sort:str="prioridade", order:str="asc"):
     try:
         page=max(1,page); page_size=min(max(page_size,1),100); off=(page-1)*page_size
-        where,p=_faz_where(uf,sinal,canal,q)
+        where,p=_faz_where(uf,sinal,canal,q,cobertura)
         col=FAZ_SORT.get(sort,"prioridade"); od="DESC" if order=="desc" else "ASC"
         rows=query(f"SELECT {','.join(FAZ_COLS)} FROM prospeccao.fazenda_nacional WHERE {where} "
                    f"ORDER BY {col} {od} NULLS LAST, touros_nelore DESC NULLS LAST LIMIT %(lim)s OFFSET %(off)s",
                    {**p,"lim":page_size,"off":off})
         total=scalar(f"SELECT count(*) FROM prospeccao.fazenda_nacional WHERE {where}", p)
-        # WhatsApp/Celular = confirmado (coluna whatsapp) OU celular detectado em QUALQUER
-        # campo de telefone do RFB (tel1/tel2, régua cel_whats) — precomputado em fazenda_cel.
+        # WhatsApp/Celular = confirmado (coluna whatsapp) OU celular do RFB (tel1/tel2) — fazenda_cel.
+        # deserto = fazendas em município DESERTO VET (gado sem veterinário local = alvo quente).
         kpi=query(f"SELECT count(*) n, "
                   f"count(*) FILTER (WHERE whatsapp IS NOT NULL OR cnpj_basico IN (SELECT cnpj_basico FROM prospeccao.fazenda_cel)) wa, "
-                  f"count(*) FILTER (WHERE email IS NOT NULL) em, count(*) FILTER (WHERE instagram IS NOT NULL) ig "
+                  f"count(*) FILTER (WHERE email IS NOT NULL) em, count(*) FILTER (WHERE instagram IS NOT NULL) ig, "
+                  f"count(*) FILTER (WHERE cnpj_basico IN (SELECT cnpj_basico FROM prospeccao.fazenda_deserto WHERE classificacao_vet='DESERTO VET')) deserto "
                   f"FROM prospeccao.fazenda_nacional WHERE {where}", p)[0]
         return {"rows":rows,"total":total,"page":page,"page_size":page_size,
                 "total_pages":max(1,(total+page_size-1)//page_size),"kpi":kpi}
@@ -2295,13 +2301,13 @@ def api_fazendas(uf:str=None, sinal:str=None, canal:str=None, q:str=None,
         return _error(e)
 
 @app.get("/api/farms/export")
-def api_fazendas_export(request: Request, uf:str=None, sinal:str=None, canal:str=None, q:str=None):
+def api_fazendas_export(request: Request, uf:str=None, sinal:str=None, canal:str=None, q:str=None, cobertura:str=None):
     """Export GATED: teto de 2000 linhas, marca d'água (usuário) e AUDITORIA. Dado é valioso —
     sem dump infinito do banco."""
     try:
         import io, csv
         EXPORT_CAP=2000
-        where,p=_faz_where(uf,sinal,canal,q)
+        where,p=_faz_where(uf,sinal,canal,q,cobertura)
         rows=query(f"SELECT {','.join(FAZ_COLS)} FROM prospeccao.fazenda_nacional WHERE {where} "
                    f"ORDER BY prioridade, touros_nelore DESC NULLS LAST LIMIT {EXPORT_CAP}", p)
         who=(get_current_user(request) or {}).get('sub','?')
