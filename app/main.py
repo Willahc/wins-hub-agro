@@ -1826,6 +1826,16 @@ def cruzamento_page(request: Request):
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
+@app.get("/mapa", response_class=HTMLResponse)
+def mapa_page(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    resp = templates.TemplateResponse("mapa.html",
+        {"request": request, "user": user, "active": "mapa", "app_version": APP_VERSION})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
 # Catálogo de genética (página Cruzamento): touros + matrizes avaliados, com índice
 # (IQGg genômico OU MGTe ANCP), preço de dose + central. Espinha = mercado.reprodutor.
 _GEN_LEITE = ('Holandês','Jersey','Gir Leiteiro','Girolando','Guzera Leiteiro','Sindi Leiteiro','Pardo Suíço')

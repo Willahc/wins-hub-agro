@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Mapa · WiNS Hub Agro{% endblock %}
+{% block topbar %}Mapa{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="/static/vendor/leaflet.css" />
+<script src="/static/vendor/leaflet.js"></script>
+<style>
+  #map{ height:100%; width:100%; border-radius:14px; }
+  .map-wrap{ position:relative; height:calc(100vh - 230px); min-height:420px;
+    border:1px solid var(--border,#e3e3e3); border-radius:14px; overflow:hidden; background:#eef2ee; }
+  .map-legend{ position:absolute; bottom:14px; left:14px; z-index:500; background:#fff;
+    border:1px solid #e3e3e3; border-radius:10px; padding:10px 12px; font-size:12px; box-shadow:0 2px 8px rgba(0,0,0,.12); }
+  .map-legend .row{ display:flex; align-items:center; gap:7px; margin:3px 0; }
+  .map-legend .dot{ width:12px; height:12px; border-radius:50%; display:inline-block; }
+  .leaflet-popup-content{ font-size:13px; }
+</style>
+{% endblock %}
+{% block content %}
+<div x-data="mapa()" x-init="boot()">
+
+  <div class="page-head">
+    <div>
+      <h1>Mapa territorial</h1>
+      <div class="sub">Rebanho × cobertura veterinária, lotação, leite e valor de produção por município. Onde está o gado e onde falta atendimento.</div>
+    </div>
+  </div>
+
+  <div class="stats" style="margin-bottom:12px">
+    <div class="stat"><div class="k">Municípios no filtro</div><div class="v" x-text="fmt(n)"></div></div>
+    <div class="stat"><div class="k">Deserto vet</div><div class="v" style="color:#c62828" x-text="fmt(desertos)"></div><div class="d">gado sem veterinário</div></div>
+    <div class="stat"><div class="k">Rebanho no recorte</div><div class="v" x-text="fmt(rebanho)"></div><div class="d">cabeças</div></div>
+  </div>
+
+  <!-- controles -->
+  <div class="filters">
+    <select class="select" x-model="mapLayer" @change="load()">
+      <option value="vet">🩺 Cobertura veterinária (deserto vet)</option>
+      <option value="tendencia">📈 Tendência de rebanho (2020→2023)</option>
+      <option value="lotacao">🐂 Lotação (cab/ha)</option>
+      <option value="leite">🥛 Produção de leite</option>
+      <option value="valor">💰 Valor da produção</option>
+    </select>
+    <select class="select" x-model="mapUf" @change="load()">
+      <option value="">UF (todas)</option>
+      <template x-for="u in ufs"><option :value="u" x-text="u"></option></template>
+    </select>
+    <button class="btn btn-ghost" @click="mapLayer='vet';mapUf='';load()">Limpar</button>
+  </div>
+
+  <div class="map-wrap">
+    <div id="map"></div>
+    <div class="map-legend">
+      <div style="font-weight:600;margin-bottom:4px" x-text="legend.title"></div>
+      <template x-for="it in legend.items">
+        <div class="row"><span class="dot" :style="'background:'+it.c"></span><span x-text="it.l"></span></div>
+      </template>
+      <div style="margin-top:5px;color:#888;font-size:11px">Tamanho do círculo = volume</div>
+    </div>
+    <div class="loading" x-show="loading" style="position:absolute;inset:0;z-index:600;background:rgba(255,255,255,.5)"><div class="spinner"></div></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function mapa(){
+  return {
+    _map:null, _layer:null, _tok:0, loading:false,
+    mapLayer:'vet', mapUf:'', n:0, desertos:0, rebanho:0,
+    ufs:['MT','MS','GO','PA','TO','MG','BA','RO','SP','PR','RS','SC','ES','RJ','MA','PI','CE','PE','RN','PB','AL','SE','AC','RR','AP','AM','DF'],
+    legend:{title:'',items:[]},
+    LEG:{
+      vet:{title:'Cobertura veterinária',items:[{c:'#c62828',l:'Deserto vet'},{c:'#b8860b',l:'Baixa cobertura'},{c:'#2e7d32',l:'Normal'}]},
+      tendencia:{title:'Tendência de rebanho',items:[{c:'#1b7837',l:'+30% ou mais'},{c:'#7fbf7b',l:'0 a +30%'},{c:'#d9a441',l:'-20% a 0'},{c:'#c62828',l:'queda forte'}]},
+      lotacao:{title:'Lotação (cab/ha)',items:[{c:'#1b7837',l:'< 0,5 (extensivo)'},{c:'#7fbf7b',l:'0,5–1,5'},{c:'#d9a441',l:'1,5–3'},{c:'#9e9e9e',l:'> 3 (intensivo)'}]},
+      leite:{title:'Produção de leite',items:[{c:'#1976d2',l:'mil L/ano'}]},
+      valor:{title:'Valor da produção',items:[{c:'#d4a017',l:'R$ mil/ano'}]}
+    },
+    async boot(){
+      this._map=L.map('map').setView([-15.0,-55.0],4);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap'}).addTo(this._map);
+      await this.load();
+    },
+    async jget(u){ try{ const r=await fetch(u); return await r.json(); }catch(e){ return []; } },
+    esc(s){ return String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); },
+    async load(){
+      if(!this._map) return;
+      this.loading=true; this.legend=this.LEG[this.mapLayer]||{title:'',items:[]};
+      const tok=(this._tok=(this._tok||0)+1);
+      setTimeout(()=>{ if(this._map) this._map.invalidateSize(); },200);
+      const g=L.layerGroup(); let pts=[]; const ufq=this.mapUf?`uf=${this.mapUf}&`:'';
+      let dez=0, reb=0;
+      if(this.mapLayer==='tendencia'){
+        pts=await this.jget(`/api/demanda/tendencia?${ufq}min_reb=30000`);
+        (pts||[]).forEach(p=>{ if(p.lat==null)return; const gg=Number(p.crescimento_pct);
+          const c=gg>=30?'#1b7837':gg>=0?'#7fbf7b':gg>=-20?'#d9a441':'#c62828';
+          L.circleMarker([p.lat,p.lng],{radius:Math.max(4,Math.min(20,Math.sqrt(p.rebanho)/90)),color:c,fillColor:c,fillOpacity:.6,weight:1})
+            .bindPopup(`<b>${this.esc(p.municipio)} (${this.esc(p.uf)})</b><br>Rebanho 2023: ${Number(p.rebanho).toLocaleString('pt-BR')}<br><b style="color:${c}">${gg>=0?'+':''}${gg}%</b> vs 2020`).addTo(g); reb+=Number(p.rebanho)||0; });
+      } else if(this.mapLayer==='lotacao'){
+        pts=await this.jget(`/api/demanda/lotacao?${ufq}min_ha=10000&min_cab=10000&limit=2000`);
+        (pts||[]).forEach(p=>{ if(p.lat==null)return; const l=Number(p.lotacao);
+          const c=l<0.5?'#1b7837':l<1.5?'#7fbf7b':l<3?'#d9a441':'#9e9e9e';
+          L.circleMarker([p.lat,p.lng],{radius:Math.max(4,Math.min(20,Math.sqrt(p.pastagem_ha)/30)),color:c,fillColor:c,fillOpacity:.6,weight:1})
+            .bindPopup(`<b>${this.esc(p.municipio)} (${this.esc(p.uf)})</b><br>Lotação: <b>${l.toFixed(2)}</b> cab/ha<br>Rebanho: ${Number(p.rebanho).toLocaleString('pt-BR')}`).addTo(g); reb+=Number(p.rebanho)||0; });
+      } else if(this.mapLayer==='leite'){
+        pts=await this.jget(`/api/externo/leite/mapa?${ufq}min_litros=5000`);
+        (pts||[]).forEach(p=>{ if(p.lat==null)return;
+          L.circleMarker([p.lat,p.lng],{radius:Math.max(4,Math.min(20,Math.sqrt(p.leite_mil_litros)/30)),color:'#1565c0',fillColor:'#1976d2',fillOpacity:.55,weight:1})
+            .bindPopup(`<b>${this.esc(p.municipio)} (${this.esc(p.uf)})</b><br>Leite: ${Number(p.leite_mil_litros).toLocaleString('pt-BR')} mil L/ano`).addTo(g); });
+      } else if(this.mapLayer==='valor'){
+        pts=await this.jget(`/api/externo/valor/mapa?${ufq}min_valor=10000`);
+        (pts||[]).forEach(p=>{ if(p.lat==null)return;
+          L.circleMarker([p.lat,p.lng],{radius:Math.max(4,Math.min(20,Math.sqrt(p.valor_mil_reais)/60)),color:'#b8860b',fillColor:'#d4a017',fillOpacity:.55,weight:1})
+            .bindPopup(`<b>${this.esc(p.municipio)} (${this.esc(p.uf)})</b><br>Valor produção: R$ ${Number(p.valor_mil_reais).toLocaleString('pt-BR')} mil/ano`).addTo(g); });
+      } else {
+        pts=await this.jget(`/api/map?${ufq}min_bovinos=20000`);
+        const colors={'DESERTO VET':'#c62828','BAIXA COBERTURA':'#b8860b','NORMAL':'#2e7d32'};
+        (pts||[]).forEach(p=>{ if(p.lat==null)return; const c=colors[p.classificacao_vet]||'#607d8b';
+          if(p.classificacao_vet==='DESERTO VET')dez++;
+          L.circleMarker([p.lat,p.lng],{radius:Math.max(4,Math.min(18,Math.sqrt(p.bovinos)/110)),color:c,fillColor:c,fillOpacity:.6,weight:1})
+            .bindPopup(`<b>${this.esc(p.municipio)} (${this.esc(p.uf)})</b><br>Rebanho: ${Number(p.bovinos).toLocaleString('pt-BR')}<br>Estab. vet: ${p.cnpj_vet}<br><b style="color:${c}">${this.esc(p.classificacao_vet)}</b>`).addTo(g); reb+=Number(p.bovinos)||0; });
+      }
+      if(tok!==this._tok){ return; }   // resposta antiga, descarta
+      if(this._layer) this._map.removeLayer(this._layer);
+      this._layer=g.addTo(this._map);
+      this.n=(pts||[]).length; this.desertos=dez; this.rebanho=reb;
+      this.loading=false;
+    },
+    fmt(x){ return (x==null)?'—':Number(x).toLocaleString('pt-BR'); }
+  }
+}
+</script>
+{% endblock %}
