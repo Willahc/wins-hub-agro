@@ -106,6 +106,13 @@
                 <label>Senha</label>
                 <input type="password" name="password" placeholder="••••••••" required>
             </div>
+            {% if mfa %}
+            <div class="field">
+                <label>Código (autenticador)</label>
+                <input type="text" name="code" placeholder="000000" inputmode="numeric" autocomplete="one-time-code"
+                       pattern="[0-9 ]*" maxlength="9" required>
+            </div>
+            {% endif %}
             <button type="submit" class="btn">Entrar</button>
         </form>
         <div class="card-foot">Plataforma de Inteligência Genética Bovina</div>

@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 from starlette.concurrency import run_in_threadpool
-from auth import authenticate_user, create_access_token, decode_token
+from auth import authenticate_user, create_access_token, decode_token, MFA_ENABLED
 from pdf_html import (gerar_parecer_cruzamento, gerar_parecer_matching,  # HTML/CSS -> WeasyPrint
                       gerar_cotacao_acasalamento, gerar_briefing_chegada,
                       gerar_proposta_simulador, gerar_relatorio_territorial,
@@ -247,7 +247,7 @@ def root(request: Request):
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse("login.html", {"request": request, "mfa": MFA_ENABLED})
 
 
 # --- Proteção contra força-bruta no login (em memória; app é single-instance) ---
@@ -281,11 +281,11 @@ def _login_state(ip, record_fail=False, clear=False):
         return ip_fails >= _FAIL_MAX_IP or global_fails >= _FAIL_MAX_GLOBAL
 
 @app.post("/login")
-def login(request: Request, email: str = Form(...), password: str = Form(...)):
+def login(request: Request, email: str = Form(...), password: str = Form(...), code: str = Form("")):
     ip = _client_ip(request)
     if _login_state(ip):   # já travado: falha RÁPIDO (sem sleep/audit — evita amplificar flood)
         return RedirectResponse("/login?error=locked", status_code=303)
-    user = authenticate_user(email, password)
+    user = authenticate_user(email, password, code)   # code só importa se MFA ativo
     if not user:
         blocked = _login_state(ip, record_fail=True)
         audit(request, "login_falha", f"email={(email or '')[:60]} ip={ip}" + (" [TRAVOU]" if blocked else ""))
