@@ -33,7 +33,7 @@ logger = logging.getLogger("wins_agro")
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 # Versão do shell — bumpar a cada deploy de front. O cliente compara com /api/version e
 # se auto-atualiza (limpa cache + reload) se estiver velho. Mata o "downgrade pra v1".
-APP_VERSION = "2026-06-14.6"
+APP_VERSION = "2026-06-14.7"
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 
@@ -2283,7 +2283,10 @@ def api_fazendas(uf:str=None, sinal:str=None, canal:str=None, q:str=None,
                    f"ORDER BY {col} {od} NULLS LAST, touros_nelore DESC NULLS LAST LIMIT %(lim)s OFFSET %(off)s",
                    {**p,"lim":page_size,"off":off})
         total=scalar(f"SELECT count(*) FROM prospeccao.fazenda_nacional WHERE {where}", p)
-        kpi=query(f"SELECT count(*) n, count(*) FILTER (WHERE whatsapp IS NOT NULL) wa, "
+        # WhatsApp/Celular = confirmado (coluna whatsapp) OU telefone do RFB que é celular
+        # (régua prospeccao.cel_whats — 9º dígito/prefixo móvel), distinto, no MESMO universo da view.
+        kpi=query(f"SELECT count(*) n, "
+                  f"count(*) FILTER (WHERE whatsapp IS NOT NULL OR prospeccao.cel_whats(telefone_rfb) IS NOT NULL) wa, "
                   f"count(*) FILTER (WHERE email IS NOT NULL) em, count(*) FILTER (WHERE instagram IS NOT NULL) ig "
                   f"FROM prospeccao.fazenda_nacional WHERE {where}", p)[0]
         return {"rows":rows,"total":total,"page":page,"page_size":page_size,

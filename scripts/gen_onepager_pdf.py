@@ -28,16 +28,17 @@ def bars(items, maxv, color="#2e7d32", hi="#d9a441", w=560, rowh=36, gap=15, lab
 
 # ===== dados reais =====
 DECISORES = 146298
-DEC_TEL, DEC_WA, DEC_EMAIL, DEC_IG = 144965, 131926, 108063, 7493   # WA = 38.743 cadastro + 93.183 RFB
+# WhatsApp/Celular = confirmado (38.743) + telefone que é celular, distinto, na MESMA base.
+DEC_TEL, DEC_WA, DEC_EMAIL, DEC_IG = 144965, 41253, 108063, 7493
 TECNICOS = 14926
 TEC_EMAIL, TEC_WA, TEC_TEL = 12551, 9438, 13879
 DEP, ICP = 1242711, 1461
 
 chart_dec = bars([
     ("Telefone", DEC_TEL, "99% das fazendas"),
-    ("WhatsApp / celular", DEC_WA, "90% — o canal que responde"),
-    ("E-mail", DEC_EMAIL, "74%"),
-    ("Instagram", DEC_IG, ""),
+    ("E-mail", DEC_EMAIL, "74% — base ampla (Receita)"),
+    ("WhatsApp / celular", DEC_WA, "28% — confirmado + celular"),
+    ("Instagram", DEC_IG, "5% — fazenda-marca"),
 ], maxv=DEC_TEL)
 
 chart_tec = bars([
