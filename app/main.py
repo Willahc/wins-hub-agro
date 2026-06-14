@@ -2283,10 +2283,10 @@ def api_fazendas(uf:str=None, sinal:str=None, canal:str=None, q:str=None,
                    f"ORDER BY {col} {od} NULLS LAST, touros_nelore DESC NULLS LAST LIMIT %(lim)s OFFSET %(off)s",
                    {**p,"lim":page_size,"off":off})
         total=scalar(f"SELECT count(*) FROM prospeccao.fazenda_nacional WHERE {where}", p)
-        # WhatsApp/Celular = confirmado (coluna whatsapp) OU telefone do RFB que é celular
-        # (régua prospeccao.cel_whats — 9º dígito/prefixo móvel), distinto, no MESMO universo da view.
+        # WhatsApp/Celular = confirmado (coluna whatsapp) OU celular detectado em QUALQUER
+        # campo de telefone do RFB (tel1/tel2, régua cel_whats) — precomputado em fazenda_cel.
         kpi=query(f"SELECT count(*) n, "
-                  f"count(*) FILTER (WHERE whatsapp IS NOT NULL OR prospeccao.cel_whats(telefone_rfb) IS NOT NULL) wa, "
+                  f"count(*) FILTER (WHERE whatsapp IS NOT NULL OR cnpj_basico IN (SELECT cnpj_basico FROM prospeccao.fazenda_cel)) wa, "
                   f"count(*) FILTER (WHERE email IS NOT NULL) em, count(*) FILTER (WHERE instagram IS NOT NULL) ig "
                   f"FROM prospeccao.fazenda_nacional WHERE {where}", p)[0]
         return {"rows":rows,"total":total,"page":page,"page_size":page_size,
