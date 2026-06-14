@@ -115,7 +115,23 @@
             {% endif %}
             <button type="submit" class="btn">Entrar</button>
         </form>
+        <button type="button" id="bioBtn" class="btn" style="display:none;background:#1a3a1a"
+                onclick="bioLogin()">🔒 Entrar com digital</button>
+        <div id="bioErr" class="error" style="display:none;margin-top:14px"></div>
         <div class="card-foot">Plataforma de Inteligência Genética Bovina</div>
     </div>
+    <script src="/static/assets/webauthn.js"></script>
+    <script>
+      (async () => {
+        if (window.winsPasskeySupported() && await window.winsPasskeyAvailable())
+          document.getElementById('bioBtn').style.display = 'block';
+      })();
+      async function bioLogin() {
+        const e = document.getElementById('bioErr'); e.style.display = 'none';
+        const b = document.getElementById('bioBtn'); b.disabled = true;
+        try { await window.winsPasskeyLogin(); location.href = '/'; }
+        catch (err) { e.textContent = 'Não foi possível entrar com digital — use email e senha.'; e.style.display = 'block'; b.disabled = false; }
+      }
+    </script>
 </body>
 </html>

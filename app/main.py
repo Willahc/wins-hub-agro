@@ -6,9 +6,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from starlette.concurrency import run_in_threadpool
-from auth import authenticate_user, create_access_token, decode_token, MFA_ENABLED
+from auth import authenticate_user, create_access_token, decode_token, MFA_ENABLED, SECRET_KEY, ALGORITHM
+import jwt
+import json
 from pdf_html import (gerar_parecer_cruzamento, gerar_parecer_matching,  # HTML/CSS -> WeasyPrint
                       gerar_cotacao_acasalamento, gerar_briefing_chegada,
                       gerar_proposta_simulador, gerar_relatorio_territorial,
@@ -31,7 +33,7 @@ logger = logging.getLogger("wins_agro")
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 # Versão do shell — bumpar a cada deploy de front. O cliente compara com /api/version e
 # se auto-atualiza (limpa cache + reload) se estiver velho. Mata o "downgrade pra v1".
-APP_VERSION = "2026-06-14.2"
+APP_VERSION = "2026-06-14.3"
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 
@@ -61,7 +63,10 @@ async def request_pipeline(request: Request, call_next):
             return JSONResponse({"error": "Origem não permitida"}, status_code=403)
     # /api/simulador/* é PÚBLICO (Feature 5: simulador que a Mari abre na fazenda) — só
     # devolve catálogo de touros + cálculo, ZERO PII. O resto de /api/* exige sessão.
-    if path.startswith("/api/") and not path.startswith("/api/simulador"):
+    # público: simulador (zero PII) + LOGIN por passkey (pré-sessão; o registro
+    # continua exigindo sessão, é só o login/available que precisam ser abertos).
+    _wa_public = path.startswith("/api/webauthn/login") or path == "/api/webauthn/available"
+    if path.startswith("/api/") and not path.startswith("/api/simulador") and not _wa_public:
         token = request.cookies.get("access_token")
         if not token or decode_token(token) is None:
             return JSONResponse({"error": "Não autenticado"}, status_code=401)
@@ -307,6 +312,160 @@ def login(request: Request, email: str = Form(...), password: str = Form(...), c
 def logout():
     resp = RedirectResponse("/login", status_code=303)
     resp.delete_cookie("access_token")
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# LOGIN POR DIGITAL — WebAuthn / passkey (biometria do aparelho)
+# O servidor guarda só a CHAVE PÚBLICA; a digital nunca sai do device. Senha+MFA
+# seguem como fallback. Credenciais em prospeccao.webauthn_credential.
+# ---------------------------------------------------------------------------
+import webauthn as _wa
+from webauthn.helpers.structs import (
+    AuthenticatorSelectionCriteria, ResidentKeyRequirement, UserVerificationRequirement,
+    PublicKeyCredentialDescriptor,
+)
+from webauthn.helpers import bytes_to_base64url, base64url_to_bytes
+
+WA_RP_ID = os.getenv("WEBAUTHN_RP_ID", "winshubagro.cloud")
+WA_RP_NAME = "WiNS Hub Agro"
+WA_ORIGIN = os.getenv("WEBAUTHN_ORIGIN", "https://winshubagro.cloud")
+_WA_UV = UserVerificationRequirement.PREFERRED   # biometria preferida (não exige p/ não travar fallback)
+
+
+def _wa_set_challenge(resp, purpose, challenge_bytes):
+    tok = jwt.encode({"c": bytes_to_base64url(challenge_bytes), "p": purpose,
+                      "exp": datetime.utcnow() + timedelta(minutes=5)}, SECRET_KEY, algorithm=ALGORITHM)
+    resp.set_cookie("wa_chal", tok, httponly=True, secure=True, samesite="lax", max_age=300)
+
+
+def _wa_get_challenge(request, purpose):
+    tok = request.cookies.get("wa_chal")
+    if not tok:
+        return None
+    try:
+        d = jwt.decode(tok, SECRET_KEY, algorithms=[ALGORITHM])
+        return base64url_to_bytes(d["c"]) if d.get("p") == purpose else None
+    except Exception:
+        return None
+
+
+def _wa_creds(email=None):
+    if email:
+        return query("SELECT * FROM prospeccao.webauthn_credential WHERE user_email=%(e)s", {"e": email})
+    return query("SELECT * FROM prospeccao.webauthn_credential")
+
+
+def _wa_write(sql, params):
+    pool = _get_pool(); conn = pool.getconn()
+    try:
+        conn.autocommit = True
+        conn.cursor().execute(sql, params)
+    finally:
+        try:
+            pool.putconn(conn)
+        except Exception:
+            pass
+
+
+@app.get("/api/webauthn/available")
+def wa_available():
+    """Público: a tela de login só mostra 'Entrar com digital' se há credencial registrada."""
+    try:
+        return {"available": len(_wa_creds()) > 0}
+    except Exception:
+        return {"available": False}
+
+
+@app.post("/api/webauthn/register/begin")
+async def wa_register_begin(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "login requerido"}, status_code=401)
+    email = user.get("sub")
+    opts = _wa.generate_registration_options(
+        rp_id=WA_RP_ID, rp_name=WA_RP_NAME,
+        user_id=email.encode("utf-8"), user_name=email, user_display_name=user.get("name") or email,
+        authenticator_selection=AuthenticatorSelectionCriteria(
+            resident_key=ResidentKeyRequirement.PREFERRED, user_verification=_WA_UV),
+        exclude_credentials=[PublicKeyCredentialDescriptor(id=base64url_to_bytes(c["cred_id"]))
+                             for c in _wa_creds(email)],
+    )
+    resp = JSONResponse(json.loads(_wa.options_to_json(opts)))
+    _wa_set_challenge(resp, "reg", opts.challenge)
+    return resp
+
+
+@app.post("/api/webauthn/register/complete")
+async def wa_register_complete(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "login requerido"}, status_code=401)
+    chal = _wa_get_challenge(request, "reg")
+    if not chal:
+        return JSONResponse({"error": "desafio expirado, tente de novo"}, status_code=400)
+    body = await request.json()
+    try:
+        v = _wa.verify_registration_response(
+            credential=json.dumps(body), expected_challenge=chal,
+            expected_rp_id=WA_RP_ID, expected_origin=WA_ORIGIN)
+    except Exception:
+        logging.getLogger("uvicorn.error").warning("WebAuthn register falhou", exc_info=True)
+        return JSONResponse({"error": "não foi possível registrar a digital"}, status_code=400)
+    transports = ",".join((body.get("response", {}) or {}).get("transports", []) or [])
+    _wa_write(
+        """INSERT INTO prospeccao.webauthn_credential(cred_id,user_email,public_key,sign_count,transports,label)
+           VALUES(%(id)s,%(e)s,%(pk)s,%(sc)s,%(tr)s,%(lb)s)
+           ON CONFLICT (cred_id) DO UPDATE SET public_key=EXCLUDED.public_key, sign_count=EXCLUDED.sign_count""",
+        {"id": bytes_to_base64url(v.credential_id), "e": user.get("sub"),
+         "pk": bytes_to_base64url(v.credential_public_key), "sc": v.sign_count,
+         "tr": transports, "lb": (body.get("_label") or "Este aparelho")[:60]})
+    audit(request, "webauthn_register", f"cred={bytes_to_base64url(v.credential_id)[:14]}")
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie("wa_chal")
+    return resp
+
+
+@app.post("/api/webauthn/login/begin")
+async def wa_login_begin(request: Request):
+    creds = _wa_creds()
+    if not creds:
+        return JSONResponse({"error": "nenhuma digital registrada"}, status_code=404)
+    opts = _wa.generate_authentication_options(
+        rp_id=WA_RP_ID, user_verification=_WA_UV,
+        allow_credentials=[PublicKeyCredentialDescriptor(id=base64url_to_bytes(c["cred_id"])) for c in creds])
+    resp = JSONResponse(json.loads(_wa.options_to_json(opts)))
+    _wa_set_challenge(resp, "auth", opts.challenge)
+    return resp
+
+
+@app.post("/api/webauthn/login/complete")
+async def wa_login_complete(request: Request):
+    ip = _client_ip(request)
+    chal = _wa_get_challenge(request, "auth")
+    if not chal:
+        return JSONResponse({"error": "desafio expirado"}, status_code=400)
+    body = await request.json()
+    rows = query("SELECT * FROM prospeccao.webauthn_credential WHERE cred_id=%(i)s", {"i": body.get("id")})
+    if not rows:
+        return JSONResponse({"error": "credencial desconhecida"}, status_code=400)
+    c = rows[0]
+    try:
+        v = _wa.verify_authentication_response(
+            credential=json.dumps(body), expected_challenge=chal,
+            expected_rp_id=WA_RP_ID, expected_origin=WA_ORIGIN,
+            credential_public_key=base64url_to_bytes(c["public_key"]),
+            credential_current_sign_count=int(c["sign_count"] or 0))
+    except Exception:
+        audit(request, "login_falha", f"via=passkey ip={ip}")
+        return JSONResponse({"error": "falha na verificação da digital"}, status_code=400)
+    _wa_write("UPDATE prospeccao.webauthn_credential SET sign_count=%(s)s, last_used_at=now() WHERE cred_id=%(i)s",
+              {"s": v.new_sign_count, "i": c["cred_id"]})
+    audit(request, "login_ok", "via=passkey")
+    token = create_access_token({"sub": c["user_email"], "name": "Mari"})
+    resp = JSONResponse({"ok": True})
+    resp.set_cookie("access_token", token, httponly=True, secure=True, samesite="lax", max_age=60 * 60 * 8)
+    resp.delete_cookie("wa_chal")
     return resp
 
 

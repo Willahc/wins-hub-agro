@@ -12,3 +12,4 @@ pydyf==0.10.0
 pytesseract==0.3.13
 pyotp==2.9.0
 qrcode==7.4.2
+webauthn==2.5.2

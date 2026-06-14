@@ -54,6 +54,7 @@
         <span class="secure-note" title="Sessão segura, acesso auditado">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
           conexão segura</span>
+        <button class="btn btn-ghost" style="padding:6px 10px" title="Registrar login por digital neste aparelho" onclick="winsBioRegister()">🔒 Digital</button>
         <span class="user-chip"><span class="av">{{ (user.name or 'U')[0]|upper }}</span>{{ user.name or user.sub }}</span>
       </div>
     </header>
@@ -61,6 +62,14 @@
   </div>
 </div>
 <script src="/static/vendor/alpine.min.js" defer></script>
+<script src="/static/assets/webauthn.js"></script>
+<script>
+  async function winsBioRegister(){
+    if(!window.winsPasskeySupported()){ alert('Este navegador/aparelho não suporta login por digital.'); return; }
+    try{ await window.winsPasskeyRegister(navigator.userAgent.slice(0,40)); alert('✅ Digital registrada neste aparelho. Na próxima, use "Entrar com digital".'); }
+    catch(e){ alert('Não foi possível registrar a digital: '+(e.message||e)); }
+  }
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>
