@@ -21,7 +21,7 @@
     <div class="stat"><div class="k">Com WhatsApp / Celular</div><div class="v" x-text="fmt(kpi.wa)"></div><div class="d" x-text="pct(kpi.wa,kpi.n)"></div></div>
     <div class="stat"><div class="k">Com e-mail</div><div class="v" x-text="fmt(kpi.em)"></div><div class="d" x-text="pct(kpi.em,kpi.n)"></div></div>
     <div class="stat"><div class="k">Com Instagram</div><div class="v" x-text="fmt(kpi.ig)"></div><div class="d" x-text="pct(kpi.ig,kpi.n)"></div></div>
-    <div class="stat" x-show="kpi.deserto"><div class="k">🏜️ Em deserto vet</div><div class="v" x-text="fmt(kpi.deserto)"></div><div class="d" x-text="pct(kpi.deserto,kpi.n)+' — gado sem vet local'"></div></div>
+    <div class="stat" x-show="kpi.deserto"><div class="k">🏜️ Em deserto vet</div><div class="v" x-text="fmt(kpi.deserto)"></div><div class="d" x-text="pct(kpi.deserto,kpi.n)+' — região c/ carga ≥40k gado/téc (75km)'"></div></div>
   </div>
 
   <!-- filtros -->
@@ -44,7 +44,7 @@
     </select>
     <select class="select" x-model="f.cobertura" @change="page=1;load()" title="cobertura veterinária do município">
       <option value="">Cobertura vet (todas)</option>
-      <option value="deserto">🏜️ Deserto vet (gado sem vet)</option>
+      <option value="deserto">🏜️ Deserto vet (região subatendida)</option>
       <option value="baixa">Baixa cobertura</option>
       <option value="normal">Normal</option>
     </select>
