@@ -48,6 +48,55 @@
         </div>
       </div>
 
+      <!-- PERFIL 360 — identidade cruzada (CNPJ+nome) + conexões por telefone+UF -->
+      <div class="ficha-block" style="border-color:#e4d29a;background:#fffdf5"
+           x-show="d.perfil_360 && (d.perfil_360.nomes.length>1 || d.perfil_360.conexoes.fone)">
+        <h2 style="color:#a07a00;border-color:#f0e6c8">🔗 Perfil 360 — o que cruzamos sobre esta fazenda</h2>
+
+        <!-- identidade cruzada: fantasia × razão × núcleo genético (mesma CNPJ) -->
+        <div class="pessoa" x-show="d.perfil_360.nomes.length>1">
+          <div><div class="rotulo">Também identificada como</div>
+            <div class="nome"><template x-for="(n,i) in d.perfil_360.nomes" :key="i"><span><span x-show="i>0" style="color:#ccc"> · </span><span x-text="n"></span></span></template></div>
+            <span class="fz-sub" style="color:#a07a00">mesma CNPJ — nome fantasia, razão social e núcleo genético podem diferir</span>
+          </div>
+          <div x-show="d.perfil_360.nucleo_genetico"><div class="rotulo">Núcleo genético (registro)</div>
+            <div class="nome" x-text="d.perfil_360.nucleo_genetico"></div></div>
+        </div>
+
+        <!-- conexões pelo telefone -->
+        <template x-if="d.perfil_360.conexoes.fone">
+          <div style="margin-top:6px">
+            <div class="rotulo" style="font-size:11px;color:#a07a00;font-weight:700;margin-bottom:6px">
+              Conexões pelo telefone <span class="mono" x-text="d.perfil_360.conexoes.fone"></span>
+              <span class="badge" :class="d.perfil_360.conexoes.fone_tipo==='celular'?'ok':'neutral'"
+                    x-text="d.perfil_360.conexoes.fone_tipo==='celular'?'celular · link forte':'fixo · pode ser compartilhado'"></span>
+            </div>
+            <template x-if="d.perfil_360.conexoes.outras_fazendas.length">
+              <div style="margin-bottom:8px">
+                <div class="fz-sub" x-text="d.perfil_360.conexoes.fone_tipo==='celular'?'🏡 Outras fazendas no mesmo celular (provável mesmo dono):':'🏡 Fazendas que dividem este fixo (provável contador/consultório vet):'"></div>
+                <template x-for="(o,i) in d.perfil_360.conexoes.outras_fazendas" :key="i">
+                  <span class="badge neutral" style="margin:3px 5px 0 0" x-text="cleanNome(o.nome||'(fazenda)')+' · '+(o.municipio||'')+'/'+o.uf"></span>
+                </template>
+              </div>
+            </template>
+            <template x-if="d.perfil_360.conexoes.tecnicos.length">
+              <div>
+                <div class="fz-sub">🩺 Técnico/vet com este mesmo número (quem atende a fazenda):</div>
+                <template x-for="(t,i) in d.perfil_360.conexoes.tecnicos" :key="i">
+                  <div class="pessoa"><div><div class="nome" x-text="cleanNome(t.nome)"></div>
+                    <span class="fz-sub" x-text="profLabel(t.prof)"></span>
+                    <span x-show="t.crmv" class="badge ok" x-text="'CRMV '+t.crmv"></span></div>
+                    <div class="contatos" x-html="contatoTec(t)"></div></div>
+                </template>
+              </div>
+            </template>
+            <div x-show="!d.perfil_360.conexoes.outras_fazendas.length && !d.perfil_360.conexoes.tecnicos.length" class="fz-sub" style="color:#999">
+              Número exclusivo desta fazenda — sem conexão cruzada (sinal de contato direto).
+            </div>
+          </div>
+        </template>
+      </div>
+
       <!-- BLOCO 1 — FAZENDA -->
       <div class="ficha-block">
         <h2>🐄 Fazenda</h2>
@@ -203,7 +252,7 @@
 <script>
 function ficha(){
   return {
-    cnpj:'', d:{fazenda:null,tecnicos:{vinculados:[],regiao:[],regiao_fonte:null},genetica:{}}, loading:true, erro:'',
+    cnpj:'', d:{fazenda:null,tecnicos:{vinculados:[],regiao:[],regiao_fonte:null},genetica:{},perfil_360:null}, loading:true, erro:'',
     cnpjData:null, cnpjLoading:false,
     async consultarCnpj(){
       this.cnpjLoading=true;

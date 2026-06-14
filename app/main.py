@@ -33,7 +33,7 @@ logger = logging.getLogger("wins_agro")
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 # Versão do shell — bumpar a cada deploy de front. O cliente compara com /api/version e
 # se auto-atualiza (limpa cache + reload) se estiver velho. Mata o "downgrade pra v1".
-APP_VERSION = "2026-06-14.7"
+APP_VERSION = "2026-06-14.12"
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 
@@ -2189,9 +2189,45 @@ def api_farm(cnpj: str):
         elif cap > 0 or genetica["touros"] > 0: porte = "pequeno-médio"
         else: porte = "indefinido"
 
+        # --- PERFIL 360: identidade cruzada (teste CNPJ+nome) + conexões por telefone+UF (teste #2) ---
+        # Identidade: a mesma CNPJ pode aparecer com nome fantasia ≠ razão social ≠ núcleo genético
+        # (ex.: "Santa Dulce" = "São José da Barra"). Mostramos todos os nomes pelos quais é conhecida.
+        nucleo = (genetica.get("match_fazenda") or "").strip() or None
+        nomes = []
+        for n in (f.get("nome_fazenda"), f.get("razao"), nucleo):
+            nn = (n or "").strip()
+            if nn and nn.upper() not in [x.upper() for x in nomes]:
+                nomes.append(nn)
+        conexoes = {"fone": None, "fone_tipo": None, "outras_fazendas": [], "tecnicos": []}
+        fone = f.get("whatsapp") or f.get("celular") or f.get("telefone_rfb")
+        if fone:
+            k = scalar("SELECT prospeccao.fone_key(%(p)s)", {"p": str(fone)})
+            if k:
+                conexoes["fone"] = fone
+                # celular (3º dígito 6-9) = link forte/dono; fixo (2-5) = pode ser contador/consultório
+                conexoes["fone_tipo"] = "celular" if (len(k) >= 3 and k[2] in "6789") else "fixo"
+                uf = f.get("uf")
+                conexoes["outras_fazendas"] = query("""
+                    SELECT DISTINCT initcap(COALESCE(NULLIF(e.nome_fantasia,''), em.razao_social)) AS nome,
+                           initcap(e.municipio_nome) AS municipio, e.uf
+                    FROM cnpj.estabelecimento_rural e
+                    LEFT JOIN cnpj.empresa_rural em ON em.cnpj_basico=e.cnpj_basico
+                    WHERE e.uf=%(uf)s AND e.cnpj_basico<>%(c)s
+                      AND prospeccao.fone_key(COALESCE(e.ddd_1,'')||COALESCE(e.telefone_1,''))=%(k)s
+                    ORDER BY 1 LIMIT 8""", {"uf": uf, "c": cb, "k": k})
+                conexoes["tecnicos"] = query("""
+                    SELECT DISTINCT t.nome, COALESCE(NULLIF(t.profissao,''),'técnico') AS prof, t.crmv,
+                           COALESCE(t.whatsapp,t.celular,t.tel_receita) AS contato
+                    FROM prospeccao.tecnico_social t
+                    WHERE t.uf=%(uf)s AND t.nome !~ '^[0-9]'
+                      AND %(k)s IN (prospeccao.fone_key(t.whatsapp), prospeccao.fone_key(t.celular),
+                                    prospeccao.fone_key(t.tel_receita))
+                    LIMIT 5""", {"uf": uf, "k": k})
+        perfil_360 = {"nomes": nomes, "nucleo_genetico": nucleo, "conexoes": conexoes}
+
         return {"fazenda": f, "linha_producao": linha, "porte_estimado": porte,
                 "tecnicos": {"vinculados": vinc, "regiao": regiao, "regiao_fonte": regiao_fonte},
-                "genetica": genetica,
+                "genetica": genetica, "perfil_360": perfil_360,
                 "oferta": {"touros": oferta_touros, "embrioes": oferta_embrioes,
                            "tipo": ("sêmen de leite" if eh_leite else "sêmen de corte")}}
     except Exception as e:
@@ -3064,6 +3100,14 @@ def tecnicos_stats(origem: str = "fila", escopo: str = "todos"):
               count(*) FILTER (WHERE email IS NOT NULL) AS canal_alto
             FROM prospeccao.tecnico_crea WHERE situacao ILIKE %(sit)s""",
             {"ag": "%agron%", "zo": "%zootec%", "sit": "ativo%"})
+    if origem == "carteira":   # canal indireto: técnico/empresa × fazendas no mesmo telefone
+        return query("""SELECT count(*) AS total,
+              count(*) FILTER (WHERE fone_tipo='celular') AS veterinarios,
+              count(*) FILTER (WHERE fone_tipo='fixo') AS zootecnistas,
+              COALESCE(sum(n_fazendas),0) AS com_whatsapp, 0 AS com_celular_rfb, 0 AS com_crmv,
+              count(*) FILTER (WHERE n_alta>0) AS com_fazenda,
+              COALESCE(max(n_fazendas),0) AS canal_alto
+            FROM prospeccao.tecnico_carteira""")
     escopo_w = (f" AND {_TEC_REAL}" if escopo == "confirmado"
                 else f" AND NOT {_TEC_REAL}" if escopo == "provavel" else "")
     return query(
@@ -3161,6 +3205,62 @@ def tecnicos_csv(uf: str = None, prof: str = None, canal: str = None, q: str = N
     return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": "attachment; filename=tecnicos.csv"})
 
+
+# ---------------------------------------------------------------------------
+# CARTEIRA DO TÉCNICO — canal de venda INDIRETO. Cada técnico/empresa (hub de
+# telefone) com a lista de fazendas que compartilham o número (= que ele atende).
+# Fonte: prospeccao.tecnico_carteira (materializada por scripts/build_tecnico_carteira.sql).
+# ---------------------------------------------------------------------------
+def _carteira_where(uf, q, p):
+    w = ["TRUE"]
+    if uf: w.append("uf=%(uf)s"); p["uf"] = uf
+    if q:
+        w.append("(tec_principal ILIKE %(q)s OR tecnicos_todos ILIKE %(q)s OR COALESCE(contato,'') ILIKE %(q)s)")
+        p["q"] = f"%{q}%"
+    return " AND ".join(w)
+
+@app.get("/api/tecnicos/carteira")
+def tecnicos_carteira_list(uf: str = None, q: str = None, page: int = 1, page_size: int = 50):
+    try:
+        ps = min(max(page_size, 1), 100); page = max(page, 1); off = (page - 1) * ps
+        p = {}; where = _carteira_where(uf, q, p)
+        total = scalar(f"SELECT count(*) FROM prospeccao.tecnico_carteira WHERE {where}", p)
+        rows = query(f"""SELECT id, tec_principal, prof, crmv, contato, uf, n_tecnicos, tecnicos_todos,
+                fone_tipo, n_fazendas, n_alta, touros_total, fazendas
+            FROM prospeccao.tecnico_carteira WHERE {where}
+            ORDER BY n_fazendas DESC, uf LIMIT %(lim)s OFFSET %(off)s""", {**p, "lim": ps, "off": off})
+        if isinstance(rows, dict): return rows
+        return {"rows": rows, "total": total or 0, "total_pages": max(1, ((total or 0) + ps - 1) // ps)}
+    except Exception as e:
+        return _error(e)
+
+@app.get("/api/tecnicos/carteira/csv")
+def tecnicos_carteira_csv(uf: str = None, q: str = None):
+    """Exporta a carteira achatada: uma linha por técnico×fazenda (lista de prospecção indireta)."""
+    try:
+        p = {}; where = _carteira_where(uf, q, p)
+        rows = query(f"""SELECT tec_principal, prof, crmv, contato, uf, fone_tipo, n_fazendas, fazendas
+            FROM prospeccao.tecnico_carteira WHERE {where} ORDER BY n_fazendas DESC LIMIT 5000""", p)
+        if isinstance(rows, dict): return rows
+        import csv as _csv
+        buf = io.StringIO()
+        w = _csv.writer(buf)
+        w.writerow(["tecnico", "profissao", "crmv", "contato", "uf", "tipo_fone",
+                    "n_fazendas_carteira", "fazenda", "municipio", "sinal_genetico", "touros", "cnpj"])
+        for r in rows:
+            fz = r.get("fazendas") or []
+            if isinstance(fz, str):
+                import json as _json
+                fz = _json.loads(fz)
+            for f in fz:
+                w.writerow([r["tec_principal"], r["prof"], r["crmv"] or "", r["contato"] or "", r["uf"],
+                            r["fone_tipo"], r["n_fazendas"], f.get("nome"), f.get("municipio"),
+                            f.get("sinal"), f.get("touros"), f.get("cnpj")])
+        buf.seek(0)
+        return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": "attachment; filename=carteira_tecnicos.csv"})
+    except Exception as e:
+        return _error(e)
 
 # fórmula haversine (km) reutilizável: distância entre o centroide do técnico e a fazenda CAR
 _HAVERSINE_KM = (
