@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Cruzamento · WiNS Hub Agro{% endblock %}
+{% block topbar %}Cruzamento{% endblock %}
+{% block content %}
+<div x-data="cruzamento()" x-init="boot()">
+
+  <div class="page-head">
+    <div>
+      <h1>Catálogo Genético</h1>
+      <div class="sub">Touros, matrizes e sêmen avaliados do Brasil — índice genético, preço de dose e central. Base nacional para montar o acasalamento.</div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <span class="secure-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7" cy="7" r="4"/><circle cx="17" cy="17" r="4"/><path d="M10 10l4 4"/></svg> genética nacional</span>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="stats">
+    <div class="stat"><div class="k">Touros avaliados</div><div class="v" x-text="fmt(st.touros)"></div></div>
+    <div class="stat"><div class="k">Matrizes avaliadas</div><div class="v" x-text="fmt(st.matrizes)"></div><div class="d">índice próprio</div></div>
+    <div class="stat"><div class="k">Com preço (sêmen)</div><div class="v" x-text="fmt(st.com_preco)"></div><div class="d">dose acionável</div></div>
+    <div class="stat"><div class="k">Embriões à venda</div><div class="v" x-text="fmt(st.embrioes)"></div><div class="d">FIV/TE</div></div>
+    <div class="stat"><div class="k">Raças</div><div class="v" x-text="fmt(st.racas)"></div></div>
+  </div>
+
+  <!-- filtros -->
+  <div class="filters">
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg>
+      <input class="input" placeholder="Buscar touro, registro, fazenda de origem…" x-model="f.q" @input.debounce.400ms="page=1;load()">
+    </div>
+    <select class="select" x-model="f.raca" @change="page=1;load()">
+      <option value="">Raça (todas)</option>
+      <template x-for="r in racas"><option :value="r" x-text="r"></option></template>
+    </select>
+    <select class="select" x-model="f.sexo" @change="page=1;load()">
+      <option value="">Touro + matriz</option>
+      <option value="M">🐂 Touros</option>
+      <option value="F">🐄 Matrizes</option>
+    </select>
+    <select class="select" x-model="f.finalidade" @change="page=1;load()">
+      <option value="">Corte + leite</option>
+      <option value="corte">Corte</option>
+      <option value="leite">Leite</option>
+    </select>
+    <select class="select" x-model="f.com_preco" @change="page=1;load()">
+      <option value="0">Com e sem preço</option>
+      <option value="1">Só com preço de dose</option>
+    </select>
+    <button class="btn btn-ghost" @click="f={q:'',raca:'',sexo:'',finalidade:'',com_preco:'0'};page=1;load()">Limpar</button>
+  </div>
+  <div class="fz-sub" style="margin:-6px 2px 10px;color:#888" x-show="!f.raca">Dica: o índice ranqueia <b>dentro da raça</b> (escalas diferentes entre raças) — selecione uma raça para um ranking justo.</div>
+
+  <!-- tabela -->
+  <div class="table-wrap">
+    <div class="table-scroll">
+      <table class="data">
+        <thead><tr>
+          <th @click="setSort('indice')">Índice</th>
+          <th @click="setSort('nome')">Animal</th>
+          <th @click="setSort('raca')">Raça</th>
+          <th>Sexo</th>
+          <th @click="setSort('origem')">Origem</th>
+          <th @click="setSort('preco')">Sêmen (dose)</th>
+        </tr></thead>
+        <tbody>
+          <template x-for="r in rows" :key="r.id">
+            <tr>
+              <td>
+                <span class="tier" :class="idxClass(r)" x-text="r.indice!=null ? fmtN(r.indice) : '—'"></span>
+                <div class="fz-sub" x-text="r.indice_tipo"></div>
+              </td>
+              <td>
+                <div class="fz-nome" x-text="cleanNome(r.nome)"></div>
+                <div class="fz-sub mono" x-text="r.registro"></div>
+              </td>
+              <td><span class="badge neutral" x-text="r.raca"></span></td>
+              <td><span x-text="r.sexo==='F' ? '🐄 matriz' : '🐂 touro'"></span></td>
+              <td>
+                <div x-text="r.fazenda_origem||'—'"></div>
+                <div class="fz-sub" x-show="r.uf" x-text="r.uf"></div>
+              </td>
+              <td>
+                <template x-if="r.preco_dose">
+                  <div><span class="badge ok" x-text="'R$ '+fmtN(r.preco_dose)"></span>
+                    <div class="fz-sub" x-text="r.central"></div></div>
+                </template>
+                <template x-if="!r.preco_dose"><span style="color:#ccc">cotação</span></template>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <div class="loading" x-show="loading"><div class="spinner"></div></div>
+      <div class="empty" x-show="!loading && rows.length===0">Nenhum animal nesse filtro.</div>
+    </div>
+    <div class="pager">
+      <span x-text="'Página '+page+' de '+total_pages+' · '+fmt(total)+' animais'"></span>
+      <button class="btn btn-ghost" :disabled="page<=1" @click="page--;load()">‹</button>
+      <button class="btn btn-ghost" :disabled="page>=total_pages" @click="page++;load()">›</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function cruzamento(){
+  return {
+    rows:[], st:{}, racas:[], total:0, total_pages:1, page:1, loading:false,
+    sort:'indice', order:'desc',
+    f:{q:'',raca:'',sexo:'',finalidade:'',com_preco:'0'},
+    async boot(){ await this.kpi(); await this.load() },
+    qs(){const p=new URLSearchParams();for(const k in this.f)if(this.f[k])p.set(k,this.f[k]);return p},
+    async kpi(){
+      try{ const r=await fetch('/api/genetica/kpi'); const d=await r.json(); this.st=d||{}; this.racas=d.racas_lista||[]; }catch(e){ this.st={}; }
+    },
+    async load(){
+      this.loading=true;
+      const p=this.qs(); p.set('page',this.page); p.set('page_size',50); p.set('sort',this.sort); p.set('order',this.order);
+      try{
+        const r=await fetch('/api/genetica?'+p.toString()); const d=await r.json();
+        this.rows=d.rows||[]; this.total=d.total||0; this.total_pages=d.total_pages||1;
+      }catch(e){ this.rows=[]; }
+      this.loading=false;
+    },
+    setSort(c){ if(this.sort===c){this.order=this.order==='asc'?'desc':'asc'}else{this.sort=c;this.order=(c==='nome'||c==='raca'||c==='origem')?'asc':'desc'} this.page=1; this.load() },
+    fmt(n){ return (n==null)?'—':Number(n).toLocaleString('pt-BR') },
+    fmtN(n){ return (n==null)?'—':Number(n).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:2}) },
+    cleanNome(s){ return s? s.replace(/\s*\(.*$/,'').trim() : '—' },
+    idxClass(r){ if(r.indice==null)return 'baixa'; return r.preco_dose ? 'alta' : 'media' }
+  }
+}
+</script>
+{% endblock %}

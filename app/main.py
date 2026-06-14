@@ -1816,6 +1816,85 @@ def tecnica_page(request: Request):
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
+@app.get("/cruzamento", response_class=HTMLResponse)
+def cruzamento_page(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    resp = templates.TemplateResponse("cruzamento.html",
+        {"request": request, "user": user, "active": "cruzamento", "app_version": APP_VERSION})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+# Catálogo de genética (página Cruzamento): touros + matrizes avaliados, com índice
+# (IQGg genômico OU MGTe ANCP), preço de dose + central. Espinha = mercado.reprodutor.
+_GEN_LEITE = ('Holandês','Jersey','Gir Leiteiro','Girolando','Guzera Leiteiro','Sindi Leiteiro','Pardo Suíço')
+_GEN_SORT = {"indice":"indice","preco":"preco_dose","nome":"nome","raca":"raca","origem":"fazenda_origem"}
+
+def _gen_where(raca, sexo, finalidade, com_preco, q):
+    w=["idx.indice IS NOT NULL"]; p={}   # só animais AVALIADOS (exclui pedigree_dam = só nome)
+    if raca: w.append("ra.nome=%(raca)s"); p["raca"]=raca
+    if sexo in ("M","F"): w.append("r.sexo=%(sexo)s"); p["sexo"]=sexo
+    if finalidade=="leite": w.append("ra.nome = ANY(%(leite)s)"); p["leite"]=list(_GEN_LEITE)
+    elif finalidade=="corte": w.append("NOT (ra.nome = ANY(%(leite)s))"); p["leite"]=list(_GEN_LEITE)
+    if com_preco: w.append("prc.preco_dose IS NOT NULL")
+    if q: w.append("(r.nome ILIKE %(q)s OR r.fazenda_origem ILIKE %(q)s OR r.registro ILIKE %(q)s)"); p["q"]=f"%{q}%"
+    return " AND ".join(w), p
+
+_GEN_FROM = ("""FROM mercado.reprodutor r JOIN catalogo.raca ra ON ra.id=r.raca_id
+  LEFT JOIN (SELECT reprodutor_id,
+       max(valor) FILTER (WHERE caracteristica_id=20) AS iqgg,
+       max(valor) FILTER (WHERE caracteristica_id=56) AS mgte,
+       COALESCE(max(valor) FILTER (WHERE caracteristica_id=20), max(valor) FILTER (WHERE caracteristica_id=56)) AS indice
+     FROM mercado.avaliacao WHERE caracteristica_id IN (20,56) GROUP BY reprodutor_id) idx ON idx.reprodutor_id=r.id
+  LEFT JOIN (SELECT reprodutor_id, min(preco_dose_brl) AS preco_dose,
+       (array_agg(central_id ORDER BY preco_dose_brl))[1] AS central_id
+     FROM mercado.touro_oferta WHERE preco_dose_brl>0 GROUP BY reprodutor_id) prc ON prc.reprodutor_id=r.id
+  LEFT JOIN catalogo.central c ON c.id=prc.central_id""")
+
+@app.get("/api/genetica")
+def api_genetica(raca:str=None, sexo:str=None, finalidade:str=None, com_preco:int=0, q:str=None,
+                 page:int=1, page_size:int=50, sort:str="indice", order:str="desc"):
+    try:
+        page=max(1,page); page_size=min(max(page_size,1),100); off=(page-1)*page_size
+        where,p=_gen_where(raca,sexo,finalidade,com_preco,q)
+        col=_GEN_SORT.get(sort,"indice"); od="DESC" if order=="desc" else "ASC"
+        rows=query(f"""SELECT r.id, r.nome, r.registro, r.sexo, ra.nome AS raca, ra.sigla AS raca_sigla,
+              initcap(r.fazenda_origem) AS fazenda_origem, r.uf, r.fonte_programa,
+              round(idx.indice,2) AS indice,
+              CASE WHEN idx.iqgg IS NOT NULL THEN 'IQGg' ELSE 'MGTe' END AS indice_tipo,
+              prc.preco_dose, c.nome AS central
+            {_GEN_FROM} WHERE {where}
+            ORDER BY {col} {od} NULLS LAST, idx.indice DESC NULLS LAST LIMIT %(lim)s OFFSET %(off)s""",
+            {**p,"lim":page_size,"off":off})
+        total=scalar(f"SELECT count(*) {_GEN_FROM} WHERE {where}", p)
+        return {"rows":rows,"total":total,"page":page,"page_size":page_size,
+                "total_pages":max(1,(total+page_size-1)//page_size)}
+    except Exception as e:
+        return _error(e)
+
+@app.get("/api/genetica/kpi")
+def api_genetica_kpi():
+    try:
+        k=query("""SELECT
+            count(*) FILTER (WHERE r.sexo='M' AND idx.indice IS NOT NULL) AS touros,
+            count(*) FILTER (WHERE r.sexo='F' AND idx.indice IS NOT NULL) AS matrizes,
+            count(*) FILTER (WHERE prc.reprodutor_id IS NOT NULL) AS com_preco,
+            count(DISTINCT ra.nome) FILTER (WHERE idx.indice IS NOT NULL) AS racas
+          FROM mercado.reprodutor r JOIN catalogo.raca ra ON ra.id=r.raca_id
+          LEFT JOIN (SELECT reprodutor_id, COALESCE(max(valor) FILTER (WHERE caracteristica_id=20),
+               max(valor) FILTER (WHERE caracteristica_id=56)) AS indice
+             FROM mercado.avaliacao WHERE caracteristica_id IN (20,56) GROUP BY reprodutor_id) idx ON idx.reprodutor_id=r.id
+          LEFT JOIN (SELECT DISTINCT reprodutor_id FROM mercado.touro_oferta WHERE preco_dose_brl>0) prc ON prc.reprodutor_id=r.id""")[0]
+        k["embrioes"]=scalar("SELECT count(*) FROM mercado.oferta_embriao")
+        k["racas_lista"]=[r["raca"] for r in query("""SELECT DISTINCT ra.nome AS raca FROM mercado.reprodutor r
+            JOIN catalogo.raca ra ON ra.id=r.raca_id
+            JOIN mercado.avaliacao a ON a.reprodutor_id=r.id AND a.caracteristica_id IN (20,56)
+            ORDER BY ra.nome""")]
+        return k
+    except Exception as e:
+        return _error(e)
+
 @app.get("/api/farms")
 def api_fazendas(uf:str=None, sinal:str=None, canal:str=None, q:str=None,
                  page:int=1, page_size:int=50, sort:str="prioridade", order:str="asc"):
