@@ -12,6 +12,23 @@
   .calf-iqgg{ font-size:30px; font-weight:800; color:#2d5a2d; line-height:1; }
   .calf-chart{ position:relative; height:240px; margin-top:10px; }
   .delta-up{ color:#2d5a2d; font-weight:700; } .delta-dn{ color:#c62828; font-weight:700; }
+  .link-nome{ color:#2d5a2d; cursor:pointer; text-decoration:underline dotted; }
+  .sug{ border:1px solid #e3e9e3; border-radius:10px; padding:10px 12px; margin-top:12px; }
+  .sug-row{ display:flex; gap:10px; align-items:center; padding:7px 0; border-bottom:1px solid #f0f2f0; font-size:13px; flex-wrap:wrap; }
+  .sug-row .rk{ font-weight:800; color:#2d5a2d; min-width:26px; }
+  .sug-row .gap{ flex:1; }
+  /* modal ficha do animal */
+  .ov{ position:fixed; inset:0; background:rgba(20,30,20,.5); display:flex; align-items:center; justify-content:center; z-index:60; padding:20px; }
+  .mdl{ background:#fff; border-radius:16px; max-width:780px; width:100%; max-height:90vh; overflow:auto; }
+  .mdl-head{ display:flex; justify-content:space-between; align-items:flex-start; padding:18px 22px; border-bottom:1px solid #eef0ee; }
+  .mdl-x{ cursor:pointer; font-size:18px; color:#999; }
+  .mdl-body{ padding:18px 22px; }
+  .mdl-cols{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  @media(max-width:640px){ .mdl-cols{ grid-template-columns:1fr; } }
+  .radar-wrap{ position:relative; height:280px; }
+  table.mini{ width:100%; border-collapse:collapse; font-size:13px; }
+  table.mini td{ padding:5px 4px; border-bottom:1px solid #f0f2f0; }
+  table.mini td.num{ text-align:right; }
 </style>
 {% endblock %}
 {% block content %}
@@ -80,8 +97,36 @@
       </div>
       <button class="btn btn-gold" x-show="selTouro&&selVaca" @click="verBezerro()" :disabled="calfLoading">
         <span x-text="calfLoading ? 'Calculando…' : '= Ver bezerro previsto'"></span></button>
-      <button class="btn btn-ghost" @click="selTouro=null;selVaca=null;calf=null">Limpar</button>
+      <button class="btn btn-ghost" x-show="selVaca" @click="sugerir()" :disabled="sugLoading">
+        <span x-text="sugLoading ? 'Buscando…' : '💡 Sugerir melhores touros p/ esta mãe'"></span></button>
+      <button class="btn btn-ghost" @click="selTouro=null;selVaca=null;calf=null;sug=null">Limpar</button>
     </div>
+
+    <!-- sugestões de touro p/ a matriz marcada -->
+    <template x-if="sug">
+      <div class="sug">
+        <div class="fz-sub" style="margin-bottom:4px">
+          Melhores touros p/ <b x-text="sug.matriz?cleanNome(sug.matriz.nome):''"></b>
+          <span x-show="sug.excluidos_parentesco" x-text="'· '+sug.excluidos_parentesco+' excluídos por parentesco'"></span>
+          <span x-show="!sug.recomendacoes.length"> — nenhum candidato (afrouxe a raça/orçamento).</span>
+        </div>
+        <template x-for="(s,i) in sug.recomendacoes" :key="s.id">
+          <div class="sug-row">
+            <span class="rk" x-text="'#'+(i+1)"></span>
+            <span class="fz-nome link-nome" @click="abrirFicha({id:s.id,sexo:'M',nome:s.nome})" x-text="cleanNome(s.nome)"></span>
+            <span class="badge neutral" x-text="s.raca_sigla"></span>
+            <span class="fz-sub" x-show="s.central" x-text="s.central"></span>
+            <span class="gap"></span>
+            <span class="fz-sub">IQGg cria <b x-text="fmtN(s.prog_iqgg)"></b></span>
+            <span class="fz-sub" x-show="s.ganho_cria">+R$ <b x-text="fmt(s.ganho_cria)"></b>/cria</span>
+            <span class="fz-sub" x-show="s.roi_cria">ROI <b x-text="s.roi_cria"></b>×</span>
+            <span class="badge" :class="s.parente?'warn':'ok'" x-text="s.preco_dose?('R$ '+fmtN(s.preco_dose)):'cotação'"></span>
+            <span class="badge warn" x-show="s.parente" x-text="'⚠ '+s.parentesco"></span>
+            <button class="sel-btn" @click="usarTouro(s)">usar →</button>
+          </div>
+        </template>
+      </div>
+    </template>
 
     <template x-if="calf">
       <div style="margin-top:14px">
@@ -125,7 +170,7 @@
                 <div class="fz-sub" x-text="r.indice_tipo"></div>
               </td>
               <td>
-                <div class="fz-nome" x-text="cleanNome(r.nome)"></div>
+                <div class="fz-nome link-nome" @click="abrirFicha(r)" x-text="cleanNome(r.nome)" title="Ver ficha completa"></div>
                 <div class="fz-sub mono" x-text="r.registro"></div>
               </td>
               <td><span class="badge neutral" x-text="r.raca"></span></td>
@@ -137,7 +182,8 @@
               <td>
                 <template x-if="r.preco_dose">
                   <div><span class="badge ok" x-text="'R$ '+fmtN(r.preco_dose)"></span>
-                    <div class="fz-sub" x-text="r.central"></div></div>
+                    <div class="fz-sub" x-text="r.central"></div>
+                    <div class="fz-sub" x-show="r.indice>0" x-text="'R$ '+fmtN(r.preco_dose/r.indice)+' / ponto'" title="Custo-benefício: R$ por ponto de índice"></div></div>
                 </template>
                 <template x-if="!r.preco_dose"><span style="color:#ccc">cotação</span></template>
               </td>
@@ -158,6 +204,66 @@
       <button class="btn btn-ghost" :disabled="page>=total_pages" @click="page++;load()">›</button>
     </div>
   </div>
+
+  <!-- ====== modal ficha do animal (touro=radar / matriz=progênie) ====== -->
+  <template x-if="ficha">
+    <div class="ov" @click="ficha=null">
+      <div class="mdl" @click.stop>
+        <div class="mdl-head">
+          <div>
+            <h2 style="font-size:20px;margin:0" x-text="fichaData?cleanNome(fichaData.nome):'…'"></h2>
+            <div class="fz-sub" x-show="fichaData" x-text="((fichaData&&(fichaData.raca||fichaData.raca_sigla))||'')+' · Reg. '+((fichaData&&fichaData.registro)||'—')"></div>
+          </div>
+          <span class="mdl-x" @click="ficha=null">✕</span>
+        </div>
+        <div class="mdl-body">
+          <div x-show="!fichaData" class="loading"><div class="spinner"></div></div>
+          <!-- TOURO -->
+          <template x-if="fichaData && ficha.sexo!=='F'">
+            <div class="mdl-cols">
+              <div><div class="radar-wrap"><canvas id="radarTouro"></canvas></div></div>
+              <div>
+                <table class="mini"><tbody>
+                  <tr><td>IQGg genômico</td><td class="num" x-text="fmtN(fichaData.iqg_genomico ?? fichaData.iqgg)"></td></tr>
+                  <tr x-show="fichaData.prenhez_est!=null"><td>Prenhez esperada</td><td class="num" style="color:#2d5a2d;font-weight:700" x-text="'~'+fichaData.prenhez_est+'%'"></td></tr>
+                  <tr x-show="fichaData.prenhez_real!=null"><td>Prenhez realizada (DG)</td><td class="num" style="color:#1a3a1a;font-weight:700" x-text="fichaData.prenhez_real+'% (n='+fichaData.dg_n+')'"></td></tr>
+                  <tr><td>Fazenda origem</td><td class="num" x-text="fichaData.fazenda_origem||'—'"></td></tr>
+                  <tr><td>Genotipado</td><td class="num" x-text="fichaData.genotipado?'Sim':'Não'"></td></tr>
+                  <tr><td>CEIP</td><td class="num" x-text="fichaData.ceip?'Sim':'Não'"></td></tr>
+                </tbody></table>
+                <h3 style="font-size:14px;margin:16px 0 8px;color:#1a3a1a">Ofertas comerciais</h3>
+                <table class="mini"><tbody>
+                  <template x-for="(o,i) in (fichaData.ofertas||[])" :key="i">
+                    <tr><td x-text="o.central"></td><td class="num" x-text="'R$ '+fmtN(o.preco_dose_brl)"></td></tr>
+                  </template>
+                  <tr x-show="!(fichaData.ofertas||[]).length"><td colspan="2" style="color:#999">Sem oferta comercial cadastrada.</td></tr>
+                </tbody></table>
+              </div>
+            </div>
+          </template>
+          <!-- MATRIZ -->
+          <template x-if="fichaData && ficha.sexo==='F'">
+            <div>
+              <table class="mini" style="margin-bottom:14px"><tbody>
+                <tr><td>IQGg (próprio/progênie)</td><td class="num" style="color:#2d5a2d;font-weight:700" x-text="fmtN(fichaData.iqgg_proprio ?? fichaData.iqgg_medio_filhos)"></td></tr>
+                <tr><td>Melhor filho (IQGg)</td><td class="num" x-text="fmtN(fichaData.iqgg_melhor_filho)"></td></tr>
+                <tr><td>Pai (avô materno)</td><td class="num" x-text="fichaData.pai_nome||'—'"></td></tr>
+                <tr><td>Filhos avaliados</td><td class="num" x-text="(fichaData.filhos_avaliados||0)+' de '+(fichaData.filhos_touros||0)"></td></tr>
+                <tr><td>Fazenda origem</td><td class="num" x-text="fichaData.fazenda_origem||'—'"></td></tr>
+              </tbody></table>
+              <h3 style="font-size:14px;margin:0 0 8px;color:#1a3a1a">Progênie (filhos avaliados)</h3>
+              <table class="mini"><tbody>
+                <template x-for="(f,i) in (fichaData.filhos||[])" :key="i">
+                  <tr><td x-text="cleanNome(f.nome)"></td><td class="num" x-text="f.iqgg!=null?fmtN(f.iqgg):'—'"></td></tr>
+                </template>
+                <tr x-show="!(fichaData.filhos||[]).length"><td colspan="2" style="color:#999">Sem progênie avaliada.</td></tr>
+              </tbody></table>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </template>
 </div>
 {% endblock %}
 
@@ -169,7 +275,40 @@ function cruzamento(){
     sort:'indice', order:'desc',
     f:{q:'',raca:'',sexo:'',finalidade:'',com_preco:'0'},
     selTouro:null, selVaca:null, calf:null, calfLoading:false, _fchart:null,
+    sug:null, sugLoading:false,
+    ficha:null, fichaData:null, _radar:null,
     async boot(){ await this.kpi(); await this.load() },
+    async abrirFicha(r){
+      this.ficha={id:r.id, sexo:r.sexo}; this.fichaData=null;
+      const url = r.sexo==='F' ? '/api/matriz/'+r.id : '/api/touro/'+r.id;
+      try{
+        const d=await (await fetch(url)).json();
+        if(d&&!d.error){ this.fichaData=d; if(r.sexo!=='F') this.$nextTick(()=>this.renderRadar()); }
+      }catch(e){ this.fichaData=null; }
+    },
+    renderRadar(){
+      const el=document.getElementById('radarTouro'); if(!el||!this.fichaData||typeof Chart==='undefined')return;
+      if(this._radar){ this._radar.destroy(); this._radar=null; }
+      const t=this.fichaData;
+      const axes=[['Crescim. (PS)','dep_ps'],['Ganho (GPD)','dep_gpd'],['Carcaça (AOL)','dep_aol'],
+                  ['Marmoreio (MAR)','dep_mar'],['Fertil. (HP)','dep_hp'],['Precoc. (PES)','dep_pes']];
+      this._radar=new Chart(el,{type:'radar',data:{labels:axes.map(a=>a[0]),datasets:[
+        {label:'DEP',data:axes.map(a=>{const v=t[a[1]];return v==null?0:Number(v);}),
+         backgroundColor:'rgba(45,90,45,.20)',borderColor:'#2d5a2d',pointBackgroundColor:'#2d5a2d'}
+      ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
+    },
+    async sugerir(){
+      if(!this.selVaca) return;
+      this.sugLoading=true; this.sug=null;
+      try{
+        const p=new URLSearchParams(); if(this.f.finalidade)p.set('tipo',this.f.finalidade); p.set('top',10);
+        const d=await (await fetch('/api/acasalamento/'+this.selVaca.id+'?'+p.toString())).json();
+        if(d&&!d.error) this.sug=d;
+      }catch(e){ this.sug=null; }
+      this.sugLoading=false;
+    },
+    usarTouro(s){ this.selTouro={id:s.id,nome:s.nome,raca:s.raca_sigla,indice_tipo:'IQGg',indice:s.prog_iqgg};
+      if(this.selVaca) this.verBezerro(); },
     fmtDelta(v){ if(v==null)return '—'; return (v>=0?'+':'')+this.fmtN(v); },
     async verBezerro(){
       if(!this.selTouro||!this.selVaca) return;

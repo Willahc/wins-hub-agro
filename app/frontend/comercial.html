@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+{% block title %}Comercial · WiNS Hub Agro{% endblock %}
+{% block topbar %}Comercial{% endblock %}
+{% block head %}
+<script src="/static/vendor/chart.umd.min.js"></script>
+<style>
+  .macro{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+  .macro .m{ flex:1 1 120px; background:#fbfdfb; border:1px solid #e3e9e3; border-radius:12px; padding:10px 14px; }
+  .macro .m .k{ font-size:11px; color:#7a857a; text-transform:uppercase; letter-spacing:.3px; }
+  .macro .m .v{ font-size:18px; font-weight:800; color:#1a3a1a; line-height:1.2; }
+  .macro .m .d{ font-size:10px; color:#9aa39a; }
+  .form-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:14px; margin-bottom:14px; }
+  .field label{ display:block; font-size:12px; font-weight:600; color:#3a463a; margin-bottom:5px; }
+  .field .select,.field .input{ width:100%; }
+  .toggle{ display:flex; align-items:center; gap:8px; font-size:13px; padding-top:6px; }
+  .top-match{ display:flex; gap:18px; flex-wrap:wrap; align-items:center; background:linear-gradient(120deg,#1f4620,#2d5a2d); color:#fff; border-radius:16px; padding:18px 22px; margin-bottom:14px; }
+  .top-match .tm-main{ flex:1 1 320px; }
+  .top-match .tm-rank{ font-size:11px; letter-spacing:.5px; color:#cfe6cf; text-transform:uppercase; }
+  .top-match .tm-name{ font-size:22px; font-weight:800; }
+  .top-match .tm-sub{ font-size:13px; color:#dCeEdC; opacity:.9; }
+  .tm-bar{ height:8px; background:rgba(255,255,255,.25); border-radius:6px; margin-top:6px; overflow:hidden; }
+  .tm-bar i{ display:block; height:100%; background:var(--gold-500,#d4af37); }
+  .tm-bar-label{ display:flex; justify-content:space-between; font-size:11px; margin-top:10px; color:#eaf3ea; }
+  .tm-value{ text-align:center; min-width:120px; }
+  .tm-value .v{ font-size:26px; font-weight:800; color:var(--gold-500,#e8c860); }
+  .tm-value .l{ font-size:11px; color:#cfe6cf; }
+  .justif{ background:#eef7ea; border-left:3px solid #4a9e4a; padding:10px 14px; border-radius:6px; font-size:13px; margin-bottom:14px; }
+  .method{ font-size:12px; color:#7a857a; padding:8px 4px; }
+  .delta-up{ color:#2d5a2d; font-weight:700; } .delta-dn{ color:#c62828; font-weight:700; }
+  /* modal ficha do animal */
+  .ov{ position:fixed; inset:0; background:rgba(20,30,20,.5); display:flex; align-items:center; justify-content:center; z-index:60; padding:20px; }
+  .mdl{ background:#fff; border-radius:16px; max-width:780px; width:100%; max-height:90vh; overflow:auto; }
+  .mdl-head{ display:flex; justify-content:space-between; align-items:flex-start; padding:18px 22px; border-bottom:1px solid #eef0ee; }
+  .mdl-x{ cursor:pointer; font-size:18px; color:#999; }
+  .mdl-body{ padding:18px 22px; }
+  .mdl-cols{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  @media(max-width:640px){ .mdl-cols{ grid-template-columns:1fr; } }
+  .radar-wrap{ position:relative; height:280px; }
+  table.mini{ width:100%; border-collapse:collapse; font-size:13px; }
+  table.mini td{ padding:5px 4px; border-bottom:1px solid #f0f2f0; }
+  table.mini td.num{ text-align:right; }
+</style>
+{% endblock %}
+{% block content %}
+<div x-data="comercial()" x-init="boot()">
+
+  <div class="page-head">
+    <div>
+      <h1>Recomendação Comercial</h1>
+      <div class="sub">Defina o perfil do fazendeiro e receba os touros rankeados por adequação genética, custo e <b>retorno (ROI)</b>. Pronto para apresentar e fechar.</div>
+    </div>
+  </div>
+
+  <!-- indicadores macro (contexto do ROI) -->
+  <div class="macro">
+    <div class="m"><div class="k">🐂 Boi gordo</div><div class="v" x-text="boi?('R$ '+fmtN(boi.valor)):'—'"></div><div class="d">R$/@ · ESALQ/B3</div></div>
+    <div class="m"><div class="k">🥛 Leite</div><div class="v" x-text="leite?('R$ '+fmtN(leite.valor)):'—'"></div><div class="d">R$/L · CEPEA</div></div>
+    <div class="m"><div class="k">🌽 Milho</div><div class="v" x-text="milho?('R$ '+fmtN(milho.valor)):'—'"></div><div class="d">R$/saca</div></div>
+    <div class="m"><div class="k">⚖️ Relação boi/milho</div><div class="v" x-text="boiMilho()"></div><div class="d">sacas de milho por @</div></div>
+    <div class="m"><div class="k">💵 Dólar</div><div class="v" x-text="dolar?('R$ '+fmtN(dolar.valor)):'—'"></div><div class="d">USD/BRL</div></div>
+  </div>
+
+  <!-- formulário de perfil -->
+  <div class="card" style="padding:20px;margin-bottom:16px">
+    <div class="form-grid">
+      <div class="field">
+        <label>Finalidade</label>
+        <select class="select" x-model="m.finalidade">
+          <option value="corte">Corte</option>
+          <option value="leite">Leite</option>
+          <option value="dupla">Dupla aptidão</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Prioridade genética</label>
+        <select class="select" x-model="m.prioridade">
+          <option value="crescimento">Crescimento (GPD)</option>
+          <option value="carcaca">Carcaça (AOL)</option>
+          <option value="precocidade">Precocidade (PES)</option>
+          <option value="fertilidade">Fertilidade (HP)</option>
+          <option value="marmoreio">Marmoreio (MAR)</option>
+          <option value="geral">Geral (IQGg)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>UF</label>
+        <select class="select" x-model="m.uf">
+          <option value="">Qualquer</option>
+          <template x-for="u in ufs" :key="u"><option :value="u" x-text="u"></option></template>
+        </select>
+      </div>
+      <div class="field">
+        <label>Orçamento máx (R$/dose)</label>
+        <input class="input" type="number" min="0" step="10" placeholder="Sem limite" x-model.number="m.orcamento_max">
+      </div>
+      <div class="field">
+        <label>Raça</label>
+        <select class="select" x-model.number="m.raca_id">
+          <option :value="null">Qualquer</option>
+          <template x-for="r in racas" :key="r.id">
+            <option :value="r.id" :disabled="r.com_avaliacao==0"
+              x-text="r.nome + (r.com_avaliacao>0 ? ' ('+r.reprodutores+')' : ' — sem dados ainda')"></option>
+          </template>
+        </select>
+      </div>
+      <div class="field">
+        <label>Sêmen sexado?</label>
+        <label class="toggle"><input type="checkbox" x-model="m.sexado"><span x-text="m.sexado?'Sim':'Não'"></span></label>
+      </div>
+    </div>
+    <button class="btn btn-gold" @click="run()" :disabled="loading">
+      <span x-text="loading ? 'Processando…' : '🎯 Rodar recomendação'"></span></button>
+  </div>
+
+  <!-- top match -->
+  <template x-if="!loading && rows.length">
+    <div>
+      <div class="top-match">
+        <div class="tm-main">
+          <div class="tm-rank">★ Touro #1 · melhor adequação</div>
+          <div class="tm-name" x-text="cleanNome(rows[0].nome)"></div>
+          <div class="tm-sub">
+            <span x-text="rows[0].raca"></span>
+            <span x-show="rows[0].central"> · <span x-text="rows[0].central"></span></span>
+            <span x-show="rows[0].preco_dose"> · <span x-text="brl(rows[0].preco_dose)"></span>/dose</span>
+          </div>
+          <div class="tm-bar-label"><span>Score de adequação</span><span x-text="Number(rows[0].score).toFixed(3)"></span></div>
+          <div class="tm-bar"><i :style="'width:'+Math.round(rows[0].score*100)+'%'"></i></div>
+        </div>
+        <div class="tm-value"><div class="v" x-text="valorAgregado(rows[0])"></div><div class="l">Valor agregado / filho(a)</div></div>
+        <div class="tm-value" x-show="rows[0].roi_dose"><div class="v" x-text="(rows[0].roi_dose||'')+'×'"></div><div class="l">Retorno por dose (ROI)</div></div>
+      </div>
+      <div class="justif" x-show="rows[0].roi_dose">
+        💡 <b>Justificativa do preço:</b> a dose de <b x-text="brl(rows[0].preco_dose)"></b> gera um bezerro
+        <b style="color:#2d5a2d" x-text="'+'+valorAgregado(rows[0])"></b> mais valioso que a média da raça —
+        retorno de <b x-text="(rows[0].roi_dose||'')+'×'"></b> sobre o custo da dose
+        (lucro de <b style="color:#2d5a2d" x-text="brl(rows[0].lucro_bezerro)"></b> por cria).
+      </div>
+    </div>
+  </template>
+
+  <!-- tabela ranqueada -->
+  <div class="table-wrap" x-show="ran">
+    <div class="table-scroll">
+      <table class="data">
+        <thead><tr>
+          <th>Score</th><th>Touro</th><th>Raça</th><th>Central</th>
+          <th>Preço dose</th><th>IQGg</th><th>DEP prior.</th><th>R$/IQGg</th>
+          <th>Valor agregado 💰</th><th>ROI dose</th>
+        </tr></thead>
+        <tbody>
+          <template x-for="r in rows" :key="r.id">
+            <tr style="cursor:pointer" @click="abrirTouro(r.id)" title="Ver ficha completa do touro">
+              <td><span class="tier" :class="scoreClass(r.score)" x-text="Number(r.score).toFixed(3)"></span></td>
+              <td><div class="fz-nome" x-text="cleanNome(r.nome)"></div></td>
+              <td><span class="badge neutral" x-text="r.raca"></span></td>
+              <td x-text="r.central||'—'"></td>
+              <td x-text="r.preco_dose?brl(r.preco_dose):'—'"></td>
+              <td x-text="r.iqgg!=null?Number(r.iqgg).toFixed(2):'—'"></td>
+              <td x-text="r.dep_prioritaria!=null?Number(r.dep_prioritaria).toFixed(2):'—'"></td>
+              <td x-text="r.preco_por_iqgg!=null?brl(r.preco_por_iqgg):'—'"></td>
+              <td style="color:#2d5a2d;font-weight:700" x-text="valorAgregado(r)"></td>
+              <td><span x-show="r.roi_dose" class="badge" :class="r.roi_dose>=2?'ok':(r.roi_dose>=1?'warn':'')" x-text="(r.roi_dose||'')+'×'"></span><span x-show="!r.roi_dose">—</span></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <div class="loading" x-show="loading"><div class="spinner"></div></div>
+      <div class="empty" x-show="!loading && rows.length===0">Nenhum touro atende a esse perfil. Tente afrouxar o orçamento ou a raça.</div>
+    </div>
+    <div class="method" x-show="rows.length && (boi||leite)">
+      🐂 Boi gordo <b x-text="brl(boi&&boi.valor)"></b>/@ · 🥛 Leite <b x-text="brl(leite&&leite.valor)"></b>/L (ESALQ/CEPEA).
+      <b>Valor agregado</b> estimado por filho(a) <i>vs. a média da raça</i>:
+      corte = PD × boi ÷ 30 (R$/bezerro · <b>/bz</b>); leite = PTA Leite × preço do leite (R$/lactação · <b>/lact</b>).
+    </div>
+    <div style="text-align:right;padding:10px 4px" x-show="rows.length">
+      <button class="btn btn-primary" @click="exportarPDF()" :disabled="exportando">
+        <span x-text="exportando?'Gerando PDF…':'📄 Exportar Parecer Zootécnico (PDF)'"></span></button>
+    </div>
+  </div>
+
+  <!-- ====== modal ficha do touro (radar de DEPs) ====== -->
+  <template x-if="touroModal">
+    <div class="ov" @click="touroModal=false">
+      <div class="mdl" @click.stop>
+        <div class="mdl-head">
+          <div>
+            <h2 style="font-size:20px;margin:0" x-text="touro?cleanNome(touro.nome):'…'"></h2>
+            <div class="fz-sub" x-show="touro" x-text="(touro?(touro.raca||'Nelore'):'')+' · Reg. '+((touro&&touro.registro)||'—')"></div>
+          </div>
+          <span class="mdl-x" @click="touroModal=false">✕</span>
+        </div>
+        <div class="mdl-body">
+          <div x-show="!touro" class="empty"><div class="spinner"></div></div>
+          <template x-if="touro">
+            <div class="mdl-cols">
+              <div><div class="radar-wrap"><canvas id="radarTouro"></canvas></div></div>
+              <div>
+                <table class="mini"><tbody>
+                  <tr><td>IQGg genômico</td><td class="num" x-text="depVal(touro.iqg_genomico ?? touro.iqgg)"></td></tr>
+                  <tr x-show="touro.prenhez_est!=null"><td>Prenhez esperada</td><td class="num" style="color:#2d5a2d;font-weight:700" x-text="'~'+touro.prenhez_est+'%'"></td></tr>
+                  <tr x-show="touro.prenhez_real!=null"><td>Prenhez realizada (DG)</td><td class="num" style="color:#1a3a1a;font-weight:700" x-text="touro.prenhez_real+'% (n='+touro.dg_n+')'"></td></tr>
+                  <tr><td>Fazenda origem</td><td class="num" x-text="touro.fazenda_origem||'—'"></td></tr>
+                  <tr><td>Genotipado</td><td class="num" x-text="touro.genotipado?'Sim':'Não'"></td></tr>
+                  <tr><td>CEIP</td><td class="num" x-text="touro.ceip?'Sim':'Não'"></td></tr>
+                  <tr><td>Consanguinidade</td><td class="num" x-text="touro.consanguinidade!=null?touro.consanguinidade+'%':'—'"></td></tr>
+                </tbody></table>
+                <h3 style="font-size:14px;margin:16px 0 8px;color:#1a3a1a">Ofertas comerciais</h3>
+                <table class="mini"><tbody>
+                  <template x-for="(o,i) in (touro.ofertas||[])" :key="i">
+                    <tr><td x-text="o.central"></td><td class="num" x-text="brl(o.preco_dose_brl)"></td></tr>
+                  </template>
+                  <tr x-show="!(touro.ofertas||[]).length"><td colspan="2" style="color:#999">Sem oferta comercial cadastrada.</td></tr>
+                </tbody></table>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </template>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function comercial(){
+  return {
+    m:{finalidade:'corte',prioridade:'geral',uf:'',orcamento_max:null,raca_id:null,sexado:false},
+    ufs:[], racas:[], rows:[], ran:false, loading:false, exportando:false,
+    boi:null, leite:null, milho:null, dolar:null,
+    touroModal:false, touro:null, _radar:null,
+    async boot(){
+      try{ this.ufs=await (await fetch('/api/ufs')).json(); }catch(e){ this.ufs=[]; }
+      try{ this.racas=await (await fetch('/api/racas/todas')).json(); }catch(e){ this.racas=[]; }
+      this.macro();
+    },
+    async macro(){
+      const g=async(u)=>{ try{ return await (await fetch(u)).json(); }catch(e){ return null; } };
+      this.boi=await g('/api/externo/boi');
+      this.leite=await g('/api/externo/leite-preco');
+      const gr=await g('/api/externo/graos'); this.milho=gr&&gr.milho||null;
+      const ind=await g('/api/externo/indicadores'); this.dolar=ind&&ind.dolar||null;
+    },
+    boiMilho(){ if(!(this.boi&&this.boi.valor&&this.milho&&this.milho.valor))return '—';
+      return (this.boi.valor/this.milho.valor).toLocaleString('pt-BR',{maximumFractionDigits:1}); },
+    async run(){
+      this.loading=true; this.ran=true;
+      try{
+        const r=await fetch('/api/matching',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(this.m)});
+        const d=await r.json();
+        this.rows=(d&&d.touros)||[];
+        if(d&&d.boi_arroba)this.boi={valor:d.boi_arroba};
+        if(d&&d.leite_litro)this.leite={valor:d.leite_litro};
+      }catch(e){ this.rows=[]; }
+      this.loading=false;
+    },
+    async abrirTouro(id){
+      this.touroModal=true; this.touro=null;
+      try{
+        const d=await (await fetch('/api/touro/'+id)).json();
+        if(d&&!d.error){ this.touro=d; this.$nextTick(()=>this.renderRadar()); }
+      }catch(e){ this.touro=null; }
+    },
+    renderRadar(){
+      const el=document.getElementById('radarTouro'); if(!el||!this.touro||typeof Chart==='undefined')return;
+      if(this._radar){ this._radar.destroy(); this._radar=null; }
+      const t=this.touro;
+      const axes=[['Crescim. (PS)','dep_ps'],['Ganho (GPD)','dep_gpd'],['Carcaça (AOL)','dep_aol'],
+                  ['Marmoreio (MAR)','dep_mar'],['Fertil. (HP)','dep_hp'],['Precoc. (PES)','dep_pes']];
+      const labels=axes.map(a=>a[0]);
+      const data=axes.map(a=>{ const v=t[a[1]]; return v==null?0:Number(v); });
+      this._radar=new Chart(el,{type:'radar',data:{labels,datasets:[
+        {label:'DEP',data,backgroundColor:'rgba(45,90,45,.20)',borderColor:'#2d5a2d',pointBackgroundColor:'#2d5a2d'}
+      ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
+    },
+    valorAgregado(r){ if(r.valor_bezerro!=null)return this.brl(r.valor_bezerro)+' /bz';
+      if(r.valor_filha!=null)return this.brl(r.valor_filha)+' /lact'; return '—'; },
+    async exportarPDF(){
+      this.exportando=true;
+      try{
+        const res=await fetch('/api/matching/pdf',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(this.m)});
+        if(!res.ok)throw 0;
+        const blob=await res.blob(); const url=URL.createObjectURL(blob);
+        const a=document.createElement('a'); a.href=url;
+        a.download='parecer_zootecnico_'+new Date().toISOString().slice(0,10)+'.pdf';
+        document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      }catch(e){ alert('Erro ao gerar PDF'); }
+      this.exportando=false;
+    },
+    scoreClass(s){ return s>=0.66?'alta':(s>=0.4?'media':'baixa'); },
+    cleanNome(s){ return s? s.replace(/\s*\(.*$/,'').trim() : '—'; },
+    depVal(v){ return v==null?'—':Number(v).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:2}); },
+    fmtN(n){ return (n==null)?'—':Number(n).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:2}); },
+    brl(n){ return (n==null)?'—':Number(n).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); },
+  }
+}
+</script>
+{% endblock %}

@@ -45,6 +45,8 @@
       <template x-for="u in ufs"><option :value="u" x-text="u"></option></template>
     </select>
     <button class="btn btn-ghost" @click="mapLayer='vet';mapUf='';load()">Limpar</button>
+    <a class="btn btn-primary" x-show="mapUf" :href="'/api/territorio/pdf?uf='+mapUf" target="_blank"
+       x-text="'📄 Relatório de '+mapUf+' (PDF)'"></a>
   </div>
 
   <div class="map-wrap">

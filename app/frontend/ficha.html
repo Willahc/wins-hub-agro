@@ -52,7 +52,9 @@
       <div class="ficha-block">
         <h2>🐄 Fazenda</h2>
         <div class="meta-grid">
-          <div class="m"><div class="k">CNPJ</div><div class="v mono" x-text="d.fazenda.cnpj_completo"></div></div>
+          <div class="m"><div class="k">CNPJ</div><div class="v mono" x-text="d.fazenda.cnpj_completo"></div>
+            <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;margin-top:4px" @click="consultarCnpj()" :disabled="cnpjLoading">
+              <span x-text="cnpjLoading?'Consultando…':'🔍 Consultar Receita (ao vivo)'"></span></button></div>
           <div class="m"><div class="k">Município / UF</div><div class="v" x-text="(d.fazenda.municipio||'—')+' / '+d.fazenda.uf"></div></div>
           <div class="m"><div class="k">Porte (capital)</div><div class="v" x-text="d.fazenda.capital_mi ? 'R$ '+d.fazenda.capital_mi+' M' : '—'"></div></div>
           <div class="m" x-show="d.fazenda.dono_n_fazendas>1"><div class="k">Grupo</div><div class="v" x-text="d.fazenda.dono_n_fazendas+' fazendas do dono'"></div></div>
@@ -156,6 +158,44 @@
       </div>
     </div>
   </template>
+
+  <!-- modal CNPJ ao vivo (BrasilAPI) -->
+  <template x-if="cnpjData">
+    <div style="position:fixed;inset:0;background:rgba(20,30,20,.5);display:flex;align-items:center;justify-content:center;z-index:60;padding:20px" @click="cnpjData=null">
+      <div style="background:#fff;border-radius:16px;max-width:560px;width:100%;max-height:90vh;overflow:auto" @click.stop>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:16px 20px;border-bottom:1px solid #eef0ee">
+          <h2 style="font-size:18px;margin:0">🔍 Receita Federal · CNPJ</h2>
+          <span style="cursor:pointer;font-size:18px;color:#999" @click="cnpjData=null">✕</span>
+        </div>
+        <div style="padding:16px 20px">
+          <div x-show="cnpjData.error" class="empty" x-text="cnpjData.error"></div>
+          <template x-if="!cnpjData.error">
+            <div>
+              <table class="mini" style="width:100%;border-collapse:collapse;font-size:13px">
+                <tbody>
+                  <tr><td style="padding:5px 4px;border-bottom:1px solid #f0f2f0">Razão social</td><td style="padding:5px 4px;border-bottom:1px solid #f0f2f0;text-align:right" x-text="cnpjData.razao_social||'—'"></td></tr>
+                  <tr><td style="padding:5px 4px;border-bottom:1px solid #f0f2f0">Nome fantasia</td><td style="padding:5px 4px;border-bottom:1px solid #f0f2f0;text-align:right" x-text="cnpjData.nome_fantasia||'—'"></td></tr>
+                  <tr><td style="padding:5px 4px;border-bottom:1px solid #f0f2f0">Situação</td><td style="padding:5px 4px;border-bottom:1px solid #f0f2f0;text-align:right" x-text="cnpjData.situacao||'—'"></td></tr>
+                  <tr><td style="padding:5px 4px;border-bottom:1px solid #f0f2f0">Capital social</td><td style="padding:5px 4px;border-bottom:1px solid #f0f2f0;text-align:right" x-text="cnpjData.capital_social!=null?('R$ '+fmt(cnpjData.capital_social)):'—'"></td></tr>
+                  <tr><td style="padding:5px 4px;border-bottom:1px solid #f0f2f0">Porte</td><td style="padding:5px 4px;border-bottom:1px solid #f0f2f0;text-align:right" x-text="cnpjData.porte||'—'"></td></tr>
+                  <tr><td style="padding:5px 4px;border-bottom:1px solid #f0f2f0">CNAE</td><td style="padding:5px 4px;border-bottom:1px solid #f0f2f0;text-align:right" x-text="cnpjData.cnae||'—'"></td></tr>
+                  <tr><td style="padding:5px 4px;border-bottom:1px solid #f0f2f0">Município / UF</td><td style="padding:5px 4px;border-bottom:1px solid #f0f2f0;text-align:right" x-text="(cnpjData.municipio||'—')+' / '+(cnpjData.uf||'')"></td></tr>
+                  <tr><td style="padding:5px 4px;border-bottom:1px solid #f0f2f0">Telefone</td><td style="padding:5px 4px;border-bottom:1px solid #f0f2f0;text-align:right" x-text="cnpjData.telefone||'—'"></td></tr>
+                  <tr><td style="padding:5px 4px;border-bottom:1px solid #f0f2f0">E-mail</td><td style="padding:5px 4px;border-bottom:1px solid #f0f2f0;text-align:right" x-text="cnpjData.email||'—'"></td></tr>
+                  <tr><td style="padding:5px 4px;border-bottom:1px solid #f0f2f0">Abertura</td><td style="padding:5px 4px;border-bottom:1px solid #f0f2f0;text-align:right" x-text="cnpjData.abertura||'—'"></td></tr>
+                </tbody>
+              </table>
+              <h3 style="font-size:13px;margin:14px 0 6px;color:#1a3a1a">Sócios (QSA)</h3>
+              <template x-for="(s,i) in (cnpjData.socios||[])" :key="i">
+                <div style="font-size:13px;padding:3px 0"><b x-text="cleanNome(s.nome)"></b> <span style="color:#888" x-text="s.qualificacao?('· '+s.qualificacao):''"></span></div>
+              </template>
+              <div x-show="!(cnpjData.socios||[]).length" style="color:#999;font-size:13px">Sem sócios listados.</div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </template>
 </div>
 {% endblock %}
 
@@ -164,6 +204,13 @@
 function ficha(){
   return {
     cnpj:'', d:{fazenda:null,tecnicos:{vinculados:[],regiao:[],regiao_fonte:null},genetica:{}}, loading:true, erro:'',
+    cnpjData:null, cnpjLoading:false,
+    async consultarCnpj(){
+      this.cnpjLoading=true;
+      try{ this.cnpjData=await (await fetch('/api/externo/cnpj/'+this.cnpj)).json(); }
+      catch(e){ this.cnpjData={error:'Consulta indisponível no momento.'}; }
+      this.cnpjLoading=false;
+    },
     async boot(){
       this.cnpj=(location.pathname.split('/').pop()||'').replace(/\D/g,'');
       try{

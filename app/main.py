@@ -1877,6 +1877,16 @@ def mapa_page(request: Request):
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
+@app.get("/comercial", response_class=HTMLResponse)
+def comercial_page(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    resp = templates.TemplateResponse("comercial.html",
+        {"request": request, "user": user, "active": "comercial", "app_version": APP_VERSION})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
 # ---------------------------------------------------------------------------
 # FICHA DA FAZENDA — dossiê consolidado (/fazendas/{cnpj})
 # Honestidade do vínculo: BLOCO 1 = Receita (confirmado); técnico sócio = provável
