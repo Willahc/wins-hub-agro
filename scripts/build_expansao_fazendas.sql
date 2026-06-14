@@ -50,8 +50,9 @@ UPDATE prospeccao.lead_decisor ld
 SET decisor_top = d.dec, decisores = d.dec
 FROM (
   SELECT l.cnpj_basico,
-    btrim(regexp_replace(regexp_replace(regexp_replace(l.razao,
-      '\s+em recupera.*$','','i'), '\s+e outr[oa]s?$','','i'), '\s*[-0-9./]+\s*$','')) AS dec
+    btrim(regexp_replace(regexp_replace(regexp_replace(regexp_replace(l.razao,
+      '\s+em recupera.*$','','i'), '\s+e outr[oa]s?$','','i'),
+      '\s*[-0-9./]+\s*$',''), '^[0-9./\- ]+','')) AS dec   -- tira número no fim E no início
   FROM prospeccao.lead_decisor l
   JOIN cnpj.empresa_rural em ON em.cnpj_basico=l.cnpj_basico
   WHERE l.tipo='EXPANSAO_CELULAR' AND l.decisor_top IS NULL AND em.natureza_juridica IN ('4120','2135')
