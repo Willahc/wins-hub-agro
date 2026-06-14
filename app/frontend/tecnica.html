@@ -125,7 +125,8 @@
       <div class="cart-card">
         <div class="cart-head" @click="toggle(r.id)">
           <div class="who">
-            <div class="nm" x-text="cleanNome(r.tec_principal)"></div>
+            <a class="nm" x-show="r.tec_cnpj" :href="'/tecnica/'+String(r.tec_cnpj).replace(/\D/g,'')" @click.stop style="color:#1a3a1a;text-decoration:none" x-text="cleanNome(r.tec_principal)"></a>
+            <span class="nm" x-show="!r.tec_cnpj" x-text="cleanNome(r.tec_principal)"></span>
             <div class="fz-sub"><span x-text="profLabel(r.prof)"></span> · <span x-text="r.uf"></span>
               <span x-show="r.crmv" class="badge ok" style="font-size:9px" x-text="'CRMV '+r.crmv"></span>
               <span x-show="r.n_tecnicos>1" class="badge neutral" style="font-size:9px" :title="r.tecnicos_todos" x-text="'+'+(r.n_tecnicos-1)+' no mesmo nº'"></span>
@@ -174,7 +175,8 @@
                 <span x-show="r.origem" class="badge info" x-text="r.origem"></span>
               </td>
               <td data-label="Profissional">
-                <div class="fz-nome" x-text="cleanNome(r.nome)"></div>
+                <a class="fz-nome" x-show="r.cnpj" :href="'/tecnica/'+String(r.cnpj).replace(/\D/g,'')" style="color:#2d5a2d;text-decoration:none;cursor:pointer" x-text="cleanNome(r.nome)"></a>
+                <span class="fz-nome" x-show="!r.cnpj" x-text="cleanNome(r.nome)"></span>
                 <div class="fz-sub">
                   <span x-text="profLabel(r.profissao)"></span>
                   <span x-show="r.prof_conf==='provavel'" class="badge warn" style="font-size:9px" title="profissão inferida do CNAE do estabelecimento — não confirmada por CRMV/cadastro">provável · CNAE</span>

@@ -33,7 +33,7 @@ logger = logging.getLogger("wins_agro")
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 # Versão do shell — bumpar a cada deploy de front. O cliente compara com /api/version e
 # se auto-atualiza (limpa cache + reload) se estiver velho. Mata o "downgrade pra v1".
-APP_VERSION = "2026-06-14.13"
+APP_VERSION = "2026-06-14.14"
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 
@@ -2052,6 +2052,16 @@ def tecnica_page(request: Request):
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
+@app.get("/tecnica/{cnpj}", response_class=HTMLResponse)
+def tecnico_ficha_page(request: Request, cnpj: str):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    resp = templates.TemplateResponse("tecnico_ficha.html",
+        {"request": request, "user": user, "active": "tecnica", "app_version": APP_VERSION})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
 @app.get("/cruzamento", response_class=HTMLResponse)
 def cruzamento_page(request: Request):
     user = get_current_user(request)
@@ -3225,7 +3235,7 @@ def tecnicos_carteira_list(uf: str = None, q: str = None, page: int = 1, page_si
         ps = min(max(page_size, 1), 100); page = max(page, 1); off = (page - 1) * ps
         p = {}; where = _carteira_where(uf, q, p)
         total = scalar(f"SELECT count(*) FROM prospeccao.tecnico_carteira WHERE {where}", p)
-        rows = query(f"""SELECT id, tec_principal, prof, crmv, contato, uf, n_tecnicos, tecnicos_todos,
+        rows = query(f"""SELECT id, tec_principal, tec_cnpj, prof, crmv, contato, uf, n_tecnicos, tecnicos_todos,
                 fone_tipo, n_fazendas, n_alta, touros_total, fazendas
             FROM prospeccao.tecnico_carteira WHERE {where}
             ORDER BY n_fazendas DESC, uf LIMIT %(lim)s OFFSET %(off)s""", {**p, "lim": ps, "off": off})
@@ -3259,6 +3269,73 @@ def tecnicos_carteira_csv(uf: str = None, q: str = None):
         buf.seek(0)
         return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv; charset=utf-8",
             headers={"Content-Disposition": "attachment; filename=carteira_tecnicos.csv"})
+    except Exception as e:
+        return _error(e)
+
+# ---------------------------------------------------------------------------
+# FICHA DO TÉCNICO (/tecnica/{cnpj}) — dossiê + território: fazendas da nossa base
+# no raio de 75km (mesma régua do Deserto Vet), com a classificação de cobertura.
+# ---------------------------------------------------------------------------
+_VIZ_CTE = """WITH viz AS (
+    SELECT m.codigo_ibge,
+      round(earth_distance(ll_to_earth(%(lat)s,%(lon)s), ll_to_earth(m.latitude,m.longitude))/1000) AS km
+    FROM referencia.municipio m
+    WHERE m.latitude BETWEEN %(lat)s-0.7 AND %(lat)s+0.7
+      AND m.longitude BETWEEN %(lon)s-0.9 AND %(lon)s+0.9
+      AND earth_distance(ll_to_earth(%(lat)s,%(lon)s), ll_to_earth(m.latitude,m.longitude)) <= 75000)"""
+
+@app.get("/api/tecnico/{cnpj}")
+def api_tecnico(cnpj: str):
+    try:
+        dg = _so_digitos(cnpj)
+        t = query("""SELECT cnpj14, cnpj_basico, nome,
+                       COALESCE(NULLIF(profissao,''), CASE crmv_cat WHEN 'Z' THEN 'zootecnista'
+                         WHEN 'V' THEN 'veterinario' END) AS profissao,
+                       categoria, tier, municipio, uf, crmv, crmv_uf, crmv_confiavel,
+                       whatsapp, celular, tel_melhor, email_receita AS email, instagram, site,
+                       sinal_corte, bovinos_municipio, bovinos_100km, fazendas_real_50km,
+                       n_fazendas_posse, tem_fazenda_propria, score_canal
+                     FROM prospeccao.v_tecnico_fazenda_ui
+                     WHERE (cnpj14=%(c)s OR cnpj_basico=%(b)s) AND nome !~ '^[0-9]'
+                     ORDER BY (cnpj14=%(c)s) DESC LIMIT 1""", {"c": dg, "b": dg[:8]})
+        if not t:
+            return {"error": "Técnico não encontrado"}
+        t = t[0]
+        geo = query("SELECT lat, lon, codigo_ibge, mun, uf FROM prospeccao.mv_tecnico_geo WHERE cnpj14=%(c)s LIMIT 1",
+                    {"c": t["cnpj14"]})
+        g = geo[0] if geo else None
+        regiao = None; nearby = []; munmap = []; total = 0
+        if g and g.get("codigo_ibge"):
+            rg = query("""SELECT classificacao_vet, carga_regional, tecnicos_75km, bovinos_75km
+                FROM prospeccao.v_white_space_pecuaria WHERE codigo_ibge=%(i)s LIMIT 1""", {"i": g["codigo_ibge"]})
+            regiao = rg[0] if rg else None
+        if g and g.get("lat") is not None:
+            p = {"lat": g["lat"], "lon": g["lon"]}
+            nearby = query(_VIZ_CTE + """
+                SELECT f.cnpj_completo, f.nome_fazenda, f.municipio, f.uf, f.decisor,
+                       f.sinal_genetico, f.touros_nelore, f.whatsapp, f.capital_mi, f.canal_recomendado,
+                       viz.km, d.classificacao_vet, count(*) OVER() AS total
+                FROM viz
+                JOIN prospeccao.fazenda_ibge fi ON fi.codigo_ibge=viz.codigo_ibge
+                JOIN prospeccao.fazenda_nacional f ON f.cnpj_basico=fi.cnpj_basico
+                LEFT JOIN prospeccao.fazenda_deserto d ON d.cnpj_basico=f.cnpj_basico
+                ORDER BY (f.sinal_genetico='alta') DESC, (d.classificacao_vet='DESERTO VET') DESC,
+                         f.touros_nelore DESC NULLS LAST, viz.km LIMIT 60""", p)
+            total = nearby[0]["total"] if nearby else 0
+            munmap = query(_VIZ_CTE + """
+                SELECT rm.nome, rm.uf, rm.latitude AS lat, rm.longitude AS lon, viz.km,
+                       count(f.cnpj_basico) AS n_faz,
+                       count(*) FILTER (WHERE f.sinal_genetico='alta') AS n_alta,
+                       max(d.classificacao_vet) AS classificacao_vet
+                FROM viz
+                JOIN referencia.municipio rm ON rm.codigo_ibge=viz.codigo_ibge
+                JOIN prospeccao.fazenda_ibge fi ON fi.codigo_ibge=viz.codigo_ibge
+                JOIN prospeccao.fazenda_nacional f ON f.cnpj_basico=fi.cnpj_basico
+                LEFT JOIN prospeccao.fazenda_deserto d ON d.cnpj_basico=f.cnpj_basico
+                GROUP BY rm.nome, rm.uf, rm.latitude, rm.longitude, viz.km
+                ORDER BY n_faz DESC""", p)
+        return {"tecnico": t, "geo": g, "regiao": regiao,
+                "fazendas_proximas": nearby, "total_proximas": total, "municipios_proximos": munmap}
     except Exception as e:
         return _error(e)
 

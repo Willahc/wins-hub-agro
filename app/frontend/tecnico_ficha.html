@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}Ficha do Técnico · WiNS Hub Agro{% endblock %}
+{% block topbar %}Ficha do Técnico{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="/static/vendor/leaflet.css" />
+<script src="/static/vendor/leaflet.js"></script>
+<style>
+  .tf-block{ border:1px solid var(--border,#e3e3e3); border-radius:14px; padding:18px 20px; margin-bottom:16px; background:#fff; }
+  .tf-block h2{ font-size:14px; text-transform:uppercase; letter-spacing:.5px; color:#2d5a2d; margin:0 0 12px; border-bottom:2px solid #eef2ee; padding-bottom:8px; }
+  .tf-meta{ display:flex; gap:22px; flex-wrap:wrap; }
+  .tf-meta .k{ font-size:11px; text-transform:uppercase; color:#999; }
+  .tf-meta .v{ font-weight:600; }
+  .tf-cards{ display:flex; gap:14px; flex-wrap:wrap; }
+  .tf-card{ border:1px solid #e7eee7; border-radius:10px; padding:12px 14px; min-width:150px; flex:1; }
+  .tf-card .k{ font-size:11px; color:#2d5a2d; font-weight:700; text-transform:uppercase; }
+  .tf-card .big{ font-size:24px; font-weight:800; }
+  #tmap{ height:380px; border-radius:12px; border:1px solid #e3e9e3; }
+  .leaflet-popup-content{ font-size:13px; }
+  @media(max-width:680px){ #tmap{ height:300px; } }
+</style>
+{% endblock %}
+{% block content %}
+<div x-data="tficha()" x-init="boot()">
+
+  <div class="page-head">
+    <div>
+      <a href="/tecnica" class="btn btn-ghost" style="margin-bottom:8px">← Voltar para técnicos</a>
+      <h1 x-text="d.tecnico ? cleanNome(d.tecnico.nome) : 'Carregando…'"></h1>
+      <div class="sub" x-show="d.tecnico" x-text="d.tecnico ? (profLabel(d.tecnico.profissao)+' · '+(d.tecnico.municipio||'')+'/'+d.tecnico.uf) : ''"></div>
+    </div>
+  </div>
+
+  <div class="loading" x-show="loading"><div class="spinner"></div></div>
+  <div class="empty" x-show="!loading && erro" x-text="erro"></div>
+
+  <template x-if="d.tecnico">
+    <div>
+      <!-- BLOCO 1 — TÉCNICO -->
+      <div class="tf-block">
+        <h2>🩺 Técnico</h2>
+        <div class="tf-meta" style="margin-bottom:12px">
+          <div><div class="k">Profissão</div><div class="v" x-text="profLabel(d.tecnico.profissao)"></div></div>
+          <div x-show="d.tecnico.crmv_confiavel"><div class="k">CRMV</div><div class="v" x-text="(d.tecnico.crmv_uf||'')+' '+(d.tecnico.crmv||'')"></div></div>
+          <div><div class="k">Município</div><div class="v" x-text="(d.tecnico.municipio||'—')+' / '+d.tecnico.uf"></div></div>
+          <div x-show="d.tecnico.tier"><div class="k">Tier</div><div class="v" x-text="d.tecnico.tier"></div></div>
+        </div>
+        <div class="contatos" style="display:flex;gap:8px;flex-wrap:wrap" x-html="contatos(d.tecnico)"></div>
+      </div>
+
+      <!-- BLOCO 2 — REGIÃO (cobertura / deserto vet do município do técnico) -->
+      <div class="tf-block" x-show="d.regiao" :style="regiaoStyle()">
+        <h2>🏜️ Cobertura da região dele</h2>
+        <div class="tf-meta">
+          <div><div class="k">Classificação</div>
+            <div class="v" style="font-size:16px"><span class="badge" :class="covBadge(d.regiao.classificacao_vet)" x-text="d.regiao.classificacao_vet"></span></div></div>
+          <div x-show="d.regiao.carga_regional"><div class="k">Carga (gado/téc · 75km)</div><div class="v" x-text="fmt(d.regiao.carga_regional)"></div></div>
+          <div><div class="k">Técnicos no raio 75km</div><div class="v" x-text="fmt(d.regiao.tecnicos_75km)"></div></div>
+          <div><div class="k">Rebanho no raio 75km</div><div class="v" x-text="fmt(d.regiao.bovinos_75km)+' cab'"></div></div>
+        </div>
+      </div>
+
+      <!-- BLOCO 3 — ALCANCE -->
+      <div class="tf-block">
+        <h2>🎯 Alcance</h2>
+        <div class="tf-cards">
+          <div class="tf-card"><div class="k">Fazendas no raio (75km)</div><div class="big" x-text="fmt(d.total_proximas)"></div>
+            <div class="fz-sub">da nossa base de criadores</div></div>
+          <div class="tf-card"><div class="k">Rebanho ~100km</div><div class="big" x-text="d.tecnico.bovinos_100km?fmt(d.tecnico.bovinos_100km):'—'"></div></div>
+          <div class="tf-card"><div class="k">Fazenda própria</div><div class="big" x-text="d.tecnico.tem_fazenda_propria?(d.tecnico.n_fazendas_posse||1):'—'"></div></div>
+        </div>
+      </div>
+
+      <!-- BLOCO 4 — MAPA das fazendas próximas (régua do Deserto Vet) -->
+      <div class="tf-block">
+        <h2>🗺️ Fazendas no raio de 75 km <span style="font-size:11px;color:#9aa39a;text-transform:none">— cores = cobertura vet do município</span></h2>
+        <div id="tmap"></div>
+        <div class="fz-sub" style="margin-top:8px">⭐ técnico · cada círculo é um município (tamanho = nº de fazendas); vermelho = deserto vet, âmbar = baixa, verde = normal.</div>
+      </div>
+
+      <!-- BLOCO 5 — LISTA priorizada -->
+      <div class="tf-block">
+        <h2>🐄 Fazendas próximas <span style="font-size:11px;color:#9aa39a;text-transform:none" x-text="'— top '+(d.fazendas_proximas.length)+' de '+fmt(d.total_proximas)+', por prioridade'"></span></h2>
+        <div class="table-scroll">
+          <table class="data">
+            <thead><tr><th>Fazenda</th><th>Dist.</th><th>Sinal · Touros</th><th>Cobertura</th><th>Decisor</th><th>Contato</th></tr></thead>
+            <tbody>
+              <template x-for="r in d.fazendas_proximas" :key="r.cnpj_completo">
+                <tr>
+                  <td data-label="Fazenda">
+                    <a class="fz-nome" :href="'/fazendas/'+(r.cnpj_completo||'').replace(/\D/g,'')" style="color:#2d5a2d;text-decoration:none" x-text="cleanNome(r.nome_fazenda)"></a>
+                    <div class="fz-sub mono" x-text="(r.municipio||'')+'/'+r.uf"></div>
+                  </td>
+                  <td data-label="Dist."><span class="badge neutral" x-text="r.km+' km'"></span></td>
+                  <td data-label="Sinal · Touros">
+                    <span class="badge" :class="sinalBadge(r.sinal_genetico)" x-text="r.sinal_genetico"></span>
+                    <span class="fz-sub" x-show="r.touros_nelore>0" x-text="' '+r.touros_nelore+' touros'"></span>
+                  </td>
+                  <td data-label="Cobertura"><span class="badge" :class="covBadge(r.classificacao_vet)" x-text="r.classificacao_vet||'—'"></span></td>
+                  <td data-label="Decisor" x-text="cleanNome(r.decisor)||'—'"></td>
+                  <td data-label="Contato">
+                    <a x-show="r.whatsapp" class="badge ok" :href="'https://wa.me/55'+zap(r.whatsapp)" target="_blank">WhatsApp</a>
+                    <span x-show="!r.whatsapp" style="color:#ccc">—</span>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+          <div class="empty" x-show="!d.fazendas_proximas.length">Nenhuma fazenda da base no raio de 75 km.</div>
+        </div>
+      </div>
+    </div>
+  </template>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function tficha(){
+  return {
+    cnpj:'', d:{tecnico:null,regiao:null,geo:null,fazendas_proximas:[],municipios_proximos:[],total_proximas:0},
+    loading:true, erro:'', _map:null,
+    async boot(){
+      this.cnpj=(location.pathname.split('/').pop()||'').replace(/\D/g,'');
+      try{
+        const r=await fetch('/api/tecnico/'+this.cnpj); const j=await r.json();
+        if(j.error){ this.erro=j.error; } else { this.d=Object.assign(this.d,j); this.$nextTick(()=>this.drawMap()); }
+      }catch(e){ this.erro='Erro ao carregar a ficha.'; }
+      this.loading=false;
+    },
+    drawMap(){
+      const g=this.d.geo, muns=this.d.municipios_proximos||[];
+      if(!g || g.lat==null || !document.getElementById('tmap')) return;
+      if(this._map){ this._map.remove(); this._map=null; }
+      this._map=L.map('tmap').setView([g.lat,g.lon],8);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap'}).addTo(this._map);
+      const colors={'DESERTO VET':'#c62828','BAIXA COBERTURA':'#d9a441','NORMAL':'#2e7d32'};
+      const grp=[];
+      muns.forEach(m=>{ if(m.lat==null)return;
+        const c=colors[m.classificacao_vet]||'#607d8b';
+        const radius=Math.max(6, Math.min(26, 5+Math.sqrt(Number(m.n_faz||1))*3));
+        const mk=L.circleMarker([m.lat,m.lon],{radius,color:c,fillColor:c,fillOpacity:.55,weight:1})
+          .bindPopup(`<b>${this.esc(m.nome)} (${this.esc(m.uf)})</b><br>${m.n_faz} fazenda(s)${m.n_alta?(' · '+m.n_alta+' sinal alto'):''}<br>${m.km} km<br><b style="color:${c}">${this.esc(m.classificacao_vet||'—')}</b>`)
+          .addTo(this._map);
+        grp.push(mk);
+      });
+      // marcador do técnico (estrela via divIcon)
+      const star=L.divIcon({html:'<div style="font-size:22px;line-height:1">⭐</div>',className:'',iconSize:[22,22],iconAnchor:[11,11]});
+      L.marker([g.lat,g.lon],{icon:star,zIndexOffset:1000}).bindPopup('<b>'+this.esc(this.d.tecnico.nome)+'</b><br>técnico').addTo(this._map);
+      if(grp.length){ try{ this._map.fitBounds(L.featureGroup(grp.concat(L.marker([g.lat,g.lon]))).getBounds().pad(0.2)); }catch(e){} }
+    },
+    cleanNome(s){ return s? String(s).replace(/\s*\(.*$/,'').trim() : '—'; },
+    fmt(n){ return (n==null)?'—':Number(n).toLocaleString('pt-BR'); },
+    zap(z){ return z? String(z).replace(/\D/g,'') : ''; },
+    esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); },
+    profLabel(p){ return {veterinario:'Veterinário',zootecnista:'Zootecnista',ambos:'Vet/Zootec',reproducao_manejo:'Reprodução/manejo',agronomo:'Agrônomo','agrônomo':'Agrônomo',tecnico:'Técnico','técnico':'Técnico'}[p]||(p||'Técnico'); },
+    sinalBadge(s){ return s==='alta'?'ok':(s==='media'?'gold':'neutral'); },
+    covBadge(c){ return c==='DESERTO VET'?'warn':(c==='BAIXA COBERTURA'?'gold':(c==='NORMAL'?'ok':'neutral')); },
+    regiaoStyle(){ const c=this.d.regiao&&this.d.regiao.classificacao_vet;
+      return c==='DESERTO VET'?'background:#fdf3f2;border-color:#e6c3bf':(c==='BAIXA COBERTURA'?'background:#fffdf5;border-color:#e4d29a':''); },
+    contatos(t){
+      let h=[];
+      const z=t.whatsapp||t.celular||t.tel_melhor;
+      if(z) h.push(`<a class="badge ok" href="https://wa.me/55${this.zap(z)}" target="_blank">WhatsApp</a>`);
+      if(t.email) h.push(`<a class="badge info" href="mailto:${t.email}">e-mail</a>`);
+      if(t.instagram) h.push(`<a class="badge neutral" href="https://instagram.com/${String(t.instagram).replace(/^@/,'')}" target="_blank">@${String(t.instagram).replace(/^@/,'')}</a>`);
+      if(t.site) h.push(`<a class="badge neutral" href="${/^https?:/.test(t.site)?t.site:'http://'+t.site}" target="_blank">site</a>`);
+      return h.length? h.join(' ') : '<span style="color:#ccc">sem canal de contato</span>';
+    }
+  }
+}
+</script>
+{% endblock %}

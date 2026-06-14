@@ -32,7 +32,8 @@ link AS (
 tecs AS (
   SELECT k, uf,
     count(DISTINCT nome) AS n_tecnicos,
-    (array_agg(nome    ORDER BY (crmv IS NOT NULL) DESC, nome))[1] AS tec_principal,
+    (array_agg(nome      ORDER BY (crmv IS NOT NULL) DESC, nome))[1] AS tec_principal,
+    (array_agg(tec_cnpj  ORDER BY (crmv IS NOT NULL) DESC, nome))[1] AS tec_cnpj,
     (array_agg(prof    ORDER BY (crmv IS NOT NULL) DESC, nome))[1] AS prof,
     (array_agg(crmv    ORDER BY (crmv IS NOT NULL) DESC))[1]       AS crmv,
     (array_agg(contato ORDER BY (contato IS NOT NULL) DESC))[1]    AS contato,
@@ -40,7 +41,7 @@ tecs AS (
   FROM tk GROUP BY k, uf
 )
 SELECT row_number() OVER (ORDER BY count(DISTINCT l.cnpj_basico) DESC, t.uf) AS id,
-   t.k AS fone_key, t.uf, t.tec_principal, t.prof, t.crmv, t.contato,
+   t.k AS fone_key, t.uf, t.tec_principal, t.tec_cnpj, t.prof, t.crmv, t.contato,
    t.n_tecnicos, t.tecnicos_todos,
    CASE WHEN substr(t.k,3,1) IN ('6','7','8','9') THEN 'celular' ELSE 'fixo' END AS fone_tipo,
    count(DISTINCT l.cnpj_basico) AS n_fazendas,
@@ -50,7 +51,7 @@ SELECT row_number() OVER (ORDER BY count(DISTINCT l.cnpj_basico) DESC, t.uf) AS 
         'nome', initcap(l.nome_fazenda), 'municipio', l.municipio,
         'sinal', l.sinal_genetico, 'touros', l.touros_nelore)) AS fazendas
 FROM tecs t JOIN link l ON l.k=t.k AND l.uf=t.uf
-GROUP BY t.k, t.uf, t.tec_principal, t.prof, t.crmv, t.contato, t.n_tecnicos, t.tecnicos_todos
+GROUP BY t.k, t.uf, t.tec_principal, t.tec_cnpj, t.prof, t.crmv, t.contato, t.n_tecnicos, t.tecnicos_todos
 HAVING count(DISTINCT l.cnpj_basico) BETWEEN 2 AND 80;
 CREATE INDEX ON prospeccao.tecnico_carteira(n_fazendas DESC);
 CREATE INDEX ON prospeccao.tecnico_carteira(uf);

@@ -97,3 +97,14 @@ JOIN prospeccao.v_white_space_pecuaria w ON w.codigo_ibge = m.codigo_ibge;
 CREATE INDEX ON prospeccao.fazenda_deserto(cnpj_basico);
 CREATE INDEX ON prospeccao.fazenda_deserto(classificacao_vet);
 GRANT SELECT ON prospeccao.fazenda_deserto TO wins_app;
+
+-- (4) fazenda_ibge: mapa fazenda->codigo_ibge (+geo) p/ busca por raio rápida
+--     (ficha do técnico / fazendas no raio de 75km). Evita normalizar_nome a cada request.
+DROP TABLE IF EXISTS prospeccao.fazenda_ibge;
+CREATE TABLE prospeccao.fazenda_ibge AS
+SELECT f.cnpj_basico, m.codigo_ibge, m.latitude, m.longitude
+FROM prospeccao.fazenda_nacional f
+JOIN referencia.municipio m ON m.nome_normalizado::text = referencia.normalizar_nome(f.municipio) AND m.uf::text = f.uf;
+CREATE INDEX ON prospeccao.fazenda_ibge(codigo_ibge);
+CREATE UNIQUE INDEX ON prospeccao.fazenda_ibge(cnpj_basico);
+GRANT SELECT ON prospeccao.fazenda_ibge TO wins_app;
