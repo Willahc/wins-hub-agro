@@ -3,6 +3,10 @@
 # Dump custom-format (pg_dump -Fc) -> /root/backups_db, rotação de 14 dias,
 # verificação de sanidade (tamanho mínimo) e log em /var/log/wins_backup.log.
 # Offsite: se OFFSITE_TARGET estiver definido (ex.: user@host:/path), faz scp.
+# CIFRADO: o dump é cifrado p/ a chave pública 'WiNS Backup' (GPG) e o plaintext é
+#   apagado (shred). A chave PRIVADA fica OFFSITE — sem ela, nenhum .gpg é legível.
+# RESTORE:  gpg --decrypt arquivo.dump.gpg | docker exec -i <db> pg_restore -U postgres -d wins_agro
+#   (precisa da chave privada importada; chave pública em scripts/wins_backup_pubkey.asc).
 set -u -o pipefail
 
 DEST=/root/backups_db
@@ -10,6 +14,10 @@ LOG=/var/log/wins_backup.log
 KEEP_DAYS=14
 MIN_BYTES=10000000   # dump são ~44MB; menos de 10MB = algo errado
 OFFSITE_TARGET="${OFFSITE_TARGET:-}"   # ex.: william@187.127.253.42:/home/william/backups_agro
+# Cifra ASSIMÉTRICA do backup (chave pública no servidor; PRIVADA fica OFFSITE). Assim,
+# servidor comprometido ou backup roubado = .gpg inútil sem a privada. Recipient = a chave
+# 'WiNS Backup'. Se a chave pública não estiver no keyring, NÃO faz backup em claro (fail-safe).
+GPG_RECIPIENT="${GPG_RECIPIENT:-backup@winshubagro.cloud}"
 
 mkdir -p "$DEST"
 ts() { date '+%Y-%m-%d %H:%M:%S'; }
@@ -36,8 +44,27 @@ if [ "$SIZE" -lt "$MIN_BYTES" ]; then
   exit 1
 fi
 
-# rotação: remove dumps locais com mais de KEEP_DAYS dias
-find "$DEST" -name 'wins_agro_*.dump' -mtime +"$KEEP_DAYS" -delete
+# --- CIFRAGEM (assimétrica) — o plaintext NUNCA fica em repouso ---
+# fail-safe: sem a chave pública no keyring, aborta e remove o plaintext (não guarda em claro).
+if ! gpg --list-keys "$GPG_RECIPIENT" >/dev/null 2>&1; then
+  say "ERRO: chave pública '$GPG_RECIPIENT' ausente no keyring — backup ABORTADO (não guardo em claro)"
+  shred -u "$FILE" 2>/dev/null || rm -f "$FILE"
+  exit 1
+fi
+ENC="$FILE.gpg"
+if ! gpg --batch --yes --trust-model always --encrypt --recipient "$GPG_RECIPIENT" --output "$ENC" "$FILE" 2>>"$LOG"; then
+  say "ERRO: cifragem GPG falhou ($FILE) — backup ABORTADO"
+  shred -u "$FILE" 2>/dev/null || rm -f "$FILE"
+  rm -f "$ENC"
+  exit 1
+fi
+chmod 600 "$ENC"
+shred -u "$FILE" 2>/dev/null || rm -f "$FILE"   # apaga o dump em claro
+FILE="$ENC"                                      # daqui pra frente, só o cifrado existe
+ENCSIZE=$(stat -c%s "$FILE")
+
+# rotação: remove backups locais (claro legado OU cifrado) com mais de KEEP_DAYS dias
+find "$DEST" -name 'wins_agro_*.dump*' -mtime +"$KEEP_DAYS" -delete
 
 if [ -n "$OFFSITE_TARGET" ]; then
   # garante o diretório remoto (user@host:/path -> ssh user@host mkdir -p /path)
