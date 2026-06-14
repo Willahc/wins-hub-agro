@@ -123,7 +123,10 @@
     <script src="/static/assets/webauthn.js"></script>
     <script>
       (async () => {
-        if (window.winsPasskeySupported() && await window.winsPasskeyAvailable())
+        // no app nativo (v1.5) o login por digital é automático (BiometricPrompt no cold-start),
+        // então o botão WebAuthn (que falha no WebView) fica escondido. Só aparece no navegador.
+        var nativeApp = !!(window.WinsAndroid && window.WinsAndroid.isNativeBio && window.WinsAndroid.isNativeBio());
+        if (!nativeApp && window.winsPasskeySupported() && await window.winsPasskeyAvailable())
           document.getElementById('bioBtn').style.display = 'block';
       })();
       async function bioLogin() {
