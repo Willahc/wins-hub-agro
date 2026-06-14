@@ -47,12 +47,13 @@ HTML_DOC = f"""<!doctype html><html><head><meta charset="utf-8"><style>{CSS}</st
 
 <h2>1. O ativo de dados (números reais do banco — 4,1 GB)</h2>
 <div class="cards">
-  <div class="card"><div class="k">Fazendas c/ decisor</div><div class="v">146.298</div><div class="d">91.453 c/ decisores nomeados (59.353 c/ 2+)</div></div>
-  <div class="card"><div class="k">Avaliações genéticas (DEP)</div><div class="v">1,24 mi</div><div class="d">58.064 touros + 19.812 matrizes · 19 raças</div></div>
-  <div class="card"><div class="k">ICP genético qualificado</div><div class="v">1.461</div><div class="d">527 alta + 934 média (compram genética)</div></div>
-  <div class="card"><div class="k">Canal técnico (vet/zootec)</div><div class="v">14.926</div><div class="d">4.448 confirmados · 536 CRMV</div></div>
-  <div class="card"><div class="k">Contato (WhatsApp)</div><div class="v">38,7k+93,2k</div><div class="d">confirmado + inferido RFB · ~108k e-mails · 7,5k IG</div></div>
+  <div class="card"><div class="k">Fazendas c/ decisor</div><div class="v">200.489</div><div class="d">199.856 c/ decisor nomeado (49.331 c/ 2+)</div></div>
+  <div class="card"><div class="k">Avaliações genéticas (DEP)</div><div class="v">1,24 mi</div><div class="d">58.064 touros + 19.812 matrizes · 22 raças</div></div>
+  <div class="card"><div class="k">ICP genético qualificado</div><div class="v">1.411</div><div class="d">508 alta + 903 média (compram genética)</div></div>
+  <div class="card"><div class="k">Canal técnico (vet/zootec)</div><div class="v">15.964</div><div class="d">4.448 confirmados · 536 CRMV</div></div>
+  <div class="card"><div class="k">Contato (WhatsApp)</div><div class="v">70,2k</div><div class="d">WhatsApp/celular · 143,9k e-mails · 7,6k IG</div></div>
   <div class="card"><div class="k">Catálogo / sêmen</div><div class="v">843</div><div class="d">touros c/ preço · 34 embriões · 19 centrais · 5.536 municípios</div></div>
+  <div class="card"><div class="k">Deserto vet (oportunidade)</div><div class="v">91 mi</div><div class="d">cabeças em 539 municípios sem cobertura vet regional</div></div>
 </div>
 
 <h2>2. As duas ferramentas</h2>
@@ -102,8 +103,8 @@ projeto (nunca por hora — evita vínculo). A Mari (R$ 25k) é folha do grupo +
 <table>
   <thead><tr><th>Opção</th><th>O que é</th><th class="n">Faixa de valor</th></tr></thead>
   <tbody>
-    <tr><td><b>Lista crua</b> (commodity)</td><td>146k fazendas, contato majoritariamente RFB. Moat fino (brokers já vendem). <b>Não recomendado</b> — queima exclusividade.</td><td class="n">R$ 30–150k (única)<br>ou R$ 0,5–2k/mês</td></tr>
-    <tr><td><b>Núcleo qualificado</b></td><td>1.461 ICP genético + 4.448 técnicos confirmados + contatos verificados + camada genética. Pacote direcionado/exclusivo.</td><td class="n">R$ 15–80k (pacote)</td></tr>
+    <tr><td><b>Lista crua</b> (commodity)</td><td>200k fazendas, contato majoritariamente RFB. Moat fino (brokers já vendem). <b>Não recomendado</b> — queima exclusividade.</td><td class="n">R$ 30–150k (única)<br>ou R$ 0,5–2k/mês</td></tr>
+    <tr><td><b>Núcleo qualificado</b></td><td>1.411 ICP genético + 4.448 técnicos confirmados + contatos verificados + camada genética. Pacote direcionado/exclusivo.</td><td class="n">R$ 15–80k (pacote)</td></tr>
     <tr><td><b>SaaS por cliente</b></td><td>Licença mensal a outra empresa que vende pra fazenda (genética / farma vet / nutrição / equipamento).</td><td class="n">R$ 1–10k/mês por cliente</td></tr>
     <tr><td><b>App por ativação</b></td><td>Seat por técnico extra que usar o app de campo.</td><td class="n">~R$ 200–600/técnico/mês</td></tr>
     <tr><td><b>Aquisição estratégica</b></td><td>Custo de reconstruir tudo (pipeline RFB + 1,24 mi DEP + camada genética + 2 ferramentas, ~6–10 meses de time).</td><td class="n">R$ 600k – 1,5 mi+</td></tr>
