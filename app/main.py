@@ -315,6 +315,23 @@ def logout():
     return resp
 
 
+@app.get("/.well-known/assetlinks.json")
+def assetlinks():
+    """Digital Asset Links — autoriza o app WiNS Campo (cloud.winshubagro.campo, debug-signed)
+    a usar passkey/WebAuthn do domínio winshubagro.cloud DENTRO do WebView
+    (WebSettingsCompat.setWebAuthenticationSupport). Público, sem auth."""
+    return JSONResponse([{
+        "relation": ["delegate_permission/common.get_login_creds"],
+        "target": {
+            "namespace": "android_app",
+            "package_name": "cloud.winshubagro.campo",
+            "sha256_cert_fingerprints": [
+                "FC:3B:C3:73:AD:81:0D:B6:14:1D:54:7A:6A:69:C2:04:F6:6C:13:5A:B7:CB:C3:41:BF:9B:82:DC:8F:0F:71:BA"
+            ],
+        },
+    }])
+
+
 # ---------------------------------------------------------------------------
 # LOGIN POR DIGITAL — WebAuthn / passkey (biometria do aparelho)
 # O servidor guarda só a CHAVE PÚBLICA; a digital nunca sai do device. Senha+MFA
