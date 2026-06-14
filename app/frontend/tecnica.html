@@ -54,8 +54,8 @@
         </div>
         <div class="kpi-main">
           <div class="lab">Contato direto</div>
-          <div class="num" x-text="fmt(st.com_whatsapp)"></div>
-          <div class="desc">WhatsApp/celular confirmado — atende agora<span class="prov" x-show="st.com_celular_rfb" x-text="' · +'+fmt(st.com_celular_rfb)+' cel. RFB a verificar'"></span></div>
+          <div class="num" x-text="fmt((Number(st.com_whatsapp)||0)+(Number(st.com_celular_rfb)||0))"></div>
+          <div class="desc">WhatsApp / celular</div>
         </div>
       </div>
       <div class="quality">
