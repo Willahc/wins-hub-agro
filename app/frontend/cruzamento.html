@@ -1,6 +1,19 @@
 {% extends "base.html" %}
 {% block title %}Cruzamento · WiNS Hub Agro{% endblock %}
 {% block topbar %}Cruzamento{% endblock %}
+{% block head %}
+<script src="/static/vendor/chart.umd.min.js"></script>
+<style>
+  .sel-btn{ font-size:11px; padding:3px 7px; border-radius:6px; border:1px solid #cdd6cd; background:#f4f7f4; cursor:pointer; white-space:nowrap; }
+  .sel-btn:hover{ background:#e7f0e7; }
+  .sel-btn.on{ background:#2d5a2d; color:#fff; border-color:#2d5a2d; }
+  .bezerro-panel{ border:1px solid var(--border,#e3e3e3); border-radius:14px; padding:16px 18px; margin-bottom:16px; background:#fbfdfb; }
+  .calf-head{ display:flex; gap:18px; align-items:center; flex-wrap:wrap; }
+  .calf-iqgg{ font-size:30px; font-weight:800; color:#2d5a2d; line-height:1; }
+  .calf-chart{ position:relative; height:240px; margin-top:10px; }
+  .delta-up{ color:#2d5a2d; font-weight:700; } .delta-dn{ color:#c62828; font-weight:700; }
+</style>
+{% endblock %}
 {% block content %}
 <div x-data="cruzamento()" x-init="boot()">
 
@@ -51,6 +64,46 @@
   </div>
   <div class="fz-sub" style="margin:-6px 2px 10px;color:#888" x-show="!f.raca">Dica: o índice ranqueia <b>dentro da raça</b> (escalas diferentes entre raças) — selecione uma raça para um ranking justo.</div>
 
+  <!-- seleção touro × vaca → bezerro previsto (gráfico de ganho) -->
+  <div class="bezerro-panel" x-show="selTouro || selVaca">
+    <div class="calf-head">
+      <div style="min-width:180px">
+        <div class="fz-sub">PAI 🐂</div>
+        <div class="fz-nome" x-text="selTouro ? cleanNome(selTouro.nome) : '— marque um touro na tabela —'"></div>
+        <div class="fz-sub" x-show="selTouro" x-text="selTouro ? selTouro.raca+' · '+selTouro.indice_tipo+' '+fmtN(selTouro.indice) : ''"></div>
+      </div>
+      <div style="font-size:24px;color:#999">×</div>
+      <div style="min-width:180px">
+        <div class="fz-sub">MÃE 🐄</div>
+        <div class="fz-nome" x-text="selVaca ? cleanNome(selVaca.nome) : '— marque uma matriz —'"></div>
+        <div class="fz-sub" x-show="selVaca" x-text="selVaca ? selVaca.raca+' · '+selVaca.indice_tipo+' '+fmtN(selVaca.indice) : ''"></div>
+      </div>
+      <button class="btn btn-gold" x-show="selTouro&&selVaca" @click="verBezerro()" :disabled="calfLoading">
+        <span x-text="calfLoading ? 'Calculando…' : '= Ver bezerro previsto'"></span></button>
+      <button class="btn btn-ghost" @click="selTouro=null;selVaca=null;calf=null">Limpar</button>
+    </div>
+
+    <template x-if="calf">
+      <div style="margin-top:14px">
+        <div x-show="calf.relacao && calf.relacao.bloqueio" class="badge warn" style="margin-bottom:8px" x-text="'⚠ '+(calf.relacao ? calf.relacao.label : '')"></div>
+        <div class="calf-head">
+          <div>
+            <div class="fz-sub">IQGg do bezerro previsto</div>
+            <div class="calf-iqgg" x-text="fmtN(calf.calf.iqgg.cria)"></div>
+            <div class="fz-sub" x-show="calf.calf.iqgg.vs_vaca!=null || calf.calf.iqgg.vs_touro!=null">
+              vs mãe <span :class="calf.calf.iqgg.vs_vaca>=0?'delta-up':'delta-dn'" x-text="fmtDelta(calf.calf.iqgg.vs_vaca)"></span>
+              · vs pai <span :class="calf.calf.iqgg.vs_touro>=0?'delta-up':'delta-dn'" x-text="fmtDelta(calf.calf.iqgg.vs_touro)"></span>
+            </div>
+          </div>
+          <div x-show="calf.f1" class="badge gold">F1 (raças diferentes)</div>
+        </div>
+        <div class="calf-chart"><canvas id="filhoteChart"></canvas></div>
+        <div class="fz-sub" style="margin-top:8px">Barras = mérito do <b>pai</b>, <b>mãe</b> e <b>bezerro previsto</b> por característica (normalizado por característica). A cria fica na média genética dos pais.</div>
+        <div style="margin-top:10px"><a class="btn btn-ghost" :href="'/api/cruzamento/pdf?touro_id='+selTouro.id+'&vaca_id='+selVaca.id" target="_blank">📄 Parecer PDF</a></div>
+      </div>
+    </template>
+  </div>
+
   <!-- tabela -->
   <div class="table-wrap">
     <div class="table-scroll">
@@ -62,6 +115,7 @@
           <th>Sexo</th>
           <th @click="setSort('origem')">Origem</th>
           <th @click="setSort('preco')">Sêmen (dose)</th>
+          <th>Cruzar</th>
         </tr></thead>
         <tbody>
           <template x-for="r in rows" :key="r.id">
@@ -87,6 +141,10 @@
                 </template>
                 <template x-if="!r.preco_dose"><span style="color:#ccc">cotação</span></template>
               </td>
+              <td>
+                <button x-show="r.sexo==='M'" class="sel-btn" :class="{on:selTouro&&selTouro.id===r.id}" @click="selTouro=r" x-text="(selTouro&&selTouro.id===r.id?'✓ ':'')+'🐂 pai'"></button>
+                <button x-show="r.sexo==='F'" class="sel-btn" :class="{on:selVaca&&selVaca.id===r.id}" @click="selVaca=r" x-text="(selVaca&&selVaca.id===r.id?'✓ ':'')+'🐄 mãe'"></button>
+              </td>
             </tr>
           </template>
         </tbody>
@@ -110,7 +168,33 @@ function cruzamento(){
     rows:[], st:{}, racas:[], total:0, total_pages:1, page:1, loading:false,
     sort:'indice', order:'desc',
     f:{q:'',raca:'',sexo:'',finalidade:'',com_preco:'0'},
+    selTouro:null, selVaca:null, calf:null, calfLoading:false, _fchart:null,
     async boot(){ await this.kpi(); await this.load() },
+    fmtDelta(v){ if(v==null)return '—'; return (v>=0?'+':'')+this.fmtN(v); },
+    async verBezerro(){
+      if(!this.selTouro||!this.selVaca) return;
+      this.calfLoading=true; this.calf=null;
+      try{
+        const r=await fetch(`/api/cruzamento?touro_id=${this.selTouro.id}&vaca_id=${this.selVaca.id}`);
+        const d=await r.json();
+        if(d && !d.error){ this.calf=d; this.$nextTick(()=>this.renderCalf()); }
+      }catch(e){ this.calf=null; }
+      this.calfLoading=false;
+    },
+    renderCalf(){
+      const el=document.getElementById('filhoteChart'); if(!el||!this.calf||typeof Chart==='undefined')return;
+      if(this._fchart){ this._fchart.destroy(); this._fchart=null; }
+      const f=this.calf;
+      const items=Object.keys(f.calf.traits).map(k=>[(f.calf.trait_labels[k]||k).split(' (')[0], f.calf.traits[k]]);
+      const labels=items.map(it=>it[0]);
+      const maxs=items.map(it=>{const d=it[1]||{};return Math.max(d.touro||0,d.vaca||0,d.cria||0,0.0001);});
+      const norm=(v,mx)=>(mx>0&&v!=null)?Math.max(0,v/mx*100):0;
+      this._fchart=new Chart(el,{type:'bar',data:{labels,datasets:[
+        {label:'Pai',data:items.map((it,i)=>norm(it[1]&&it[1].touro,maxs[i])),backgroundColor:'#9cc49c'},
+        {label:'Mãe',data:items.map((it,i)=>norm(it[1]&&it[1].vaca,maxs[i])),backgroundColor:'#d8c4a8'},
+        {label:'Bezerro',data:items.map((it,i)=>norm(it[1]&&it[1].cria,maxs[i])),backgroundColor:'#2d5a2d'},
+      ]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{display:false,beginAtZero:true}},plugins:{legend:{position:'bottom'},tooltip:{enabled:false}}}});
+    },
     qs(){const p=new URLSearchParams();for(const k in this.f)if(this.f[k])p.set(k,this.f[k]);return p},
     async kpi(){
       try{ const r=await fetch('/api/genetica/kpi'); const d=await r.json(); this.st=d||{}; this.racas=d.racas_lista||[]; }catch(e){ this.st={}; }
