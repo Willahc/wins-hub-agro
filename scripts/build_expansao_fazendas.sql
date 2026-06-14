@@ -43,4 +43,19 @@ GRANT SELECT ON prospeccao.fazenda_cel, prospeccao.fazenda_expansao TO wins_app;
 INSERT INTO prospeccao.lead_decisor (cnpj_basico,cnpj14,razao,uf,municipio,tipo,decisores,decisor_top,situacao_viva,porte,qsa,linkedin,enriched_at)
 SELECT cnpj_basico,cnpj14,razao,uf,municipio,tipo,decisores,decisor_top,situacao_viva,porte,NULL::jsonb,NULL,now()
 FROM prospeccao.fazenda_expansao WHERE cnpj_basico NOT IN (SELECT cnpj_basico FROM prospeccao.lead_decisor);
+
+-- (3) decisor dos EI/Produtor (natureza 4120/2135): a razão social É o nome da pessoa.
+-- Limpa 'Em Recuperacao Judicial', 'E Outro(s)/Outra(s)' e CPF/números no fim.
+UPDATE prospeccao.lead_decisor ld
+SET decisor_top = d.dec, decisores = d.dec
+FROM (
+  SELECT l.cnpj_basico,
+    btrim(regexp_replace(regexp_replace(regexp_replace(l.razao,
+      '\s+em recupera.*$','','i'), '\s+e outr[oa]s?$','','i'), '\s*[-0-9./]+\s*$','')) AS dec
+  FROM prospeccao.lead_decisor l
+  JOIN cnpj.empresa_rural em ON em.cnpj_basico=l.cnpj_basico
+  WHERE l.tipo='EXPANSAO_CELULAR' AND l.decisor_top IS NULL AND em.natureza_juridica IN ('4120','2135')
+) d
+WHERE ld.cnpj_basico=d.cnpj_basico AND ld.tipo='EXPANSAO_CELULAR' AND ld.decisor_top IS NULL AND length(d.dec)>=5;
+
 REFRESH MATERIALIZED VIEW prospeccao.fazenda_nacional;
