@@ -21,6 +21,8 @@ import asyncio
 import logging
 import io
 import os
+import time
+import threading
 
 logger = logging.getLogger("wins_agro")
 
@@ -248,11 +250,49 @@ def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
 
+# --- Proteção contra força-bruta no login (em memória; app é single-instance) ---
+# Conta única + dado valioso => qualquer tentativa em volume é hostil. Trava por IP
+# (5/15min) e um teto global (25/15min) p/ ataque distribuído. Toda falha/trava é
+# auditada. bcrypt já é lento; somamos delay no erro p/ encarecer automação.
+_LOGIN_FAILS = {}
+_LOGIN_LOCK = threading.Lock()
+_FAIL_WINDOW = 900
+_FAIL_MAX_IP = 5
+_FAIL_MAX_GLOBAL = 25
+
+def _client_ip(request):
+    ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else "?")
+    return ip.split(",")[0].strip()
+
+def _login_state(ip, record_fail=False, clear=False):
+    """Retorna (bloqueado_bool). Poda janelas vencidas; opcionalmente registra falha/limpa."""
+    now = time.time()
+    with _LOGIN_LOCK:
+        for k in list(_LOGIN_FAILS):
+            _LOGIN_FAILS[k] = [t for t in _LOGIN_FAILS[k] if now - t < _FAIL_WINDOW]
+            if not _LOGIN_FAILS[k]:
+                del _LOGIN_FAILS[k]
+        if clear:
+            _LOGIN_FAILS.pop(ip, None); return False
+        if record_fail:
+            _LOGIN_FAILS.setdefault(ip, []).append(now)
+        ip_fails = len(_LOGIN_FAILS.get(ip, []))
+        global_fails = sum(len(v) for v in _LOGIN_FAILS.values())
+        return ip_fails >= _FAIL_MAX_IP or global_fails >= _FAIL_MAX_GLOBAL
+
 @app.post("/login")
-def login(response: Response, email: str = Form(...), password: str = Form(...)):
+def login(request: Request, email: str = Form(...), password: str = Form(...)):
+    ip = _client_ip(request)
+    if _login_state(ip):   # já travado: falha RÁPIDO (sem sleep/audit — evita amplificar flood)
+        return RedirectResponse("/login?error=locked", status_code=303)
     user = authenticate_user(email, password)
     if not user:
+        blocked = _login_state(ip, record_fail=True)
+        audit(request, "login_falha", f"email={(email or '')[:60]} ip={ip}" + (" [TRAVOU]" if blocked else ""))
+        time.sleep(1.0)   # encarece tentativas automatizadas
         return RedirectResponse("/login?error=1", status_code=303)
+    _login_state(ip, clear=True)
+    audit(request, "login_ok", f"ip={ip}")
     token = create_access_token({"sub": user["email"], "name": user["name"]})
     resp = RedirectResponse("/", status_code=303)
     resp.set_cookie(

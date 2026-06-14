@@ -92,7 +92,9 @@
             <p>Inteligência genética bovina</p>
             <div class="tagline">59.120 reprodutores · 985k avaliações DEP<br>Matching em segundos</div>
         </div>
-        {% if request.query_params.get('error') %}
+        {% if request.query_params.get('error') == 'locked' %}
+        <div class="error">Muitas tentativas. Aguarde alguns minutos e tente novamente.</div>
+        {% elif request.query_params.get('error') %}
         <div class="error">Email ou senha incorretos.</div>
         {% endif %}
         <form method="POST" action="/login">
