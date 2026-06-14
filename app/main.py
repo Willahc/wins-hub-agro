@@ -33,7 +33,7 @@ logger = logging.getLogger("wins_agro")
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 # Versão do shell — bumpar a cada deploy de front. O cliente compara com /api/version e
 # se auto-atualiza (limpa cache + reload) se estiver velho. Mata o "downgrade pra v1".
-APP_VERSION = "2026-06-14.3"
+APP_VERSION = "2026-06-14.4"
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 
@@ -330,6 +330,20 @@ def assetlinks():
             ],
         },
     }])
+
+
+@app.get("/api/campo/bio-token")
+def campo_bio_token(request: Request):
+    """Token de sessão de 30 dias p/ o desbloqueio por digital do APK (BiometricPrompt
+    nativo guarda cifrado no Keystore). Auth-gated: só o usuário já logado obtém. Mesmo
+    JWT do login normal, só com exp maior — o middleware/decode_token valida igual."""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "login requerido"}, status_code=401)
+    tok = jwt.encode({"sub": user.get("sub"), "name": user.get("name") or "Mari",
+                      "exp": datetime.utcnow() + timedelta(days=30)}, SECRET_KEY, algorithm=ALGORITHM)
+    audit(request, "bio_token", "via=campo (30d)")
+    return {"token": tok}
 
 
 # ---------------------------------------------------------------------------

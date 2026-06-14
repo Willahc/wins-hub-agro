@@ -134,8 +134,8 @@
       </div>
       <div class="card" id="bioCard" style="display:none">
         <h3>🔒 Login por digital</h3>
-        <div class="muted" style="margin-bottom:10px">Registre a digital/Face ID deste aparelho. Na próxima vez, entra sem digitar senha nem código.</div>
-        <button class="btn sec" style="margin:0" onclick="winsBioRegister()">🔒 Registrar digital neste aparelho</button>
+        <div class="muted" style="margin-bottom:10px">Ative a digital deste aparelho. Na próxima vez, entra sem digitar senha nem código.</div>
+        <button class="btn sec" style="margin:0" onclick="winsBioRegister()">🔒 Ativar entrada por digital</button>
       </div>
       <div class="card">
         <h3>Fazenda (cliente)</h3>
@@ -1810,11 +1810,24 @@ function campo() {
 <div style="position:fixed;bottom:2px;right:5px;font-size:9px;color:#c4c4c4;z-index:9999;pointer-events:none;">v{{ app_version }}</div>
 <script src="/static/assets/webauthn.js"></script>
 <script>
-  // mostra o card de registro de digital só se o aparelho suporta
-  if (window.winsPasskeySupported && window.winsPasskeySupported()) {
-    var _bc = document.getElementById('bioCard'); if (_bc) _bc.style.display = 'block';
-  }
+  // No APK (bridge nativo WinsAndroid) -> biometric-unlock nativo (BiometricPrompt + Keystore),
+  // confiável em qualquer celular com digital. No navegador -> WebAuthn/passkey.
+  var _NATIVE_BIO = !!(window.WinsAndroid && window.WinsAndroid.isNativeBio && window.WinsAndroid.isNativeBio());
+  (function(){
+    var c = document.getElementById('bioCard'); if (!c) return;
+    if (_NATIVE_BIO) { if (window.WinsAndroid.canBio && window.WinsAndroid.canBio()) c.style.display='block'; }
+    else if (window.winsPasskeySupported && window.winsPasskeySupported()) c.style.display='block';
+  })();
   async function winsBioRegister(){
+    if (_NATIVE_BIO){
+      // app nativo: pega um token de 30 dias e ativa o desbloqueio por digital
+      try{
+        var r = await fetch('/api/campo/bio-token'); var j = await r.json();
+        if(!j.token) throw new Error(j.error||'sem token');
+        window.WinsAndroid.enableBio(j.token);   // nativo mostra o toast de sucesso
+      }catch(e){ alert('Não foi possível ativar a digital: '+(e.message||e)); }
+      return;
+    }
     if(!window.winsPasskeySupported()){ alert('Este aparelho não suporta login por digital.'); return; }
     try{ await window.winsPasskeyRegister('WiNS Campo'); alert('✅ Digital registrada. Na próxima, toque em "Entrar com digital" no login.'); }
     catch(e){ alert('Não foi possível registrar a digital: '+(e.message||e)); }
