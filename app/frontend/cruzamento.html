@@ -12,6 +12,15 @@
   .calf-iqgg{ font-size:30px; font-weight:800; color:#2d5a2d; line-height:1; }
   .calf-chart{ position:relative; height:240px; margin-top:10px; }
   .delta-up{ color:#2d5a2d; font-weight:700; } .delta-dn{ color:#c62828; font-weight:700; }
+  .mon{ margin-top:16px; border-top:1px solid #eef0ee; padding-top:14px; }
+  .mon-rac{ background:#eef7ea; border-left:3px solid #4a9e4a; padding:10px 14px; border-radius:6px; font-size:13px; }
+  .mon-cards{ display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; margin-top:10px; }
+  .mon-card{ border:1px solid #e3e9e3; border-radius:12px; padding:12px 14px; background:#fff; }
+  .mon-card.rec{ border-color:#2d5a2d; box-shadow:0 0 0 2px rgba(45,90,45,.12); }
+  .mon-card .ct{ font-weight:700; font-size:13px; color:#1a3a1a; }
+  .mon-card .big{ font-size:20px; font-weight:800; color:#2d5a2d; margin-top:2px; }
+  .mon-card .nt{ font-size:11px; color:#7a857a; margin-top:6px; }
+  .mon-badge{ display:inline-block; font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; background:#2d5a2d; color:#fff; margin-bottom:6px; }
   .link-nome{ color:#2d5a2d; cursor:pointer; text-decoration:underline dotted; }
   .sug{ border:1px solid #e3e9e3; border-radius:10px; padding:10px 12px; margin-top:12px; }
   .sug-row{ display:flex; gap:10px; align-items:center; padding:7px 0; border-bottom:1px solid #f0f2f0; font-size:13px; flex-wrap:wrap; }
@@ -144,7 +153,35 @@
         </div>
         <div class="calf-chart"><canvas id="filhoteChart"></canvas></div>
         <div class="fz-sub" style="margin-top:8px">Barras = mérito do <b>pai</b>, <b>mãe</b> e <b>bezerro previsto</b> por característica (normalizado por característica). A cria fica na média genética dos pais.</div>
-        <div style="margin-top:10px"><a class="btn btn-ghost" :href="'/api/cruzamento/pdf?touro_id='+selTouro.id+'&vaca_id='+selVaca.id" target="_blank">📄 Parecer PDF</a></div>
+
+        <!-- overlay de monetização canal-aware -->
+        <template x-if="calf.monetizacao">
+          <div class="mon">
+            <div class="fz-sub" style="font-weight:700;color:#1a3a1a;margin-bottom:6px">💰 Como monetizar esta genética</div>
+            <div class="mon-rac" x-html="calf.monetizacao.racional"></div>
+            <div class="mon-cards">
+              <template x-for="c in calf.monetizacao.canais" :key="c.tipo">
+                <div class="mon-card" :class="{rec: calf.monetizacao.recomendado===c.tipo}">
+                  <div x-show="calf.monetizacao.recomendado===c.tipo" class="mon-badge">✓ recomendado</div>
+                  <div class="ct" x-text="c.label"></div>
+                  <template x-if="c.tipo==='dose' && c.status==='ok'">
+                    <div>
+                      <div class="big" x-text="'R$ '+fmtN(c.preco)+' /dose'"></div>
+                      <div class="fz-sub" x-show="c.valor_cria">+R$ <b x-text="fmt(c.valor_cria)"></b>/cria · ROI <b x-text="c.roi"></b>×<span x-show="c.lucro!=null"> · lucro R$ <b x-text="fmt(c.lucro)"></b>/cria</span></div>
+                      <div class="fz-sub" x-show="c.preco_sexado">sexado: R$ <span x-text="fmtN(c.preco_sexado)"></span>/dose</div>
+                    </div>
+                  </template>
+                  <template x-if="!(c.tipo==='dose' && c.status==='ok')">
+                    <div class="fz-sub" style="color:#b8860b;margin-top:4px">informar preço</div>
+                  </template>
+                  <div class="nt" x-text="c.nota"></div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <div style="margin-top:12px"><a class="btn btn-ghost" :href="'/api/cruzamento/pdf?touro_id='+selTouro.id+'&vaca_id='+selVaca.id" target="_blank">📄 Parecer PDF</a></div>
       </div>
     </template>
   </div>
