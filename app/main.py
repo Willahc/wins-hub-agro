@@ -33,7 +33,7 @@ logger = logging.getLogger("wins_agro")
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 # Versão do shell — bumpar a cada deploy de front. O cliente compara com /api/version e
 # se auto-atualiza (limpa cache + reload) se estiver velho. Mata o "downgrade pra v1".
-APP_VERSION = "2026-06-16.2"
+APP_VERSION = "2026-06-16.3"
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 
@@ -2168,21 +2168,35 @@ def holdings_stats(uf: str = None):
 
 @app.get("/api/holdings")
 def holdings_list(uf: str = None, canal: str = None, tipo: str = None,
-                  q: str = None, page: int = 1, page_size: int = 100,
+                  q: str = None, municipio: str = None, cnae: str = None,
+                  capital_min: str = None, socios_min: str = None,
+                  page: int = 1, page_size: int = 100,
                   sort: str = "score", order: str = "desc"):
-    """Leads holding paginados, com filtros (UF, canal, tipo, busca) e ordenação."""
+    """Leads holding paginados, com filtros por coluna (UF, canal, tipo, busca,
+    município, CNAE, capital mín., sócios agro mín.) e ordenação."""
     try:
         page = max(1, page)
         page_size = min(max(page_size, 1), 200)
         offset = (page - 1) * page_size
         col = _HOLD_SORT.get(sort, "score")
         dir_sql = "ASC" if str(order).lower() == "asc" else "DESC"
+        def _num(v):
+            try: return float(v)
+            except (TypeError, ValueError): return None
+        cap_min, soc_min = _num(capital_min), _num(socios_min)
         where = ["(%(uf)s IS NULL OR uf = %(uf)s)",
                  "(%(canal)s IS NULL OR canal = %(canal)s)",
                  "(%(tipo)s IS NULL OR tipo = %(tipo)s)",
-                 "(%(q)s IS NULL OR razao ILIKE %(qlike)s OR nome_fantasia ILIKE %(qlike)s)"]
+                 "(%(q)s IS NULL OR razao ILIKE %(qlike)s OR nome_fantasia ILIKE %(qlike)s)",
+                 "(%(municipio)s IS NULL OR municipio ILIKE %(municipio_like)s)",
+                 "(%(cnae)s IS NULL OR cnae_principal ILIKE %(cnae_like)s)",
+                 "(%(capital_min)s IS NULL OR capital_social >= %(capital_min)s)",
+                 "(%(socios_min)s IS NULL OR n_socios_agro >= %(socios_min)s)"]
         params = {"uf": uf, "canal": canal, "tipo": tipo, "q": q,
                   "qlike": f"%{q}%" if q else None,
+                  "municipio": municipio, "municipio_like": f"%{municipio}%" if municipio else None,
+                  "cnae": cnae, "cnae_like": f"%{cnae}%" if cnae else None,
+                  "capital_min": cap_min, "socios_min": soc_min,
                   "lim": page_size, "off": offset}
         wsql = " AND ".join(where)
         total = query(f"SELECT count(*) AS n FROM prospeccao.holding_lead_ui WHERE {wsql}", params)[0]["n"]
@@ -3210,7 +3224,7 @@ _TEC_SORT = {"score": _TEC_SCORE, "nome": "nome", "profissao": "profissao", "ati
              "fazreal": "fazendas_real_50km"}
 
 
-def _tec_where(uf, prof, canal, q, params, escopo="todos"):
+def _tec_where(uf, prof, canal, q, params, escopo="todos", score_min=None, tier=None, rebanho_min=None):
     w = []
     # escopo = filtro de CONFIANÇA: confirmado (cadastro/CRMV) vs provavel (só CNAE)
     if escopo == "confirmado":
@@ -3235,6 +3249,16 @@ def _tec_where(uf, prof, canal, q, params, escopo="todos"):
         w.append("score_canal >= 80")
     if q:
         w.append("(nome ILIKE %(q)s OR municipio ILIKE %(q)s)"); params["q"] = f"%{q}%"
+    # --- filtros POR COLUNA (cabeçalho) ---
+    def _num(v):
+        try: return float(v)
+        except (TypeError, ValueError): return None
+    if _num(score_min) is not None:
+        w.append(f"{_TEC_SCORE} >= %(score_min)s"); params["score_min"] = _num(score_min)
+    if tier:
+        w.append("tier = %(tier)s"); params["tier"] = tier
+    if _num(rebanho_min) is not None:
+        w.append("bovinos_100km >= %(rebanho_min)s"); params["rebanho_min"] = int(_num(rebanho_min))
     return (" AND " + " AND ".join(w)) if w else ""
 
 
@@ -3321,12 +3345,13 @@ def _tecnicos_roster(origem, uf, q, page, page_size):
 @app.get("/api/tecnicos")
 def tecnicos(uf: str = None, prof: str = None, canal: str = None, q: str = None,
              page: int = 1, page_size: int = 50, sort: str = None, order: str = "asc", origem: str = "fila",
-             escopo: str = "todos"):
-    """Fila do canal técnico: vet/zootecnista (fila) ou rosters ABCZ/CREA (origem)."""
+             escopo: str = "todos", score_min: str = None, tier: str = None, rebanho_min: str = None):
+    """Fila do canal técnico: vet/zootecnista (fila) ou rosters ABCZ/CREA (origem).
+    Filtros por coluna: score_min, tier, rebanho_min (além de uf/prof/canal/q)."""
     if origem in ("abcz", "crea"):
         return _tecnicos_roster(origem, uf, q, page, page_size)
     params = {}
-    where = _tec_where(uf, prof, canal, q, params, escopo)
+    where = _tec_where(uf, prof, canal, q, params, escopo, score_min, tier, rebanho_min)
     tot = query(f"SELECT count(*) AS n {_TEC_BASE}{where}", params)
     if isinstance(tot, dict):
         return tot

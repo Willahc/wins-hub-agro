@@ -79,7 +79,7 @@
 
   <!-- filtros -->
   <div class="filters">
-    <select class="select" x-model="f.origem" @change="rows=[];f.prof='';f.canal='';page=1;boot()" title="fonte do técnico">
+    <select class="select" x-model="f.origem" @change="rows=[];f.prof='';f.canal='';f.score_min='';f.tier='';f.rebanho_min='';page=1;boot()" title="fonte do técnico">
       <option value="fila">🩺 Vet/Zootec (fila)</option>
       <option value="carteira">🤝 Carteiras (canal indireto)</option>
       <option value="abcz">🏅 Avaliadores/técnicos ABCZ</option>
@@ -160,13 +160,26 @@
   <template x-if="f.origem!=='carteira'"><div class="table-wrap">
     <div class="table-scroll">
       <table class="data">
-        <thead><tr>
+        <thead>
+        <tr>
           <th @click="setSort('score')">Score</th>
           <th @click="setSort('nome')">Profissional</th>
           <th @click="setSort('tier')">Atividade · Tier</th>
           <th @click="setSort('rebanho')">Alcance</th>
           <th>Contato</th>
-        </tr></thead>
+        </tr>
+        <tr class="colf" x-show="f.origem==='fila'">
+          <th><input x-model="f.score_min" @input.debounce.400ms="page=1;load()" type="number" min="0" max="6" placeholder="≥"></th>
+          <th><input x-model="f.q" @input.debounce.400ms="page=1;load()" placeholder="nome / município"></th>
+          <th><select x-model="f.tier" @change="page=1;load()"><option value="">todos</option>
+            <option value="A-inseminador">A · inseminador</option><option value="B-corte-alto">B · corte alto</option>
+            <option value="C-corte-medio">C · corte médio</option><option value="D-corte-baixo">D · corte baixo</option></select></th>
+          <th><input x-model="f.rebanho_min" @input.debounce.400ms="page=1;load()" type="number" min="0" placeholder="rebanho 100km ≥"></th>
+          <th><select x-model="f.canal" @change="page=1;load()"><option value="">qualquer</option>
+            <option value="whatsapp">WhatsApp</option><option value="instagram">Instagram</option>
+            <option value="crmv">CRMV</option><option value="fazenda">Tem fazenda</option></select></th>
+        </tr>
+        </thead>
         <tbody>
           <template x-for="(r,i) in rows" :key="r.cnpj || r.id || i">
             <tr>
@@ -235,7 +248,7 @@ function tecnica(){
   return {
     rows:[], st:{}, total:0, total_pages:1, page:1, loading:false, exp:{},
     sort:'score', order:'desc',
-    f:{q:'',uf:'',prof:'',canal:'',origem:'fila',escopo:'todos'},
+    f:{q:'',uf:'',prof:'',canal:'',origem:'fila',escopo:'todos',score_min:'',tier:'',rebanho_min:''},
     toggle(id){ this.exp[id]=!this.exp[id]; },
     ufs:['MT','MS','GO','PA','TO','MG','BA','RO','SP','PR','RS','SC','ES','RJ','MA','PI','CE','PE','RN','PB','AL','SE','AC','RR','AP','AM','DF'],
     async boot(){ await this.stats(); await this.load() },

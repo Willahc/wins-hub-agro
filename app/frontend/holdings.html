@@ -68,10 +68,24 @@
   <div class="table-wrap">
     <div class="table-scroll">
       <table class="data">
-        <thead><tr>
+        <thead>
+        <tr>
           <th>Empresa</th><th>UF</th><th>Município</th><th>CNAE</th>
           <th>Capital</th><th>Sócios agro</th><th>Canal</th><th>Contato</th>
-        </tr></thead>
+        </tr>
+        <tr class="colf">
+          <th><input x-model="f.q" @input.debounce.400ms="reload()" placeholder="razão / fantasia"></th>
+          <th><select x-model="f.uf" @change="reload()"><option value="">todas</option>
+            <template x-for="u in ufs" :key="u"><option :value="u" x-text="u"></option></template></select></th>
+          <th><input x-model="f.municipio" @input.debounce.400ms="reload()" placeholder="município"></th>
+          <th><input x-model="f.cnae" @input.debounce.400ms="reload()" placeholder="CNAE"></th>
+          <th><input x-model="f.capital_min" @input.debounce.400ms="reload()" type="number" min="0" placeholder="R$ ≥"></th>
+          <th><input x-model="f.socios_min" @input.debounce.400ms="reload()" type="number" min="0" placeholder="sócios ≥"></th>
+          <th><select x-model="f.canal" @change="reload()"><option value="">todos</option>
+            <option value="whatsapp">📱 WhatsApp</option><option value="email">✉️ Só e-mail</option><option value="sem">⚪ Sem canal</option></select></th>
+          <th><button class="btn btn-ghost" style="padding:2px 8px;font-size:11px" @click="f={uf:'',canal:'',tipo:'',q:'',municipio:'',cnae:'',capital_min:'',socios_min:''};reload()">limpar</button></th>
+        </tr>
+        </thead>
         <tbody>
           <template x-for="r in rows" :key="r.cnpj14">
             <tr>
@@ -125,7 +139,7 @@
 <script>
 function holdings(){
   return {
-    f:{uf:'',canal:'',tipo:'',q:''},
+    f:{uf:'',canal:'',tipo:'',q:'',municipio:'',cnae:'',capital_min:'',socios_min:''},
     ufs:[], rows:[], s:null, page:1, totalPages:1, total:0, loading:false,
     async boot(){
       try{ this.ufs=await (await fetch('/api/ufs')).json(); }catch(e){ this.ufs=[]; }
@@ -141,6 +155,10 @@ function holdings(){
         if(this.f.canal)p.set('canal',this.f.canal);
         if(this.f.tipo)p.set('tipo',this.f.tipo);
         if(this.f.q)p.set('q',this.f.q);
+        if(this.f.municipio)p.set('municipio',this.f.municipio);
+        if(this.f.cnae)p.set('cnae',this.f.cnae);
+        if(this.f.capital_min)p.set('capital_min',this.f.capital_min);
+        if(this.f.socios_min)p.set('socios_min',this.f.socios_min);
         p.set('page',this.page); p.set('page_size',100);
       }
       const s=p.toString(); return s?('?'+s):'';

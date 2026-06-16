@@ -2,14 +2,6 @@
 {% block title %}Fazendas · WiNS Hub Agro{% endblock %}
 {% block topbar %}Fazendas{% endblock %}
 {% block content %}
-<style>
-  /* linha de filtros por coluna no cabeçalho da tabela */
-  table.data thead tr.colf th{ padding:4px 6px; background:#f3f6f3; border-top:1px solid #e3e8e3; position:sticky; }
-  table.data thead tr.colf input, table.data thead tr.colf select{
-    width:100%; box-sizing:border-box; font-size:11px; font-weight:400; padding:3px 5px;
-    border:1px solid #cdd6cd; border-radius:6px; background:#fff; color:#234; }
-  table.data thead tr.colf input::placeholder{ color:#9aa69a; }
-</style>
 <div x-data="fazendas()" x-init="restoreFilters();load()">
 
   <div class="page-head">
