@@ -57,37 +57,16 @@
       <table class="data">
         <thead>
         <tr>
-          <th @click="setSort('prioridade')">Prioridade</th>
-          <th @click="setSort('demanda')" title="ranking combinado: sinal genético + demanda do município (matrizes, crédito, deserto vet)">Demanda ↕</th>
-          <th @click="setSort('nome')">Fazenda</th>
+          <th class="sortable" @click="setSort('prioridade')" title="clique para ordenar">Prioridade<span class="sort-ind" x-text="sortIcon('prioridade')"></span></th>
+          <th class="sortable" @click="setSort('demanda')" title="ranking combinado: sinal genético + demanda do município (matrizes, crédito, deserto vet) · clique para ordenar">Demanda<span class="sort-ind" x-text="sortIcon('demanda')"></span></th>
+          <th>Fazenda</th>
           <th>Decisor / Operador</th>
-          <th @click="setSort('touros')">Sinal · Touros</th>
-          <th @click="setSort('matrizes')" title="matrizes estimadas no município da fazenda">Matrizes (mun.)</th>
-          <th @click="setSort('capital')">Porte</th>
+          <th class="sortable" @click="setSort('touros')" title="clique para ordenar por nº de touros">Sinal · Touros<span class="sort-ind" x-text="sortIcon('touros')"></span></th>
+          <th class="sortable" @click="setSort('matrizes')" title="matrizes estimadas no município da fazenda · clique para ordenar">Matrizes (mun.)<span class="sort-ind" x-text="sortIcon('matrizes')"></span></th>
+          <th class="sortable" @click="setSort('capital')" title="clique para ordenar por porte">Porte<span class="sort-ind" x-text="sortIcon('capital')"></span></th>
           <th>Canal recomendado</th>
           <th>Contato</th>
           <th>Grupo</th>
-        </tr>
-        <!-- linha de FILTROS por coluna (cabeçalho filtrável) -->
-        <tr class="colf">
-          <th><select x-model="f.prioridade" @change="page=1;load()">
-            <option value="">todas</option><option value="1">Alta</option><option value="2">Média</option><option value="3">Baixa</option></select></th>
-          <th><select x-model="f.demanda" @change="page=1;load()">
-            <option value="">todas</option><option value="alta">Alta</option><option value="media">Média</option><option value="baixa">Baixa</option></select></th>
-          <th><input x-model="f.q" @input.debounce.400ms="page=1;load()" placeholder="fazenda / município"></th>
-          <th><input x-model="f.decisor" @input.debounce.400ms="page=1;load()" placeholder="decisor / operador"></th>
-          <th><div style="display:flex;gap:3px">
-            <select x-model="f.sinal" @change="page=1;load()" style="flex:1">
-              <option value="">sinal</option><option value="alta">Alta</option><option value="media">Média</option><option value="baixa">Baixa</option></select>
-            <input x-model="f.touros_min" @input.debounce.400ms="page=1;load()" type="number" min="0" placeholder="touros≥" style="width:62px"></div></th>
-          <th><input x-model="f.matrizes_min" @input.debounce.400ms="page=1;load()" type="number" min="0" placeholder="matrizes ≥"></th>
-          <th><input x-model="f.porte_min" @input.debounce.400ms="page=1;load()" type="number" min="0" step="0.1" placeholder="R$ mi ≥"></th>
-          <th><select x-model="f.canal" @change="page=1;load()">
-            <option value="">todos</option><template x-for="c in canais"><option :value="c" x-text="c"></option></template></select></th>
-          <th><select x-model="f.contato" @change="page=1;load()">
-            <option value="">qualquer</option><option value="whatsapp">WhatsApp</option><option value="email">E-mail</option>
-            <option value="instagram">Instagram</option><option value="celular">Celular</option><option value="sem">Sem canal</option></select></th>
-          <th><input x-model="f.grupo_min" @input.debounce.400ms="page=1;load()" type="number" min="1" placeholder="≥ N faz."></th>
         </tr>
         </thead>
         <tbody>
@@ -153,24 +132,32 @@
 function fazendas(){
   return {
     rows:[], kpi:{n:0,wa:0,em:0,ig:0}, total:0, total_pages:1, page:1, loading:false,
-    sort:'prioridade', order:'asc',
-    f:{q:'',uf:'',sinal:'',canal:'',cobertura:'',prioridade:'',demanda:'',decisor:'',touros_min:'',matrizes_min:'',porte_min:'',contato:'',grupo_min:''},
+    sortCol:'', order:'asc',   // sortCol='' = sem ordenação (default do servidor)
+    f:{q:'',uf:'',sinal:'',canal:'',cobertura:''},
     ufs:['MT','MS','GO','PA','TO','MG','BA','RO','SP','PR','RS','SC','ES','RJ','MA','PI','CE','PE','BA','RN','PB','AL','SE','AC','RR','AP','AM','DF'],
     canais:['WhatsApp','E-mail','E-mail (Receita)','Instagram DM','E-mail (risco bounce)','E-mail (contador)','Via técnico','Ligacao (capturar zap)','sem canal'],
     qs(){const p=new URLSearchParams();for(const k in this.f)if(this.f[k])p.set(k,this.f[k]);return p},
     limpar(){ for(const k in this.f) this.f[k]=''; this.page=1; this.load() },
-    saveFilters(){ try{ sessionStorage.setItem('faz_filtros', JSON.stringify({f:this.f,page:this.page,sort:this.sort,order:this.order})); }catch(e){} },
-    restoreFilters(){ try{ const s=JSON.parse(sessionStorage.getItem('faz_filtros')||'null'); if(s){ this.f=Object.assign(this.f,s.f||{}); this.page=s.page||1; this.sort=s.sort||this.sort; this.order=s.order||this.order; } }catch(e){} },
+    saveFilters(){ try{ sessionStorage.setItem('faz_filtros', JSON.stringify({f:this.f,page:this.page,sortCol:this.sortCol,order:this.order})); }catch(e){} },
+    restoreFilters(){ try{ const s=JSON.parse(sessionStorage.getItem('faz_filtros')||'null'); if(s){ if(s.f) for(const k in this.f){ if(s.f[k]!=null) this.f[k]=s.f[k]; } this.page=s.page||1; this.sortCol=s.sortCol||''; this.order=s.order||'asc'; } }catch(e){} },
     async load(){
       this.loading=true;
-      const p=this.qs(); p.set('page',this.page); p.set('page_size',50); p.set('sort',this.sort); p.set('order',this.order);
+      const p=this.qs(); p.set('page',this.page); p.set('page_size',50);
+      if(this.sortCol){ p.set('sort',this.sortCol); p.set('order',this.order); }
       try{
         const r=await fetch('/api/farms?'+p.toString()); const d=await r.json();
         this.rows=d.rows||[]; this.total=d.total||0; this.total_pages=d.total_pages||1; this.kpi=d.kpi||this.kpi;
       }catch(e){ this.rows=[]; }
       this.loading=false;
     },
-    setSort(c){ if(this.sort===c){this.order=this.order==='asc'?'desc':'asc'}else{this.sort=c;this.order='desc'} this.page=1; this.load() },
+    // 3 estados: 1º clique = crescente (↑), 2º = decrescente (↓), 3º = remove ordenação (default)
+    setSort(c){
+      if(this.sortCol!==c){ this.sortCol=c; this.order='asc'; }
+      else if(this.order==='asc'){ this.order='desc'; }
+      else { this.sortCol=''; this.order='asc'; }
+      this.page=1; this.load();
+    },
+    sortIcon(c){ return this.sortCol===c ? (this.order==='asc'?' ↑':' ↓') : ''; },
     exportUrl(){ const p=this.qs(); return '/api/farms/export?'+p.toString() },
     logExport(){ /* o servidor audita; aqui só UX */ },
     fmt(n){ return (n==null)?'—':Number(n).toLocaleString('pt-BR') },

@@ -144,9 +144,7 @@ table.data .fz-sub{color:var(--ink-400);font-size:var(--fz-xs)}
   .pager{justify-content:center}
 }
 
-/* linha de filtros por coluna no cabeçalho das tabelas (.data thead tr.colf) */
-table.data thead tr.colf th{ padding:4px 6px; background:#f3f6f3; border-top:1px solid #e3e8e3; }
-table.data thead tr.colf input, table.data thead tr.colf select{
-  width:100%; box-sizing:border-box; font-size:11px; font-weight:400; padding:3px 5px;
-  border:1px solid #cdd6cd; border-radius:6px; background:#fff; color:#234; }
-table.data thead tr.colf input::placeholder{ color:#9aa69a; }
+/* cabeçalho ordenável por clique (.data th.sortable) com indicador ↑/↓ */
+table.data th.sortable{ cursor:pointer; user-select:none; white-space:nowrap; }
+table.data th.sortable:hover{ background:#eef3ee; }
+table.data th .sort-ind{ color:#2d5a2d; font-weight:700; }
