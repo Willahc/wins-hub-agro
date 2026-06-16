@@ -33,7 +33,7 @@ logger = logging.getLogger("wins_agro")
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 # Versão do shell — bumpar a cada deploy de front. O cliente compara com /api/version e
 # se auto-atualiza (limpa cache + reload) se estiver velho. Mata o "downgrade pra v1".
-APP_VERSION = "2026-06-16.6"
+APP_VERSION = "2026-06-16.7"
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 
@@ -2819,6 +2819,27 @@ def territorio_oportunidade(uf: str = None, gap_canal: bool = None, limit: int =
             ORDER BY score_oportunidade DESC NULLS LAST
             LIMIT %(lim)s
             """, p)
+        return {"rows": rows, "total": len(rows)}
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/ilp/leads")
+def ilp_leads(uf: str = None, limit: int = 100):
+    """Radar ILP: grandes grupos pecuarios em municipios convertendo pasto->lavoura
+    (prospeccao.ilp_lead). Leads premium p/ inputs agricolas — pecuarista virando agricultor."""
+    try:
+        where = ["TRUE"]; p = {"lim": min(max(limit, 1), 1000)}
+        if uf:
+            where.append("uf = %(uf)s"); p["uf"] = uf.upper()
+        rows = query(
+            f"""SELECT ilp_score, uf, municipio, nome_fazenda, razao, cnpj_completo,
+                   decisor, capital_mi, dono_n_fazendas, whatsapp, email, canal_recomendado,
+                   delta_agri_recente_ha, pasto_resta_ha
+                FROM prospeccao.ilp_lead
+                WHERE {' AND '.join(where)}
+                ORDER BY ilp_score DESC, capital_mi DESC NULLS LAST
+                LIMIT %(lim)s""", p)
         return {"rows": rows, "total": len(rows)}
     except Exception as e:
         return _error(e)

@@ -111,6 +111,50 @@
     </div>
   </div>
 
+  <!-- ====== Radar ILP: pecuarista virando agricultor (view ilp_lead) ====== -->
+  <div class="card" style="padding:18px;margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+      <div>
+        <h2 style="font-size:17px;margin:0;color:#1a3a1a">🌱 Radar ILP — pecuarista virando agricultor</h2>
+        <div class="sub" style="font-size:12px">Grandes grupos em municípios convertendo pasto→lavoura (MapBiomas 2010-2024). Lead premium para inputs agrícolas (defensivo/semente) — entregue antes da concorrência.</div>
+      </div>
+      <select class="select" x-model="ilp.uf" @change="loadILP()" style="width:auto">
+        <option value="">UF (todas)</option>
+        <template x-for="u in ufs" :key="'i'+u"><option :value="u" x-text="u"></option></template>
+      </select>
+    </div>
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table class="data">
+          <thead><tr>
+            <th>Score ILP</th><th>Fazenda</th><th>Município</th><th>UF</th>
+            <th>Capital</th><th>Decisor</th><th>Δ lavoura recente</th><th>Contato</th>
+          </tr></thead>
+          <tbody>
+            <template x-for="l in ilp.rows" :key="l.cnpj_basico">
+              <tr>
+                <td data-label="Score ILP"><span class="tier" :class="terrScoreClass(l.ilp_score)" x-text="Number(l.ilp_score).toFixed(3)"></span></td>
+                <td data-label="Fazenda" x-text="l.nome_fazenda||l.razao"></td>
+                <td data-label="Município" x-text="l.municipio"></td>
+                <td data-label="UF" x-text="l.uf"></td>
+                <td data-label="Capital" x-text="l.capital_mi?('R$ '+l.capital_mi+' M'):'—'"></td>
+                <td data-label="Decisor" x-text="l.decisor||'—'"></td>
+                <td data-label="Δ lavoura recente" x-text="l.delta_agri_recente_ha?('+'+fmtN(l.delta_agri_recente_ha)+' ha'):'—'" title="hectares de lavoura ganhos 2020→2024 no município"></td>
+                <td data-label="Contato">
+                  <a x-show="l.whatsapp" class="badge ok" :href="'https://wa.me/55'+l.whatsapp" target="_blank">WhatsApp</a>
+                  <a x-show="!l.whatsapp && l.email" class="badge info" :href="'mailto:'+l.email" :title="l.email">e-mail</a>
+                  <span x-show="!l.whatsapp && !l.email" style="color:#bbb">—</span>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <div class="loading" x-show="ilp.loading"><div class="spinner"></div></div>
+        <div class="empty" x-show="!ilp.loading && ilp.rows.length===0">Sem leads ILP nesse filtro.</div>
+      </div>
+    </div>
+  </div>
+
   <!-- formulário de perfil -->
   <div class="card" style="padding:20px;margin-bottom:16px">
     <div class="form-grid">
@@ -282,11 +326,20 @@ function comercial(){
     boi:null, leite:null, milho:null, dolar:null,
     touroModal:false, touro:null, _radar:null,
     terr:{rows:[], uf:'', gap:false, loading:false},
+    ilp:{rows:[], uf:'', loading:false},
     async boot(){
       try{ this.ufs=await (await fetch('/api/ufs')).json(); }catch(e){ this.ufs=[]; }
       try{ this.racas=await (await fetch('/api/racas/todas')).json(); }catch(e){ this.racas=[]; }
       this.macro();
       this.loadTerritorio();
+      this.loadILP();
+    },
+    async loadILP(){
+      this.ilp.loading=true;
+      const p=new URLSearchParams(); if(this.ilp.uf)p.set('uf',this.ilp.uf); p.set('limit',100);
+      try{ const d=await (await fetch('/api/ilp/leads?'+p.toString())).json();
+        this.ilp.rows=(d&&d.rows)||[]; }catch(e){ this.ilp.rows=[]; }
+      this.ilp.loading=false;
     },
     async loadTerritorio(){
       this.terr.loading=true;
