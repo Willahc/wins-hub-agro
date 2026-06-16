@@ -33,7 +33,7 @@ logger = logging.getLogger("wins_agro")
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 # Versão do shell — bumpar a cada deploy de front. O cliente compara com /api/version e
 # se auto-atualiza (limpa cache + reload) se estiver velho. Mata o "downgrade pra v1".
-APP_VERSION = "2026-06-16.5"
+APP_VERSION = "2026-06-16.6"
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 
@@ -506,6 +506,13 @@ async def wa_login_complete(request: Request):
 @app.get("/simulador", response_class=HTMLResponse)
 def simulador_page(request: Request):
     return templates.TemplateResponse("simulador.html", {"request": request})
+
+
+@app.get("/pasto-limpo", response_class=HTMLResponse)
+def pasto_limpo_page(request: Request):
+    """Simulador de ROI 'Pasto Limpo' (herbicida -> recuperacao de lotacao). Ferramenta de
+    venda baseada em valor (payback/ROI). Standalone, calculo no cliente, ZERO PII."""
+    return templates.TemplateResponse("pasto_limpo.html", {"request": request})
 
 
 @app.get("/api/simulador/touros")

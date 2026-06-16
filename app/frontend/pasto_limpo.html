@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simulador Pasto Limpo — WiNS Hub Agro</title>
+  <link rel="icon" href="/static/vendor/icon-192.png">
+  <style>
+    :root { --verde:#2d5a2d; --verde2:#4a9e4a; --linha:#e3e8e3; --cinza:#6b7a6b; --ambar:#b8860b; }
+    * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:#f3f6f3; color:#1a2a1a; }
+    .top { background:var(--verde); color:#fff; padding:16px 18px; }
+    .brand { font-size:18px; font-weight:800; } .brand span { color:#bfe3bf; }
+    .sub { font-size:12px; opacity:.85; margin-top:2px; }
+    .wrap { max-width:640px; margin:0 auto; padding:16px; }
+    .card { background:#fff; border:1px solid var(--linha); border-radius:14px; padding:16px; margin-bottom:14px; box-shadow:0 1px 3px rgba(0,0,0,.04); }
+    h3 { font-size:14px; margin:0 0 12px; color:var(--verde); }
+    label { display:block; font-size:12px; font-weight:600; color:var(--cinza); margin:10px 0 4px; }
+    input[type=number], select { width:100%; padding:12px; border:1px solid var(--linha); border-radius:10px; font-size:16px; background:#fff; }
+    input[type=range] { width:100%; accent-color:var(--verde2); }
+    .slider-val { font-weight:800; color:var(--verde); font-size:15px; }
+    .hero { background:linear-gradient(135deg,#2d5a2d,#4a9e4a); color:#fff; border:none; }
+    .hero .big { font-size:30px; font-weight:800; line-height:1.1; margin:6px 0; }
+    .hero .lbl { font-size:13px; opacity:.9; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .kpi { background:#f6faf6; border:1px solid var(--linha); border-radius:12px; padding:12px; text-align:center; }
+    .kpi .v { font-size:22px; font-weight:800; color:var(--verde); }
+    .kpi .l { font-size:11px; color:var(--cinza); margin-top:2px; }
+    .lota { display:flex; align-items:center; justify-content:center; gap:10px; font-weight:800; color:var(--verde); font-size:18px; margin-top:4px; }
+    .lota .seta { color:var(--verde2); }
+    .muted { color:var(--cinza); font-size:12px; }
+    .btn { width:100%; padding:14px; border:none; border-radius:11px; background:var(--verde); color:#fff; font-size:15px; font-weight:700; cursor:pointer; margin-top:8px; }
+    .btn.sec { background:#fff; color:var(--verde); border:1.5px solid var(--verde2); }
+    .foot { text-align:center; font-size:11px; color:var(--cinza); padding:10px 0 24px; }
+    details { margin-top:8px; } summary { font-size:12px; font-weight:600; color:var(--cinza); cursor:pointer; }
+  </style>
+</head>
+<body x-data="pastoLimpo()" x-init="init()">
+  <div class="top">
+    <div class="brand">WiNS <span>Hub Agro</span> · Pasto Limpo</div>
+    <div class="sub">Quanto a daninha custa — e em quanto tempo o herbicida se paga</div>
+  </div>
+
+  <div class="wrap">
+    <!-- HERO -->
+    <div class="card hero">
+      <div class="lbl">A daninha está custando, por ano</div>
+      <div class="big">R$ <span x-text="fmt(receitaAno)"></span></div>
+      <div class="lbl">em arrobas que o pasto sujo deixa de produzir ·
+        o herbicida se paga em <b x-text="payback"></b> meses</div>
+    </div>
+
+    <!-- INPUTS -->
+    <div class="card">
+      <h3>Dados do pasto</h3>
+      <label>Área de pasto a tratar (ha)</label>
+      <input type="number" min="1" max="1000000" x-model.number="area" @input="syncURL()">
+
+      <label>Infestação de daninha: <span class="slider-val" x-text="infest + '%'"></span> da área</label>
+      <input type="range" min="5" max="80" x-model.number="infest" @input="syncURL()">
+
+      <label>Lotação potencial do pasto limpo (UA/ha)</label>
+      <input type="number" min="0.3" max="6" step="0.1" x-model.number="lotacaoPot" @input="syncURL()">
+
+      <label>Custo do herbicida + aplicação (R$/ha)</label>
+      <input type="number" min="1" max="5000" x-model.number="custoHa" @input="syncURL()">
+
+      <label>Preço da arroba (@) hoje</label>
+      <input type="number" min="100" max="1000" x-model.number="arroba" @input="syncURL()">
+
+      <details>
+        <summary>Premissas avançadas</summary>
+        <label>Eficácia do controle: <span class="slider-val" x-text="eficacia + '%'"></span></label>
+        <input type="range" min="40" max="100" x-model.number="eficacia" @input="syncURL()">
+        <label>Produção por UA por ano (@/UA/ano)</label>
+        <input type="number" min="1" max="20" step="0.5" x-model.number="arrPorUA" @input="syncURL()">
+      </details>
+    </div>
+
+    <!-- OUTPUTS -->
+    <div class="card">
+      <h3>Retorno estimado</h3>
+      <div class="lota">
+        <span><span x-text="lotacaoAtual.toFixed(2)"></span> UA/ha</span>
+        <span class="seta">→</span>
+        <span><span x-text="lotacaoRecup.toFixed(2)"></span> UA/ha</span>
+      </div>
+      <div class="muted" style="text-align:center;margin-bottom:10px">capacidade do pasto: sujo → limpo</div>
+      <div class="grid">
+        <div class="kpi"><div class="v">+<span x-text="fmt(arrobasAno)"></span> @</div><div class="l">arrobas a mais/ano</div></div>
+        <div class="kpi"><div class="v">+R$ <span x-text="fmt(receitaAno)"></span></div><div class="l">receita recuperada/ano</div></div>
+        <div class="kpi"><div class="v">R$ <span x-text="fmt(custoTotal)"></span></div><div class="l">investimento (herbicida)</div></div>
+        <div class="kpi"><div class="v"><span x-text="roi.toFixed(1)"></span>×</div><div class="l">ROI no 1º ano</div></div>
+      </div>
+      <p class="muted" style="margin-top:12px" x-text="frase"></p>
+    </div>
+
+    <button class="btn sec" @click="compartilhar()">🔗 Copiar link desta simulação</button>
+    <div class="foot">WiNS Hub Agro · Inteligência comercial · simulação para orientar a conversa</div>
+  </div>
+
+  <script src="/static/vendor/alpine.min.js" defer></script>
+  <script>
+    function pastoLimpo() {
+      return {
+        // defaults realistas (pecuária extensiva BR)
+        area: 1000, infest: 30, lotacaoPot: 1.8, custoHa: 250, arroba: 320,
+        eficacia: 80, arrPorUA: 7,
+        init() {
+          const q = new URLSearchParams(location.search);
+          for (const k of ['area','infest','lotacaoPot','custoHa','arroba','eficacia','arrPorUA'])
+            if (q.get(k)) this[k] = +q.get(k);
+        },
+        // lotação atual = potencial reduzida pela fração infestada
+        get lotacaoAtual() { return this.lotacaoPot * (1 - this.infest/100); },
+        // herbicida recupera 'eficácia'% da capacidade perdida
+        get lotacaoRecup() { return this.lotacaoAtual + (this.lotacaoPot - this.lotacaoAtual) * this.eficacia/100; },
+        get uaAdicionais() { return Math.max(0, (this.lotacaoRecup - this.lotacaoAtual) * (this.area||0)); },
+        get arrobasAno() { return this.uaAdicionais * this.arrPorUA; },
+        get receitaAno() { return this.arrobasAno * (this.arroba||0); },
+        get custoTotal() { return (this.area||0) * (this.custoHa||0); },
+        get roi() { return this.custoTotal > 0 ? this.receitaAno / this.custoTotal : 0; },
+        get payback() {
+          if (this.receitaAno <= 0) return '—';
+          const m = Math.ceil(this.custoTotal / (this.receitaAno/12));
+          return m;
+        },
+        get frase() {
+          if (this.receitaAno <= 0) return 'Ajuste os parâmetros para simular o retorno.';
+          return `Hoje o pasto sujo comporta ${this.lotacaoAtual.toFixed(2)} UA/ha. Controlando a daninha `
+               + `(R$ ${this.fmt(this.custoTotal)} em ${this.fmt(this.area)} ha), a capacidade sobe para `
+               + `${this.lotacaoRecup.toFixed(2)} UA/ha — são +${this.fmt(this.arrobasAno)} @ por ano `
+               + `(R$ ${this.fmt(this.receitaAno)}). O investimento se paga em ${this.payback} meses `
+               + `(ROI de ${this.roi.toFixed(1)}× no primeiro ano). Estimativa para orientar a conversa; calibrar com o agrônomo.`;
+        },
+        fmt(n) { return (Math.round(n || 0)).toLocaleString('pt-BR'); },
+        syncURL() {
+          const q = new URLSearchParams({ area:this.area, infest:this.infest, lotacaoPot:this.lotacaoPot,
+            custoHa:this.custoHa, arroba:this.arroba, eficacia:this.eficacia, arrPorUA:this.arrPorUA });
+          history.replaceState(null, '', '?' + q.toString());
+        },
+        compartilhar() {
+          this.syncURL();
+          navigator.clipboard?.writeText(location.href);
+          alert('Link copiado! Envie ao produtor ou ao vendedor pelo WhatsApp.');
+        },
+      };
+    }
+  </script>
+</body>
+</html>
