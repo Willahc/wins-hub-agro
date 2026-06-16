@@ -33,7 +33,7 @@ logger = logging.getLogger("wins_agro")
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 # Versão do shell — bumpar a cada deploy de front. O cliente compara com /api/version e
 # se auto-atualiza (limpa cache + reload) se estiver velho. Mata o "downgrade pra v1".
-APP_VERSION = "2026-06-16.3"
+APP_VERSION = "2026-06-16.4"
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 
@@ -2762,17 +2762,42 @@ def territorio(uf: str = "TO"):
 
 
 @app.get("/api/territorio/oportunidade")
-def territorio_oportunidade(uf: str = None, gap_canal: bool = None, limit: int = 50):
+def territorio_oportunidade(uf: str = None, gap_canal: bool = None, limit: int = 50,
+                            municipio: str = None, score_min: str = None,
+                            matrizes_min: str = None, bovinos_min: str = None,
+                            credito: bool = None, deserto: bool = None,
+                            sem_leads: bool = None, sem_tec: bool = None):
     """Municípios ranqueados por oportunidade de demanda (matview
     prospeccao.territorio_oportunidade): rebanho/matrizes, crédito SICOR p/ matriz,
     deserto vet e cobertura nossa (leads/técnicos). gap_canal=true => municípios com
-    demanda alta mas SEM canal nosso (lead/técnico) — fronteira de prospecção."""
+    demanda alta mas SEM canal nosso (lead/técnico) — fronteira de prospecção.
+    Filtros por coluna: municipio, score_min, matrizes_min, bovinos_min, credito,
+    deserto, sem_leads, sem_tec."""
     try:
+        def _num(v):
+            try: return float(v)
+            except (TypeError, ValueError): return None
         where = ["TRUE"]; p = {"lim": min(max(limit, 1), 500)}
         if uf:
             where.append("uf = %(uf)s"); p["uf"] = uf.upper()
         if gap_canal is not None:
             where.append("gap_canal = %(gap)s"); p["gap"] = gap_canal
+        if municipio:
+            where.append("municipio ILIKE %(mun)s"); p["mun"] = f"%{municipio}%"
+        if _num(score_min) is not None:
+            where.append("score_oportunidade >= %(smin)s"); p["smin"] = _num(score_min)
+        if _num(matrizes_min) is not None:
+            where.append("matrizes_estim2024 >= %(mzmin)s"); p["mzmin"] = int(_num(matrizes_min))
+        if _num(bovinos_min) is not None:
+            where.append("bovinos_ppm2024 >= %(bvmin)s"); p["bvmin"] = int(_num(bovinos_min))
+        if credito:
+            where.append("COALESCE(sicor_credito_matriz,0) > 0")
+        if deserto is not None:
+            where.append("deserto_vet = %(des)s"); p["des"] = deserto
+        if sem_leads:
+            where.append("COALESCE(n_leads_nossos,0) = 0")
+        if sem_tec:
+            where.append("COALESCE(n_tecnicos_nossos,0) = 0")
         wsql = " AND ".join(where)
         rows = query(
             f"""

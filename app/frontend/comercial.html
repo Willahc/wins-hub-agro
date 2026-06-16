@@ -79,12 +79,27 @@
     <div class="table-wrap">
       <div class="table-scroll">
         <table class="data">
-          <thead><tr>
+          <thead>
+          <tr>
             <th>Score</th><th>Município</th><th>UF</th>
             <th>Matrizes 2024</th><th>Bovinos (PPM)</th>
             <th>Crédito matriz (SICOR)</th><th>Vets</th>
             <th>Leads nossos</th><th>Téc. nossos</th><th>Status</th>
-          </tr></thead>
+          </tr>
+          <tr class="colf">
+            <th><input x-model="terr.score_min" @input.debounce.400ms="loadTerritorio()" type="number" min="0" max="1" step="0.05" placeholder="≥"></th>
+            <th><input x-model="terr.municipio" @input.debounce.400ms="loadTerritorio()" placeholder="município"></th>
+            <th><select x-model="terr.uf" @change="loadTerritorio()"><option value="">todas</option>
+              <template x-for="u in ufs" :key="'tf'+u"><option :value="u" x-text="u"></option></template></select></th>
+            <th><input x-model="terr.matrizes_min" @input.debounce.400ms="loadTerritorio()" type="number" min="0" placeholder="matrizes ≥"></th>
+            <th><input x-model="terr.bovinos_min" @input.debounce.400ms="loadTerritorio()" type="number" min="0" placeholder="bovinos ≥"></th>
+            <th><select x-model="terr.credito" @change="loadTerritorio()"><option :value="false">todos</option><option :value="true">só com crédito</option></select></th>
+            <th><select x-model="terr.deserto" @change="loadTerritorio()"><option value="">todos</option><option value="true">🏜️ deserto</option><option value="false">com vet</option></select></th>
+            <th><select x-model="terr.sem_leads" @change="loadTerritorio()"><option :value="false">todos</option><option :value="true">sem lead</option></select></th>
+            <th><select x-model="terr.sem_tec" @change="loadTerritorio()"><option :value="false">todos</option><option :value="true">sem téc.</option></select></th>
+            <th><label class="toggle" style="font-size:11px"><input type="checkbox" x-model="terr.gap" @change="loadTerritorio()"> gap 🎯</label></th>
+          </tr>
+          </thead>
           <tbody>
             <template x-for="t in terr.rows" :key="t.codigo_ibge">
               <tr>
@@ -281,7 +296,7 @@ function comercial(){
     ufs:[], racas:[], rows:[], ran:false, loading:false, exportando:false,
     boi:null, leite:null, milho:null, dolar:null,
     touroModal:false, touro:null, _radar:null,
-    terr:{rows:[], uf:'', gap:false, loading:false},
+    terr:{rows:[], uf:'', gap:false, loading:false, municipio:'', score_min:'', matrizes_min:'', bovinos_min:'', credito:false, deserto:'', sem_leads:false, sem_tec:false},
     async boot(){
       try{ this.ufs=await (await fetch('/api/ufs')).json(); }catch(e){ this.ufs=[]; }
       try{ this.racas=await (await fetch('/api/racas/todas')).json(); }catch(e){ this.racas=[]; }
@@ -291,7 +306,16 @@ function comercial(){
     async loadTerritorio(){
       this.terr.loading=true;
       const p=new URLSearchParams(); if(this.terr.uf)p.set('uf',this.terr.uf);
-      if(this.terr.gap)p.set('gap_canal','true'); p.set('limit',50);
+      if(this.terr.gap)p.set('gap_canal','true');
+      if(this.terr.municipio)p.set('municipio',this.terr.municipio);
+      if(this.terr.score_min)p.set('score_min',this.terr.score_min);
+      if(this.terr.matrizes_min)p.set('matrizes_min',this.terr.matrizes_min);
+      if(this.terr.bovinos_min)p.set('bovinos_min',this.terr.bovinos_min);
+      if(this.terr.credito===true||this.terr.credito==='true')p.set('credito','true');
+      if(this.terr.deserto!=='')p.set('deserto',this.terr.deserto);
+      if(this.terr.sem_leads===true||this.terr.sem_leads==='true')p.set('sem_leads','true');
+      if(this.terr.sem_tec===true||this.terr.sem_tec==='true')p.set('sem_tec','true');
+      p.set('limit',50);
       try{ const d=await (await fetch('/api/territorio/oportunidade?'+p.toString())).json();
         this.terr.rows=(d&&d.rows)||[]; }catch(e){ this.terr.rows=[]; }
       this.terr.loading=false;
