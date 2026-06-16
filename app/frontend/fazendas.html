@@ -57,9 +57,11 @@
       <table class="data">
         <thead><tr>
           <th @click="setSort('prioridade')">Prioridade</th>
+          <th @click="setSort('demanda')" title="ranking combinado: sinal genético + demanda do município (matrizes, crédito, deserto vet)">Demanda ↕</th>
           <th @click="setSort('nome')">Fazenda</th>
           <th>Decisor / Operador</th>
           <th @click="setSort('touros')">Sinal · Touros</th>
+          <th @click="setSort('matrizes')" title="matrizes estimadas no município da fazenda">Matrizes (mun.)</th>
           <th @click="setSort('capital')">Porte</th>
           <th>Canal recomendado</th>
           <th>Contato</th>
@@ -69,6 +71,13 @@
           <template x-for="r in rows" :key="r.cnpj_basico">
             <tr>
               <td data-label="Prioridade"><span class="tier" :class="tierClass(r.prioridade)" x-text="prioLabel(r.prioridade)"></span></td>
+              <td data-label="Demanda">
+                <span class="badge" :class="demandaBadge(r.prioridade_final)" x-text="demandaLabel(r.prioridade_final)" :title="r.prioridade_final!=null?('score '+r.prioridade_final):''"></span>
+                <div class="fz-sub" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:2px">
+                  <span x-show="r.deserto_vet" class="badge warn" title="município sem cobertura veterinária local">🏜️ deserto vet</span>
+                  <span x-show="r.sicor_credito_matriz_flag" class="badge info" title="município com crédito SICOR p/ aquisição de matriz">crédito matriz</span>
+                </div>
+              </td>
               <td data-label="Fazenda">
                 <a class="fz-nome" :href="'/fazendas/'+(r.cnpj_completo||'').replace(/\D/g,'')" @click="saveFilters()"
                    x-text="r.nome_fazenda" style="cursor:pointer;color:#2d5a2d;text-decoration:none"></a>
@@ -81,6 +90,10 @@
               <td data-label="Sinal · Touros">
                 <span class="badge" :class="sinalBadge(r.sinal_genetico)" x-text="r.sinal_genetico"></span>
                 <span class="fz-sub" x-show="r.touros_nelore>0" x-text="' '+r.touros_nelore+' touros'"></span>
+              </td>
+              <td data-label="Matrizes (mun.)">
+                <span x-show="r.matrizes_municipio!=null" x-text="fmt(r.matrizes_municipio)"></span>
+                <span x-show="r.matrizes_municipio==null">—</span>
               </td>
               <td data-label="Porte">
                 <span x-show="r.capital_mi" x-text="'R$ '+r.capital_mi+' M'"></span>
@@ -143,7 +156,9 @@ function fazendas(){
     tierClass(p){ return {1:'alta',2:'media',3:'baixa'}[p]||'baixa' },
     sinalBadge(s){ return s==='alta'?'ok':(s==='media'?'gold':'neutral') },
     canalBadge(c){ if(!c)return 'neutral'; if(c.startsWith('WhatsApp'))return 'ok'; if(c.startsWith('E-mail'))return 'info'; if(c.startsWith('Instagram'))return 'neutral'; return 'warn' },
-    emailLabel(t){ return {valid:'e-mail ✓','rfb':'e-mail Receita','rfb-contador':'e-mail contador','catch-all':'e-mail ?'}[t]||'e-mail' }
+    emailLabel(t){ return {valid:'e-mail ✓','rfb':'e-mail Receita','rfb-contador':'e-mail contador','catch-all':'e-mail ?'}[t]||'e-mail' },
+    demandaLabel(s){ if(s==null)return '—'; const n=Number(s); return (n>=0.7?'Alta':(n>=0.4?'Média':'Baixa')) },
+    demandaBadge(s){ if(s==null)return 'neutral'; const n=Number(s); return (n>=0.7?'ok':(n>=0.4?'gold':'neutral')) }
   }
 }
 </script>

@@ -2013,9 +2013,15 @@ def _leads_total(uf, segmento):
 FAZ_COLS = ("prioridade","nome_fazenda","razao","cnpj_completo","uf","municipio","decisor",
     "operador_jovem","n_decisores","dono_n_fazendas","capital_mi","sinal_genetico","touros_nelore",
     "whatsapp","whats_alta_conf","celular","instagram","followers","porte_digital","email","email_tier",
-    "telefone_rfb","dominio","linkedin","canal_recomendado","cnpj_basico")
+    "telefone_rfb","dominio","linkedin","canal_recomendado","cnpj_basico",
+    # --- colunas de DEMANDA (matview prospeccao.lead_demanda, superset de fazenda_nacional) ---
+    "matrizes_municipio","sicor_credito_matriz_flag","deserto_vet","prioridade_final")
+# Fonte das fazendas: lead_demanda = fazenda_nacional + sinais de demanda do município
+# (matrizes, crédito SICOR, deserto vet, score). Mesma cardinalidade (1 linha/fazenda).
+FAZ_SRC = "prospeccao.lead_demanda"
 FAZ_SORT = {"prioridade":"prioridade","capital":"capital_mi","touros":"touros_nelore",
-    "followers":"followers","nome":"nome_fazenda","uf":"uf"}
+    "followers":"followers","nome":"nome_fazenda","uf":"uf",
+    "demanda":"prioridade_final","matrizes":"matrizes_municipio"}
 
 def _faz_where(uf, sinal, canal, q, cobertura=None):
     w=["TRUE"]; p={}
@@ -2404,17 +2410,17 @@ def api_fazendas(uf:str=None, sinal:str=None, canal:str=None, q:str=None, cobert
         page=max(1,page); page_size=min(max(page_size,1),100); off=(page-1)*page_size
         where,p=_faz_where(uf,sinal,canal,q,cobertura)
         col=FAZ_SORT.get(sort,"prioridade"); od="DESC" if order=="desc" else "ASC"
-        rows=query(f"SELECT {','.join(FAZ_COLS)} FROM prospeccao.fazenda_nacional WHERE {where} "
+        rows=query(f"SELECT {','.join(FAZ_COLS)} FROM {FAZ_SRC} WHERE {where} "
                    f"ORDER BY {col} {od} NULLS LAST, touros_nelore DESC NULLS LAST LIMIT %(lim)s OFFSET %(off)s",
                    {**p,"lim":page_size,"off":off})
-        total=scalar(f"SELECT count(*) FROM prospeccao.fazenda_nacional WHERE {where}", p)
+        total=scalar(f"SELECT count(*) FROM {FAZ_SRC} WHERE {where}", p)
         # WhatsApp/Celular = confirmado (coluna whatsapp) OU celular do RFB (tel1/tel2) — fazenda_cel.
         # deserto = fazendas em município DESERTO VET (gado sem veterinário local = alvo quente).
         kpi=query(f"SELECT count(*) n, "
                   f"count(*) FILTER (WHERE whatsapp IS NOT NULL OR cnpj_basico IN (SELECT cnpj_basico FROM prospeccao.fazenda_cel)) wa, "
                   f"count(*) FILTER (WHERE email IS NOT NULL) em, count(*) FILTER (WHERE instagram IS NOT NULL) ig, "
                   f"count(*) FILTER (WHERE cnpj_basico IN (SELECT cnpj_basico FROM prospeccao.fazenda_deserto WHERE classificacao_vet='DESERTO VET')) deserto "
-                  f"FROM prospeccao.fazenda_nacional WHERE {where}", p)[0]
+                  f"FROM {FAZ_SRC} WHERE {where}", p)[0]
         return {"rows":rows,"total":total,"page":page,"page_size":page_size,
                 "total_pages":max(1,(total+page_size-1)//page_size),"kpi":kpi}
     except Exception as e:
@@ -2428,7 +2434,7 @@ def api_fazendas_export(request: Request, uf:str=None, sinal:str=None, canal:str
         import io, csv
         EXPORT_CAP=2000
         where,p=_faz_where(uf,sinal,canal,q,cobertura)
-        rows=query(f"SELECT {','.join(FAZ_COLS)} FROM prospeccao.fazenda_nacional WHERE {where} "
+        rows=query(f"SELECT {','.join(FAZ_COLS)} FROM {FAZ_SRC} WHERE {where} "
                    f"ORDER BY prioridade, touros_nelore DESC NULLS LAST LIMIT {EXPORT_CAP}", p)
         who=(get_current_user(request) or {}).get('sub','?')
         audit(request, "export_fazendas", f"uf={uf} sinal={sinal} canal={canal} q={q}", len(rows))
@@ -2701,6 +2707,37 @@ def territorio(uf: str = "TO"):
     """Relatório territorial de um estado para a prospecção (panorama + alvos)."""
     try:
         return _territorio_dados((uf or "TO").upper())
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/territorio/oportunidade")
+def territorio_oportunidade(uf: str = None, gap_canal: bool = None, limit: int = 50):
+    """Municípios ranqueados por oportunidade de demanda (matview
+    prospeccao.territorio_oportunidade): rebanho/matrizes, crédito SICOR p/ matriz,
+    deserto vet e cobertura nossa (leads/técnicos). gap_canal=true => municípios com
+    demanda alta mas SEM canal nosso (lead/técnico) — fronteira de prospecção."""
+    try:
+        where = ["TRUE"]; p = {"lim": min(max(limit, 1), 500)}
+        if uf:
+            where.append("uf = %(uf)s"); p["uf"] = uf.upper()
+        if gap_canal is not None:
+            where.append("gap_canal = %(gap)s"); p["gap"] = gap_canal
+        wsql = " AND ".join(where)
+        rows = query(
+            f"""
+            SELECT codigo_ibge, municipio, uf,
+                   matrizes_estim2024, bovinos_ppm2024,
+                   sicor_invest_bovinos_2125, sicor_credito_matriz,
+                   deserto_vet, n_vet, estab_sem_ia,
+                   n_leads_nossos, n_tecnicos_nossos,
+                   score_oportunidade, gap_canal
+            FROM prospeccao.territorio_oportunidade
+            WHERE {wsql}
+            ORDER BY score_oportunidade DESC NULLS LAST
+            LIMIT %(lim)s
+            """, p)
+        return {"rows": rows, "total": len(rows)}
     except Exception as e:
         return _error(e)
 
