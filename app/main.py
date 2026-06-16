@@ -33,7 +33,7 @@ logger = logging.getLogger("wins_agro")
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 # Versão do shell — bumpar a cada deploy de front. O cliente compara com /api/version e
 # se auto-atualiza (limpa cache + reload) se estiver velho. Mata o "downgrade pra v1".
-APP_VERSION = "2026-06-16.1"
+APP_VERSION = "2026-06-16.2"
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 
@@ -2023,8 +2023,13 @@ FAZ_SORT = {"prioridade":"prioridade","capital":"capital_mi","touros":"touros_ne
     "followers":"followers","nome":"nome_fazenda","uf":"uf",
     "demanda":"prioridade_final","matrizes":"matrizes_municipio"}
 
-def _faz_where(uf, sinal, canal, q, cobertura=None):
+def _faz_where(uf, sinal, canal, q, cobertura=None, prioridade=None, demanda=None,
+               decisor=None, touros_min=None, matrizes_min=None, porte_min=None,
+               contato=None, grupo_min=None):
     w=["TRUE"]; p={}
+    def _num(v):
+        try: return float(v)
+        except (TypeError, ValueError): return None
     if uf: w.append("uf=%(uf)s"); p["uf"]=uf.upper()
     if sinal: w.append("sinal_genetico=%(sinal)s"); p["sinal"]=sinal
     if canal: w.append("canal_recomendado=%(canal)s"); p["canal"]=canal
@@ -2036,6 +2041,31 @@ def _faz_where(uf, sinal, canal, q, cobertura=None):
     if q:
         w.append("(nome_fazenda ILIKE %(q)s OR razao ILIKE %(q)s OR COALESCE(decisor,'') ILIKE %(q)s OR municipio ILIKE %(q)s)")
         p["q"]=f"%{q}%"
+    # --- filtros POR COLUNA (cabeçalho da tabela) ---
+    if prioridade and str(prioridade).isdigit():
+        w.append("prioridade=%(prio)s"); p["prio"]=int(prioridade)
+    # Demanda = faixa de prioridade_final (alta>=0.7, media 0.4-0.7, baixa<0.4)
+    _drng={"alta":(0.7,None),"media":(0.4,0.7),"baixa":(None,0.4)}.get(demanda)
+    if _drng:
+        if _drng[0] is not None: w.append("prioridade_final>=%(dlo)s"); p["dlo"]=_drng[0]
+        if _drng[1] is not None: w.append("prioridade_final<%(dhi)s"); p["dhi"]=_drng[1]
+    if decisor:
+        w.append("(COALESCE(decisor,'') ILIKE %(dec)s OR COALESCE(operador_jovem,'') ILIKE %(dec)s)")
+        p["dec"]=f"%{decisor}%"
+    if _num(touros_min) is not None:
+        w.append("touros_nelore>=%(tmin)s"); p["tmin"]=int(_num(touros_min))
+    if _num(matrizes_min) is not None:
+        w.append("matrizes_municipio>=%(mmin)s"); p["mmin"]=int(_num(matrizes_min))
+    if _num(porte_min) is not None:
+        w.append("capital_mi>=%(pmin)s"); p["pmin"]=_num(porte_min)
+    # Contato = presença de canal específico
+    _cmap={"whatsapp":"whatsapp IS NOT NULL","email":"email IS NOT NULL",
+           "instagram":"instagram IS NOT NULL","celular":"celular IS NOT NULL",
+           "qualquer":"(whatsapp IS NOT NULL OR email IS NOT NULL OR instagram IS NOT NULL OR celular IS NOT NULL)",
+           "sem":"(whatsapp IS NULL AND email IS NULL AND instagram IS NULL AND celular IS NULL)"}.get(contato)
+    if _cmap: w.append(_cmap)
+    if _num(grupo_min) is not None:
+        w.append("dono_n_fazendas>=%(gmin)s"); p["gmin"]=int(_num(grupo_min))
     return " AND ".join(w), p
 
 @app.get("/fazendas", response_class=HTMLResponse)
@@ -2405,10 +2435,13 @@ def api_genetica_kpi():
 
 @app.get("/api/farms")
 def api_fazendas(uf:str=None, sinal:str=None, canal:str=None, q:str=None, cobertura:str=None,
+                 prioridade:str=None, demanda:str=None, decisor:str=None, touros_min:str=None,
+                 matrizes_min:str=None, porte_min:str=None, contato:str=None, grupo_min:str=None,
                  page:int=1, page_size:int=50, sort:str="prioridade", order:str="asc"):
     try:
         page=max(1,page); page_size=min(max(page_size,1),100); off=(page-1)*page_size
-        where,p=_faz_where(uf,sinal,canal,q,cobertura)
+        where,p=_faz_where(uf,sinal,canal,q,cobertura,prioridade,demanda,decisor,
+                           touros_min,matrizes_min,porte_min,contato,grupo_min)
         col=FAZ_SORT.get(sort,"prioridade"); od="DESC" if order=="desc" else "ASC"
         rows=query(f"SELECT {','.join(FAZ_COLS)} FROM {FAZ_SRC} WHERE {where} "
                    f"ORDER BY {col} {od} NULLS LAST, touros_nelore DESC NULLS LAST LIMIT %(lim)s OFFSET %(off)s",
@@ -2427,13 +2460,16 @@ def api_fazendas(uf:str=None, sinal:str=None, canal:str=None, q:str=None, cobert
         return _error(e)
 
 @app.get("/api/farms/export")
-def api_fazendas_export(request: Request, uf:str=None, sinal:str=None, canal:str=None, q:str=None, cobertura:str=None):
+def api_fazendas_export(request: Request, uf:str=None, sinal:str=None, canal:str=None, q:str=None, cobertura:str=None,
+                 prioridade:str=None, demanda:str=None, decisor:str=None, touros_min:str=None,
+                 matrizes_min:str=None, porte_min:str=None, contato:str=None, grupo_min:str=None):
     """Export GATED: teto de 2000 linhas, marca d'água (usuário) e AUDITORIA. Dado é valioso —
     sem dump infinito do banco."""
     try:
         import io, csv
         EXPORT_CAP=2000
-        where,p=_faz_where(uf,sinal,canal,q,cobertura)
+        where,p=_faz_where(uf,sinal,canal,q,cobertura,prioridade,demanda,decisor,
+                           touros_min,matrizes_min,porte_min,contato,grupo_min)
         rows=query(f"SELECT {','.join(FAZ_COLS)} FROM {FAZ_SRC} WHERE {where} "
                    f"ORDER BY prioridade, touros_nelore DESC NULLS LAST LIMIT {EXPORT_CAP}", p)
         who=(get_current_user(request) or {}).get('sub','?')
