@@ -2092,6 +2092,80 @@ def comercial_page(request: Request):
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
+
+# ---------------------------------------------------------------------------
+# HOLDINGS — ponto cego (holdings/participações agro que o filtro de CNAE perdia)
+# Fonte: prospeccao.holding_lead_ui (snapshot consolidado: cadastro + melhor canal
+# já no banco — WhatsApp confirmado direto/via fazenda âncora, e-mail RFB).
+# ---------------------------------------------------------------------------
+@app.get("/holdings", response_class=HTMLResponse)
+def holdings_page(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    resp = templates.TemplateResponse("holdings.html",
+        {"request": request, "user": user, "active": "holdings", "app_version": APP_VERSION})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+_HOLD_SORT = {"score": "score", "capital": "capital_social", "razao": "razao",
+              "uf": "uf", "socios": "n_socios_agro"}
+
+@app.get("/api/holdings/stats")
+def holdings_stats(uf: str = None):
+    """Cobertura de contato dos leads holding (para os cards de topo)."""
+    try:
+        rows = query(
+            """
+            SELECT count(*) AS total,
+                   count(*) FILTER (WHERE canal='whatsapp') AS com_whatsapp,
+                   count(*) FILTER (WHERE canal='email')    AS so_email,
+                   count(*) FILTER (WHERE canal='sem')      AS sem_canal,
+                   count(*) FILTER (WHERE whats_origem='ancora') AS whats_via_ancora
+            FROM prospeccao.holding_lead_ui
+            WHERE (%(uf)s IS NULL OR uf = %(uf)s)
+            """, {"uf": uf})
+        return rows[0] if rows else {}
+    except Exception as e:
+        return _error(e)
+
+@app.get("/api/holdings")
+def holdings_list(uf: str = None, canal: str = None, tipo: str = None,
+                  q: str = None, page: int = 1, page_size: int = 100,
+                  sort: str = "score", order: str = "desc"):
+    """Leads holding paginados, com filtros (UF, canal, tipo, busca) e ordenação."""
+    try:
+        page = max(1, page)
+        page_size = min(max(page_size, 1), 200)
+        offset = (page - 1) * page_size
+        col = _HOLD_SORT.get(sort, "score")
+        dir_sql = "ASC" if str(order).lower() == "asc" else "DESC"
+        where = ["(%(uf)s IS NULL OR uf = %(uf)s)",
+                 "(%(canal)s IS NULL OR canal = %(canal)s)",
+                 "(%(tipo)s IS NULL OR tipo = %(tipo)s)",
+                 "(%(q)s IS NULL OR razao ILIKE %(qlike)s OR nome_fantasia ILIKE %(qlike)s)"]
+        params = {"uf": uf, "canal": canal, "tipo": tipo, "q": q,
+                  "qlike": f"%{q}%" if q else None,
+                  "lim": page_size, "off": offset}
+        wsql = " AND ".join(where)
+        total = query(f"SELECT count(*) AS n FROM prospeccao.holding_lead_ui WHERE {wsql}", params)[0]["n"]
+        rows = query(
+            f"""
+            SELECT cnpj14, cnpj_basico, razao, nome_fantasia, tipo, uf, municipio,
+                   cnae_principal, capital_social, situacao, email,
+                   whatsapp, whats_origem, canal, n_socios_agro, ancora_razao, score
+            FROM prospeccao.holding_lead_ui
+            WHERE {wsql}
+            ORDER BY {col} {dir_sql} NULLS LAST, capital_social DESC NULLS LAST, cnpj14
+            LIMIT %(lim)s OFFSET %(off)s
+            """, params)
+        return {"leads": rows, "page": page, "page_size": page_size,
+                "total": total, "total_pages": max(1, (total + page_size - 1) // page_size)}
+    except Exception as e:
+        return _error(e)
+
+
 # ---------------------------------------------------------------------------
 # FICHA DA FAZENDA — dossiê consolidado (/fazendas/{cnpj})
 # Honestidade do vínculo: BLOCO 1 = Receita (confirmado); técnico sócio = provável

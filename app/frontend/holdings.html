@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Holdings · WiNS Hub Agro{% endblock %}
+{% block topbar %}Holdings{% endblock %}
+{% block head %}
+<style>
+  .macro{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+  .macro .m{ flex:1 1 150px; background:#fbfdfb; border:1px solid #e3e9e3; border-radius:12px; padding:10px 14px; }
+  .macro .m .k{ font-size:11px; color:#7a857a; text-transform:uppercase; letter-spacing:.3px; }
+  .macro .m .v{ font-size:20px; font-weight:800; color:#1a3a1a; line-height:1.2; }
+  .macro .m .d{ font-size:10px; color:#9aa39a; }
+  .form-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:14px; }
+  .field label{ display:block; font-size:12px; font-weight:600; color:#3a463a; margin-bottom:5px; }
+  .field .select,.field .input{ width:100%; }
+  .pg{ display:flex; gap:10px; align-items:center; justify-content:flex-end; padding:10px 4px; font-size:13px; color:#3a463a; }
+  .wa{ color:#1a7a3a; font-weight:700; text-decoration:none; }
+  .wa:hover{ text-decoration:underline; }
+  .mail{ color:#2a5a8a; text-decoration:none; }
+  .src{ font-size:10px; color:#9aa39a; }
+  .note{ font-size:12px; color:#7a857a; padding:8px 4px; }
+</style>
+{% endblock %}
+{% block content %}
+<div x-data="holdings()" x-init="boot()">
+
+  <div class="page-head">
+    <div>
+      <h1>Holdings — ponto cego</h1>
+      <div class="sub">Holdings e participações que operam fazendas mas escapavam do filtro de CNAE agro. Descobertas por <b>sócio em comum</b> e <b>CNAE patrimonial</b>, com o melhor canal de contato <b>já no nosso banco</b> — WhatsApp confirmado (muitas vezes pela fazenda âncora do mesmo dono) ou e-mail RFB.</div>
+    </div>
+  </div>
+
+  <!-- cards de cobertura -->
+  <div class="macro">
+    <div class="m"><div class="k">🏦 Holdings</div><div class="v" x-text="s?fmtN(s.total):'—'"></div><div class="d">leads descobertos</div></div>
+    <div class="m"><div class="k">📱 WhatsApp</div><div class="v" x-text="s?fmtN(s.com_whatsapp):'—'"></div><div class="d" x-text="s?('confirmado · '+fmtN(s.whats_via_ancora)+' via fazenda âncora'):''"></div></div>
+    <div class="m"><div class="k">✉️ Só e-mail</div><div class="v" x-text="s?fmtN(s.so_email):'—'"></div><div class="d">e-mail RFB</div></div>
+    <div class="m"><div class="k">⚪ Sem canal</div><div class="v" x-text="s?fmtN(s.sem_canal):'—'"></div><div class="d">gap p/ enriquecer</div></div>
+  </div>
+
+  <!-- filtros -->
+  <div class="card" style="padding:16px;margin-bottom:14px">
+    <div class="form-grid">
+      <div class="field"><label>UF</label>
+        <select class="select" x-model="f.uf" @change="reload()">
+          <option value="">Todas</option>
+          <template x-for="u in ufs" :key="u"><option :value="u" x-text="u"></option></template>
+        </select></div>
+      <div class="field"><label>Canal</label>
+        <select class="select" x-model="f.canal" @change="reload()">
+          <option value="">Todos</option>
+          <option value="whatsapp">📱 WhatsApp</option>
+          <option value="email">✉️ Só e-mail</option>
+          <option value="sem">⚪ Sem canal</option>
+        </select></div>
+      <div class="field"><label>Origem</label>
+        <select class="select" x-model="f.tipo" @change="reload()">
+          <option value="">Todas</option>
+          <option value="HOLDING/AB">Sócio agro em comum</option>
+          <option value="HOLDING/NOME">Nome agro (sem sócio)</option>
+          <option value="HOLDING/SOCIO">Enriquecido API</option>
+        </select></div>
+      <div class="field"><label>Buscar (razão/fantasia)</label>
+        <input class="input" type="text" placeholder="ex.: agropecuária, participações…" x-model.debounce.400ms="f.q" @input="reload()"></div>
+    </div>
+  </div>
+
+  <!-- tabela -->
+  <div class="table-wrap">
+    <div class="table-scroll">
+      <table class="data">
+        <thead><tr>
+          <th>Empresa</th><th>UF</th><th>Município</th><th>CNAE</th>
+          <th>Capital</th><th>Sócios agro</th><th>Canal</th><th>Contato</th>
+        </tr></thead>
+        <tbody>
+          <template x-for="r in rows" :key="r.cnpj14">
+            <tr>
+              <td data-label="Empresa">
+                <div class="fz-nome" x-text="r.razao||'—'"></div>
+                <div class="fz-sub">
+                  <span x-show="r.nome_fantasia" x-text="r.nome_fantasia"></span>
+                  <span class="badge neutral" x-text="tipoLabel(r.tipo)"></span>
+                </div>
+              </td>
+              <td data-label="UF"><span class="badge neutral" x-text="r.uf||'—'"></span></td>
+              <td data-label="Município" x-text="r.municipio||'—'"></td>
+              <td data-label="CNAE" x-text="r.cnae_principal||'—'"></td>
+              <td data-label="Capital" x-text="r.capital_social?brl(r.capital_social):'—'"></td>
+              <td data-label="Sócios agro">
+                <span x-show="r.n_socios_agro" :title="r.ancora_razao?('âncora: '+r.ancora_razao):''" x-text="r.n_socios_agro||''"></span>
+                <span x-show="!r.n_socios_agro">—</span>
+              </td>
+              <td data-label="Canal">
+                <span class="badge" :class="r.canal==='whatsapp'?'ok':(r.canal==='email'?'warn':'')" x-text="canalLabel(r.canal)"></span>
+              </td>
+              <td data-label="Contato">
+                <template x-if="r.whatsapp">
+                  <div><a class="wa" :href="'https://wa.me/55'+r.whatsapp" target="_blank" x-text="fmtFone(r.whatsapp)"></a>
+                    <div class="src" x-show="r.whats_origem==='ancora'">via fazenda âncora</div></div>
+                </template>
+                <template x-if="!r.whatsapp && r.email">
+                  <a class="mail" :href="'mailto:'+r.email" x-text="r.email"></a>
+                </template>
+                <span x-show="!r.whatsapp && !r.email" style="color:#bbb">—</span>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <div class="loading" x-show="loading"><div class="spinner"></div></div>
+      <div class="empty" x-show="!loading && rows.length===0">Nenhum holding com esses filtros.</div>
+    </div>
+    <div class="pg" x-show="total>0">
+      <span x-text="'Total: '+fmtN(total)+' holdings'"></span>
+      <button class="btn btn-ghost" @click="prev()" :disabled="page<=1">← Anterior</button>
+      <span x-text="'Pág. '+page+' / '+totalPages"></span>
+      <button class="btn btn-ghost" @click="next()" :disabled="page>=totalPages">Próxima →</button>
+    </div>
+    <div class="note">Canal = melhor contato já no banco. <b>WhatsApp via fazenda âncora</b> = o mesmo dono tem uma empresa pecuária nossa com WhatsApp confirmado — a porta de entrada para falar com o decisor do holding.</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function holdings(){
+  return {
+    f:{uf:'',canal:'',tipo:'',q:''},
+    ufs:[], rows:[], s:null, page:1, totalPages:1, total:0, loading:false,
+    async boot(){
+      try{ this.ufs=await (await fetch('/api/ufs')).json(); }catch(e){ this.ufs=[]; }
+      await this.loadStats(); await this.load();
+    },
+    async loadStats(){
+      try{ this.s=await (await fetch('/api/holdings/stats'+this.qs(false))).json(); }catch(e){ this.s=null; }
+    },
+    qs(withPage){
+      const p=new URLSearchParams();
+      if(this.f.uf)p.set('uf',this.f.uf);
+      if(withPage){
+        if(this.f.canal)p.set('canal',this.f.canal);
+        if(this.f.tipo)p.set('tipo',this.f.tipo);
+        if(this.f.q)p.set('q',this.f.q);
+        p.set('page',this.page); p.set('page_size',100);
+      }
+      const s=p.toString(); return s?('?'+s):'';
+    },
+    async load(){
+      this.loading=true;
+      try{
+        const d=await (await fetch('/api/holdings'+this.qs(true))).json();
+        this.rows=(d&&d.leads)||[]; this.total=(d&&d.total)||0; this.totalPages=(d&&d.total_pages)||1;
+      }catch(e){ this.rows=[]; this.total=0; }
+      this.loading=false;
+    },
+    async reload(){ this.page=1; await this.loadStats(); await this.load(); },
+    next(){ if(this.page<this.totalPages){ this.page++; this.load(); } },
+    prev(){ if(this.page>1){ this.page--; this.load(); } },
+    tipoLabel(t){ return ({'HOLDING/AB':'sócio agro','HOLDING/NOME':'nome agro','HOLDING/SOCIO':'API'})[t]||t; },
+    canalLabel(c){ return ({'whatsapp':'📱 WhatsApp','email':'✉️ e-mail','sem':'⚪ sem'})[c]||c; },
+    fmtFone(d){ if(!d)return '—'; d=String(d); return d.length>=10?('('+d.slice(0,2)+') '+d.slice(2)):d; },
+    fmtN(n){ return (n==null)?'—':Number(n).toLocaleString('pt-BR'); },
+    brl(n){ return (n==null)?'—':Number(n).toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0}); },
+  }
+}
+</script>
+{% endblock %}
