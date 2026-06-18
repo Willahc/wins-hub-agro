@@ -30,7 +30,13 @@ if [ -z "$DB_CONT" ]; then
 fi
 
 FILE="$DEST/wins_agro_$(date +%Y%m%d_%H%M%S).dump"
-if ! docker exec "$DB_CONT" pg_dump -U postgres -Fc wins_agro > "$FILE" 2>>"$LOG"; then
+# Exclui DADOS das tabelas de staging da RFB (cnpj.stg_*) — ~7GB de dados
+# intermediários, re-geráveis do dump público da Receita. O SCHEMA (DDL) é mantido,
+# só os dados saem; o restore recria as tabelas vazias e o pipeline de ingestão
+# repopula. Isso reduz o dump de ~1.8GB de volta p/ ~0.4GB (e viabiliza o offsite).
+if ! docker exec "$DB_CONT" pg_dump -U postgres -Fc \
+       --exclude-table-data='cnpj.stg_*' \
+       wins_agro > "$FILE" 2>>"$LOG"; then
   say "ERRO: pg_dump falhou ($FILE)"
   rm -f "$FILE"
   exit 1
