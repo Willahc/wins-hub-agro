@@ -32,6 +32,10 @@ data/
 
 # Deliverables de prospecção (PII) movidos da raiz
 deliverables/
+# Exports de prospecção (PII: decisor/WhatsApp/e-mail) — geráveis via scripts
+exports/
+# Config local do backup (offsite/webhook/heartbeat) — template em scripts/backup_env.example
+.backup_env
 
 # PDF de pricing interno (gerável via scripts/gen_valuation_pdf.py)
 app/frontend/dl/*.pdf

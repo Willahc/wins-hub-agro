@@ -1,0 +1,18 @@
+# Template de config do backup. Copie p/ /root/wins_agro_v1/.backup_env (chmod 600)
+# e preencha. O backup_db.sh faz `. .backup_env` no início (se existir).
+# Vantagem sobre por no crontab: não vaza URL/destino no `crontab -l`.
+#
+#   cp scripts/backup_env.example .backup_env && chmod 600 .backup_env && nano .backup_env
+# Com OFFSITE_TARGET aqui, pode REMOVER o prefixo da linha do cron (deixa só o caminho do .sh).
+
+# Destino do offsite (scp). Vazio/ausente => o backup ALERTA (esperamos offsite p/ DR).
+OFFSITE_TARGET=william@187.127.253.42:/home/william/backups_agro
+
+# Alerta em FALHA: URL que aceita POST JSON {"text":...}. Funciona com Slack/Mattermost/
+# Google Chat (incoming webhook) e Discord (lê "content"). Deixe vazio p/ desligar.
+ALERT_WEBHOOK=
+
+# Dead-man's switch (RECOMENDADO): cria um check em healthchecks.io (ou self-hosted),
+# cole a URL de ping aqui. O script faz GET na URL em SUCESSO e GET <URL>/fail em falha.
+# Se o cron NEM RODAR, o healthchecks alerta sozinho por falta de ping — o que log nenhum pega.
+HEARTBEAT_URL=

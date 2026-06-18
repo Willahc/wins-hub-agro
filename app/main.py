@@ -22,6 +22,7 @@ from psycopg2 import pool as pgpool
 import asyncio
 import logging
 import io
+import csv
 import os
 import time
 import threading
@@ -33,14 +34,30 @@ logger = logging.getLogger("wins_agro")
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 # Versão do shell — bumpar a cada deploy de front. O cliente compara com /api/version e
 # se auto-atualiza (limpa cache + reload) se estiver velho. Mata o "downgrade pra v1".
-APP_VERSION = "2026-06-16.7"
-app.mount("/static", StaticFiles(directory="frontend"), name="static")
+APP_VERSION = "2026-06-18.1"
+# /static aponta SÓ para os diretórios de assets (CSS/JS/imagens/fontes), nunca
+# para a raiz de frontend/. Montar frontend/ inteiro vazava sem autenticação os
+# templates crus (/static/login.html) e, pior, a pasta dl/ — PDFs internos
+# (valuation), o APK e exports com PII baixavam público apesar das rotas /baixar
+# autenticadas. O middleware só protege /api/*, então a defesa é não servir nada
+# sensível por /static. Downloads sensíveis: rotas /baixar/* e /api/* (com sessão).
+app.mount("/static/assets", StaticFiles(directory="frontend/assets"), name="assets")
+app.mount("/static/vendor", StaticFiles(directory="frontend/vendor"), name="vendor")
 
 
 @app.get("/api/version")
 def app_version():
     from fastapi.responses import JSONResponse as _JR
     return _JR({"version": APP_VERSION}, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/healthz")
+def healthz():
+    """Liveness do processo p/ o healthcheck do container. Pública de propósito
+    (fora de /api/* p/ o middleware não exigir sessão), sem PII e SEM tocar o DB —
+    uma instabilidade do DB não deve derrubar/reiniciar a api em loop."""
+    from fastapi.responses import JSONResponse as _JR
+    return _JR({"status": "ok"}, headers={"Cache-Control": "no-store"})
 templates = Jinja2Templates(directory="frontend")
 
 
@@ -2219,6 +2236,85 @@ def holdings_list(uf: str = None, canal: str = None, tipo: str = None,
             """, params)
         return {"leads": rows, "page": page, "page_size": page_size,
                 "total": total, "total_pages": max(1, (total + page_size - 1) // page_size)}
+    except Exception as e:
+        return _error(e)
+
+
+# ---------------------------------------------------------------------------
+# PROSPECÇÃO — Top 3 por estado (WhatsApp verificado + maior fit com a ferramenta)
+# Fonte: prospeccao.prospect_top3_final (score calculado no banco em
+# build_prospect_top3_uf.sql; enriquecido por export_prospect_top3_uf.py com
+# uso público de software de gestão/genética via Serper).
+# ---------------------------------------------------------------------------
+@app.get("/prospeccao", response_class=HTMLResponse)
+def prospeccao_page(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    resp = templates.TemplateResponse("prospeccao.html",
+        {"request": request, "user": user, "active": "prospeccao", "app_version": APP_VERSION})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.get("/api/prospeccao/top3")
+def prospeccao_top3(request: Request, uf: str = None):
+    """Top 3 prospects por UF (WhatsApp verificado, maior fit). Lista achatada
+    ordenada por UF + rank; a página agrupa por estado."""
+    try:
+        rows = query(
+            """
+            SELECT uf, uf_nome, rank_uf, municipio, fazenda, cnpj,
+                   decisor_nome, decisor_cargo, operador_nome,
+                   whatsapp, whatsapp_wame, email_hunter, instagram,
+                   capital_social, sinal_genetico, matrizes_municipio,
+                   deserto_vet, score_fit, ferramenta, observacao
+            FROM prospeccao.prospect_top3_final
+            WHERE (%(uf)s IS NULL OR uf = %(uf)s)
+            ORDER BY uf, rank_uf
+            """, {"uf": uf})
+        stats = query(
+            """
+            SELECT count(*) AS total,
+                   count(DISTINCT uf) AS ufs,
+                   count(*) FILTER (WHERE sinal_genetico='alta') AS gen_alta,
+                   count(*) FILTER (WHERE deserto_vet) AS deserto,
+                   count(*) FILTER (WHERE ferramenta<>'' AND ferramenta IS NOT NULL) AS usa_ferr
+            FROM prospeccao.prospect_top3_final
+            """)[0]
+        audit(request, "prospeccao_top3", uf, len(rows))
+        return {"rows": rows, "stats": stats}
+    except Exception as e:
+        return _error(e)
+
+
+@app.get("/api/prospeccao/top3.csv")
+def prospeccao_top3_csv(request: Request):
+    """Download do Top 3/UF em CSV. Sob /api/ (exige sessão pelo middleware) e
+    auditado — o CSV tem PII (decisor, WhatsApp, e-mail), não pode sair por /static."""
+    try:
+        rows = query(
+            """
+            SELECT uf, municipio, fazenda, cnpj, decisor_nome, decisor_cargo, operador_nome,
+                   whatsapp, email_hunter, instagram, capital_social, sinal_genetico,
+                   matrizes_municipio, deserto_vet, score_fit, observacao
+            FROM prospeccao.prospect_top3_final ORDER BY uf, rank_uf
+            """)
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["uf","municipio","fazenda","cnpj","decisor_nome","decisor_cargo",
+                    "operador_nome","whatsapp","email_hunter","instagram","capital_social",
+                    "sinal_genetico","matrizes_municipio","deserto_vet","score_fit","observacao"])
+        for r in rows:
+            w.writerow([r["uf"], r["municipio"], r["fazenda"], r["cnpj"], r["decisor_nome"],
+                        r["decisor_cargo"], r["operador_nome"], r["whatsapp"], r["email_hunter"],
+                        r["instagram"], r["capital_social"], r["sinal_genetico"],
+                        r["matrizes_municipio"], "sim" if r["deserto_vet"] else "não",
+                        r["score_fit"], r["observacao"]])
+        audit(request, "prospeccao_top3_csv", None, len(rows))
+        return Response(content=buf.getvalue(), media_type="text/csv",
+                        headers={"Content-Disposition": "attachment; filename=prospects_top3_por_uf.csv",
+                                 "Cache-Control": "no-store"})
     except Exception as e:
         return _error(e)
 
