@@ -37,6 +37,7 @@
       <option value="vet">🩺 Cobertura veterinária (deserto vet)</option>
       <option value="tendencia">📈 Tendência de rebanho (2020→2023)</option>
       <option value="lotacao">🐂 Lotação (cab/ha)</option>
+      <option value="pasto">🌱 Área de pasto (MapBiomas)</option>
       <option value="leite">🥛 Produção de leite</option>
       <option value="valor">💰 Valor da produção</option>
     </select>
@@ -75,6 +76,7 @@ function mapa(){
       vet:{title:'Cobertura veterinária',items:[{c:'#c62828',l:'Deserto vet'},{c:'#b8860b',l:'Baixa cobertura'},{c:'#2e7d32',l:'Normal'}]},
       tendencia:{title:'Tendência de rebanho',items:[{c:'#1b7837',l:'+30% ou mais'},{c:'#7fbf7b',l:'0 a +30%'},{c:'#d9a441',l:'-20% a 0'},{c:'#c62828',l:'queda forte'}]},
       lotacao:{title:'Lotação (cab/ha)',items:[{c:'#1b7837',l:'< 0,5 (extensivo)'},{c:'#7fbf7b',l:'0,5–1,5'},{c:'#d9a441',l:'1,5–3'},{c:'#9e9e9e',l:'> 3 (intensivo)'}]},
+      pasto:{title:'Área de pasto (MapBiomas 2024)',items:[{c:'#1b5e20',l:'> 500 mil ha'},{c:'#43a047',l:'200–500 mil'},{c:'#81c784',l:'50–200 mil'},{c:'#c8e6c9',l:'< 50 mil ha'}]},
       leite:{title:'Produção de leite',items:[{c:'#1976d2',l:'mil L/ano'}]},
       valor:{title:'Valor da produção',items:[{c:'#d4a017',l:'R$ mil/ano'}]}
     },
@@ -104,6 +106,12 @@ function mapa(){
           const c=l<0.5?'#1b7837':l<1.5?'#7fbf7b':l<3?'#d9a441':'#9e9e9e';
           L.circleMarker([p.lat,p.lng],{radius:Math.max(4,Math.min(20,Math.sqrt(p.pastagem_ha)/30)),color:c,fillColor:c,fillOpacity:.6,weight:1})
             .bindPopup(`<b>${this.esc(p.municipio)} (${this.esc(p.uf)})</b><br>Lotação: <b>${l.toFixed(2)}</b> cab/ha<br>Rebanho: ${Number(p.rebanho).toLocaleString('pt-BR')}`).addTo(g); reb+=Number(p.rebanho)||0; });
+      } else if(this.mapLayer==='pasto'){
+        pts=await this.jget(`/api/demanda/pasto?${ufq}min_ha=5000&limit=2000`);
+        (pts||[]).forEach(p=>{ if(p.lat==null)return; const ha=Number(p.pasto_ha);
+          const c=ha>=500000?'#1b5e20':ha>=200000?'#43a047':ha>=50000?'#81c784':'#c8e6c9';
+          L.circleMarker([p.lat,p.lng],{radius:Math.max(4,Math.min(20,Math.sqrt(ha)/70)),color:'#2e5e1e',fillColor:c,fillOpacity:.7,weight:1})
+            .bindPopup(`<b>${this.esc(p.municipio)} (${this.esc(p.uf)})</b><br>Pasto: <b>${(ha/1000).toLocaleString('pt-BR',{maximumFractionDigits:0})}</b> mil ha<br><span style="color:#888">MapBiomas Col.10.1 · 2024</span>`).addTo(g); });
       } else if(this.mapLayer==='leite'){
         pts=await this.jget(`/api/externo/leite/mapa?${ufq}min_litros=5000`);
         (pts||[]).forEach(p=>{ if(p.lat==null)return;

@@ -2804,6 +2804,35 @@ def demanda_lotacao(uf: str = None, limit: int = 50,
         return _error(e)
 
 
+@app.get("/api/demanda/pasto")
+def demanda_pasto(uf: str = None, limit: int = 2000, min_ha: int = 5000):
+    """Área de pastagem por município (MapBiomas, ano 2024). Onde está o pasto —
+    base territorial para potencial de rebanho / intensificação (BASF/Pasto Limpo)."""
+    try:
+        return query(
+            """
+            WITH past AS (
+                SELECT lower(municipio) AS m, state_acronym AS uf, SUM(area_ha) AS ha
+                FROM cobertura.mapbiomas_municipio
+                WHERE class_level_2 = '3.1. Pasture' AND ano = 2024
+                GROUP BY 1, 2
+            )
+            SELECT m.nome AS municipio, m.uf,
+                   m.latitude AS lat, m.longitude AS lng,
+                   ROUND(pa.ha) AS pasto_ha
+            FROM past pa
+            JOIN referencia.municipio m ON lower(m.nome) = pa.m AND m.uf = pa.uf
+            WHERE pa.ha > %(min_ha)s
+              AND (%(uf)s IS NULL OR m.uf = %(uf)s)
+            ORDER BY pasto_ha DESC
+            LIMIT %(limit)s
+            """,
+            {"uf": uf, "limit": min(limit, 2000), "min_ha": min_ha},
+        )
+    except Exception as e:
+        return _error(e)
+
+
 def _territorio_dados(uf):
     """Agrega a inteligência comercial de um estado (panorama, municípios prioritários
     = Desertos Vet por rebanho, e grandes grupos). Base do relatório territorial."""
