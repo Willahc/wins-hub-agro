@@ -87,6 +87,7 @@
               </td>
               <td data-label="Decisor / Operador">
                 <div x-text="cleanNome(r.decisor)||'—'"></div>
+                <span x-show="ehEmpresa(r.decisor)" class="badge warn" style="font-size:9px" title="o 'decisor' é uma razão social (LTDA/holding), não uma pessoa física — buscar o sócio responsável antes de abordar">⚠ razão social</span>
                 <div class="fz-sub" x-show="r.operador_jovem && r.operador_jovem!==cleanNome(r.decisor)" x-text="'opera: '+r.operador_jovem"></div>
               </td>
               <td data-label="Sinal · Touros">
@@ -165,6 +166,7 @@ function fazendas(){
     fmt(n){ return (n==null)?'—':Number(n).toLocaleString('pt-BR') },
     pct(a,b){ return b?Math.round(100*a/b)+'%':'' },
     cleanNome(s){ return s? s.replace(/\s*\(.*$/,'') : '' },
+    ehEmpresa(s){ return !!s && /\b(LTDA|EIRELI|S\/A|S\.A\b|PARTICIPAC|HOLDING|EMPREENDIMENT|INVESTIMENT|COOPERATIV|AGROPECUARIA\s+\w+\s+LTDA)\b/i.test(s) },
     prioLabel(p){ return {1:'Alta',2:'Média',3:'Baixa'}[p]||'—' },
     tierClass(p){ return {1:'alta',2:'media',3:'baixa'}[p]||'baixa' },
     sinalBadge(s){ return s==='alta'?'ok':(s==='media'?'gold':'neutral') },

@@ -1961,11 +1961,12 @@ SEGMENTO_CNAE = {"corte": "0151201", "leite": "0151202"}
 # colunas ordenáveis da lista de leads -> nome real (whitelist: nunca interpola
 # string crua do cliente no SQL).
 LEADS_SORT = {"empresa": "nome", "municipio": "municipio", "uf": "uf", "porte": "porte", "score": "score"}
-# score = nº de canais de contato confirmados (decisor + email + telefone + whatsapp(celular inferido) + linkedin)
+# score = nº de canais de contato CONFIRMADOS (decisor + email + telefone + linkedin).
+# NÃO conta whatsapp_rfb: é cel_whats(telefone_1) — derivado do mesmo telefone já
+# contado acima, então contava o mesmo canal em dobro e inflava leads só-RFB.
 _LEADS_SCORE = ("((decisor IS NOT NULL AND decisor<>'')::int "
                 "+ (email IS NOT NULL AND email<>'')::int "
                 "+ (telefone_1 IS NOT NULL AND telefone_1<>'')::int "
-                "+ (whatsapp_rfb IS NOT NULL)::int "
                 "+ (linkedin IS NOT NULL AND linkedin<>'')::int)")
 
 
@@ -3367,10 +3368,12 @@ _TEC_TEL_ANY = ("(SELECT max(NULLIF(ev.ddd_1,'')||NULLIF(ev.telefone_1,'')) FROM
                 "WHERE ev.cnpj_basico=v_tecnico_fazenda_ui.cnpj_basico AND NULLIF(ev.telefone_1,'') IS NOT NULL)")
 _TEC_EMAIL = f"COALESCE(email_receita, {_TEC_EMAIL_ANY})"
 _TEC_TEL = f"COALESCE(tel_melhor, {_TEC_TEL_ANY})"
-# score = nº de canais de contato confirmados (nome real + tel + whatsapp/cel(confirmado/publicado OU celular-RFB) + email + instagram + CRMV)
+# score = nº de canais de contato confirmados (nome real + tel + whatsapp/cel CONFIRMADO/PUBLICADO + email + instagram + CRMV).
+# NÃO conta o celular-RFB (cel_whats do tel_melhor): é derivado do mesmo tel já
+# contado acima → contava o canal em dobro. Só whatsapp/celular real ou zap público.
 _TEC_SCORE = ("((nome !~ '^[0-9]' AND nome <> '(sem nome fantasia)')::int "
               f"+ ({_TEC_TEL} IS NOT NULL)::int "
-              f"+ (COALESCE(whatsapp,celular) IS NOT NULL OR {_TEC_ZAP_PUB} IS NOT NULL OR {_TEC_ZAP_RFB} IS NOT NULL)::int "
+              f"+ (COALESCE(whatsapp,celular) IS NOT NULL OR {_TEC_ZAP_PUB} IS NOT NULL)::int "
               f"+ ({_TEC_EMAIL} IS NOT NULL)::int "
               "+ (instagram IS NOT NULL)::int "
               "+ COALESCE(crmv_confiavel,false)::int)")
