@@ -2334,7 +2334,7 @@ def prospeccao_top3(request: Request, uf: str = None):
             """
             SELECT uf, uf_nome, rank_uf, municipio, fazenda, cnpj,
                    decisor_nome, decisor_cargo, operador_nome,
-                   whatsapp, whatsapp_wame, email_hunter, instagram,
+                   whatsapp, whatsapp_wame, email_hunter, email_verif, instagram,
                    capital_social, sinal_genetico, matrizes_municipio,
                    deserto_vet, score_fit, ferramenta, observacao
             FROM prospeccao.prospect_top3_final

@@ -138,7 +138,7 @@ def main():
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
         SELECT uf, rank_uf, municipio, nome_fazenda, razao, cnpj_completo,
-               decisor, operador_jovem, whatsapp, whats_alta_conf, email_hunter,
+               decisor, operador_jovem, whatsapp, whats_alta_conf, email_hunter, email_verif,
                instagram, followers, capital_mi, sinal_genetico, touros_nelore,
                matrizes_municipio, deserto_vet, tem_canal, score_fit
         FROM prospeccao.prospect_top3_uf ORDER BY uf, rank_uf;
@@ -163,6 +163,7 @@ def main():
             "operador_nome": op_nome,
             "whatsapp": fmt_whats(r["whatsapp"]),
             "email_hunter": r["email_hunter"] or "",
+            "email_verif": r["email_verif"] or "",
             "instagram": r["instagram"] or "",
             "capital_social": int(round((r["capital_mi"] or 0) * 1_000_000)),
             "sinal_genetico": r["sinal_genetico"],
@@ -186,7 +187,7 @@ def main():
         CREATE TABLE prospeccao.prospect_top3_final(
             uf varchar(2), uf_nome text, rank_uf int, municipio text, fazenda text, cnpj text,
             decisor_nome text, decisor_cargo text, operador_nome text,
-            whatsapp text, whatsapp_wame text, email_hunter text, instagram text,
+            whatsapp text, whatsapp_wame text, email_hunter text, email_verif text, instagram text,
             capital_social bigint, sinal_genetico text, matrizes_municipio bigint,
             deserto_vet boolean, score_fit int, ferramenta text, observacao text,
             gerado_em timestamptz DEFAULT now()
@@ -195,12 +196,12 @@ def main():
         cur.execute("""
             INSERT INTO prospeccao.prospect_top3_final
             (uf,uf_nome,rank_uf,municipio,fazenda,cnpj,decisor_nome,decisor_cargo,operador_nome,
-             whatsapp,whatsapp_wame,email_hunter,instagram,capital_social,sinal_genetico,
+             whatsapp,whatsapp_wame,email_hunter,email_verif,instagram,capital_social,sinal_genetico,
              matrizes_municipio,deserto_vet,score_fit,ferramenta,observacao)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (rec["uf"], rec["_uf_nome"], rec["_rank"], rec["municipio"], rec["fazenda"], rec["cnpj"],
              rec["decisor_nome"], rec["decisor_cargo"], rec["operador_nome"],
-             rec["whatsapp"], rec["_whatsapp_raw"], rec["email_hunter"], rec["instagram"],
+             rec["whatsapp"], rec["_whatsapp_raw"], rec["email_hunter"], rec["email_verif"], rec["instagram"],
              rec["capital_social"], rec["sinal_genetico"],
              (rec["matrizes_municipio"] or None), rec["_deserto_bool"], rec["score_fit"],
              rec["_ferramenta"], rec["observacao"]))
