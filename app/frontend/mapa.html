@@ -38,6 +38,7 @@
       <option value="tendencia">📈 Tendência de rebanho (2020→2023)</option>
       <option value="lotacao">🐂 Lotação (cab/ha)</option>
       <option value="pasto">🌱 Área de pasto (MapBiomas)</option>
+      <option value="vigor">⚠️ Pasto degradado (MapBiomas)</option>
       <option value="leite">🥛 Produção de leite</option>
       <option value="valor">💰 Valor da produção</option>
     </select>
@@ -77,6 +78,7 @@ function mapa(){
       tendencia:{title:'Tendência de rebanho',items:[{c:'#1b7837',l:'+30% ou mais'},{c:'#7fbf7b',l:'0 a +30%'},{c:'#d9a441',l:'-20% a 0'},{c:'#c62828',l:'queda forte'}]},
       lotacao:{title:'Lotação (cab/ha)',items:[{c:'#1b7837',l:'< 0,5 (extensivo)'},{c:'#7fbf7b',l:'0,5–1,5'},{c:'#d9a441',l:'1,5–3'},{c:'#9e9e9e',l:'> 3 (intensivo)'}]},
       pasto:{title:'Área de pasto (MapBiomas 2024)',items:[{c:'#1b5e20',l:'> 500 mil ha'},{c:'#43a047',l:'200–500 mil'},{c:'#81c784',l:'50–200 mil'},{c:'#c8e6c9',l:'< 50 mil ha'}]},
+      vigor:{title:'Pasto degradado (% do pasto · MapBiomas 2022)',items:[{c:'#b71c1c',l:'≥ 50% degradado'},{c:'#e65100',l:'30–50%'},{c:'#f9a825',l:'15–30%'},{c:'#cddc39',l:'< 15%'}]},
       leite:{title:'Produção de leite',items:[{c:'#1976d2',l:'mil L/ano'}]},
       valor:{title:'Valor da produção',items:[{c:'#d4a017',l:'R$ mil/ano'}]}
     },
@@ -112,6 +114,12 @@ function mapa(){
           const c=ha>=500000?'#1b5e20':ha>=200000?'#43a047':ha>=50000?'#81c784':'#c8e6c9';
           L.circleMarker([p.lat,p.lng],{radius:Math.max(4,Math.min(20,Math.sqrt(ha)/70)),color:'#2e5e1e',fillColor:c,fillOpacity:.7,weight:1})
             .bindPopup(`<b>${this.esc(p.municipio)} (${this.esc(p.uf)})</b><br>Pasto: <b>${(ha/1000).toLocaleString('pt-BR',{maximumFractionDigits:0})}</b> mil ha<br><span style="color:#888">MapBiomas Col.10.1 · 2024</span>`).addTo(g); });
+      } else if(this.mapLayer==='vigor'){
+        pts=await this.jget(`/api/demanda/pasto-vigor?${ufq}min_ha=1000&limit=2000`);
+        (pts||[]).forEach(p=>{ if(p.lat==null)return; const pct=Number(p.pct_degradada), ha=Number(p.degradada_ha);
+          const c=pct>=50?'#b71c1c':pct>=30?'#e65100':pct>=15?'#f9a825':'#cddc39';
+          L.circleMarker([p.lat,p.lng],{radius:Math.max(4,Math.min(20,Math.sqrt(ha)/30)),color:'#7f0000',fillColor:c,fillOpacity:.7,weight:1})
+            .bindPopup(`<b>${this.esc(p.municipio)} (${this.esc(p.uf)})</b><br>Pasto degradado: <b>${(ha/1000).toLocaleString('pt-BR',{maximumFractionDigits:0})}</b> mil ha<br><b style="color:${c}">${pct}%</b> do pasto do município<br><span style="color:#888">MapBiomas vigor · col.8 2022</span>`).addTo(g); });
       } else if(this.mapLayer==='leite'){
         pts=await this.jget(`/api/externo/leite/mapa?${ufq}min_litros=5000`);
         (pts||[]).forEach(p=>{ if(p.lat==null)return;
