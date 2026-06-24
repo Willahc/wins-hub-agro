@@ -2249,6 +2249,65 @@ def holdings_list(uf: str = None, canal: str = None, tipo: str = None,
         return _error(e)
 
 
+@app.get("/api/holdings/csv")
+def holdings_csv(request: Request, uf: str = None, canal: str = None, tipo: str = None,
+                 q: str = None, municipio: str = None, cnae: str = None,
+                 capital_min: str = None, socios_min: str = None):
+    """Export CSV dos holdings filtrados (não só a página). Tem PII (whatsapp/email)
+    → sob /api (sessão) + auditado. email_tier e whats_aviso rotulam confiança
+    (contador / número compartilhado) — o CSV não engana o vendedor."""
+    try:
+        def _num(v):
+            try: return float(v)
+            except (TypeError, ValueError): return None
+        where = ["(%(uf)s IS NULL OR uf = %(uf)s)",
+                 "(%(canal)s IS NULL OR canal = %(canal)s)",
+                 "(%(tipo)s IS NULL OR tipo = %(tipo)s)",
+                 "(%(q)s IS NULL OR razao ILIKE %(qlike)s OR nome_fantasia ILIKE %(qlike)s)",
+                 "(%(municipio)s IS NULL OR municipio ILIKE %(municipio_like)s)",
+                 "(%(cnae)s IS NULL OR cnae_principal ILIKE %(cnae_like)s)",
+                 "(%(capital_min)s IS NULL OR capital_social >= %(capital_min)s)",
+                 "(%(socios_min)s IS NULL OR n_socios_agro >= %(socios_min)s)"]
+        params = {"uf": uf, "canal": canal, "tipo": tipo, "q": q,
+                  "qlike": f"%{q}%" if q else None,
+                  "municipio": municipio, "municipio_like": f"%{municipio}%" if municipio else None,
+                  "cnae": cnae, "cnae_like": f"%{cnae}%" if cnae else None,
+                  "capital_min": _num(capital_min), "socios_min": _num(socios_min)}
+        rows = query(
+            f"""
+            SELECT razao, nome_fantasia, tipo, uf, municipio, cnae_principal, capital_social,
+                   n_socios_agro, ancora_razao, whatsapp, whats_origem,
+                   CASE WHEN (whatsapp IS NOT NULL AND regexp_replace(whatsapp,'\\D','','g')
+                        IN (SELECT fone FROM prospeccao.contato_compartilhado))
+                        THEN 'compartilhado-confirmar' END AS whats_aviso,
+                   email,
+                   CASE WHEN email ~* 'cont(abil|ador|abilidade)|escritorio|fiscal|assessoria|advoc'
+                          THEN 'contador' WHEN email IS NOT NULL THEN 'ok' END AS email_tier,
+                   cnpj14 AS cnpj, score
+            FROM prospeccao.holding_lead_ui
+            WHERE """ + " AND ".join(where) + """
+            ORDER BY score DESC NULLS LAST, capital_social DESC NULLS LAST, cnpj14
+            LIMIT 20000
+            """, params)
+        if isinstance(rows, dict):
+            return rows
+        import csv as _csv
+        buf = io.StringIO()
+        cols = ["razao", "nome_fantasia", "tipo", "uf", "municipio", "cnae_principal",
+                "capital_social", "n_socios_agro", "ancora_razao", "whatsapp", "whats_origem",
+                "whats_aviso", "email", "email_tier", "cnpj", "score"]
+        w = _csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+        w.writeheader()
+        for r in rows:
+            w.writerow(r)
+        buf.seek(0)
+        audit(request, "holdings_csv", uf, len(rows))
+        return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv; charset=utf-8",
+                                 headers={"Content-Disposition": "attachment; filename=holdings.csv"})
+    except Exception as e:
+        return _error(e)
+
+
 # ---------------------------------------------------------------------------
 # PROSPECÇÃO — Top 3 por estado (WhatsApp verificado + maior fit com a ferramenta)
 # Fonte: prospeccao.prospect_top3_final (score calculado no banco em
