@@ -2833,6 +2833,40 @@ def demanda_pasto(uf: str = None, limit: int = 2000, min_ha: int = 5000):
         return _error(e)
 
 
+@app.get("/api/demanda/pasto-vigor")
+def demanda_pasto_vigor(uf: str = None, limit: int = 2000, min_ha: int = 1000):
+    """Pasto DEGRADADO por município (MapBiomas vigor da pastagem, col.8 2022).
+    Agrega por município a área de pasto das fazendas CAR cujo vigor modal é
+    'degradada' (classe 1, baixo vigor). % degradada = alvo BASF/Pasto Limpo
+    (herbicida/recuperação). Fonte: imovel_rural (área de pasto por fazenda)."""
+    try:
+        return query(
+            """
+            WITH v AS (
+                SELECT codigo_ibge_mun, uf,
+                       SUM(area_pasto_ha) AS pasto_ha,
+                       SUM(area_pasto_ha) FILTER (WHERE qualidade_pasto_mapbiomas='degradada') AS deg_ha
+                FROM prospeccao.imovel_rural
+                WHERE area_pasto_ha > 0 AND qualidade_pasto_mapbiomas IS NOT NULL
+                  AND codigo_ibge_mun ~ '^[0-9]+$'
+                GROUP BY 1, 2
+            )
+            SELECT m.nome AS municipio, m.uf, m.latitude AS lat, m.longitude AS lng,
+                   ROUND(v.deg_ha) AS degradada_ha, ROUND(v.pasto_ha) AS pasto_ha,
+                   ROUND(100 * v.deg_ha / NULLIF(v.pasto_ha, 0)) AS pct_degradada
+            FROM v
+            JOIN referencia.municipio m ON m.codigo_ibge = v.codigo_ibge_mun::integer
+            WHERE v.deg_ha > %(min_ha)s
+              AND (%(uf)s IS NULL OR m.uf = %(uf)s)
+            ORDER BY degradada_ha DESC
+            LIMIT %(limit)s
+            """,
+            {"uf": uf, "limit": min(limit, 2000), "min_ha": min_ha},
+        )
+    except Exception as e:
+        return _error(e)
+
+
 def _territorio_dados(uf):
     """Agrega a inteligência comercial de um estado (panorama, municípios prioritários
     = Desertos Vet por rebanho, e grandes grupos). Base do relatório territorial."""
