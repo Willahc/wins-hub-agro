@@ -96,10 +96,11 @@
               <td data-label="Contato">
                 <template x-if="r.whatsapp">
                   <div><a class="wa" :href="'https://wa.me/55'+r.whatsapp" target="_blank" x-text="fmtFone(r.whatsapp)"></a>
-                    <div class="src" x-show="r.whats_origem==='ancora'">via fazenda âncora</div></div>
+                    <div class="src" x-show="r.whats_origem==='ancora' && !r.whats_compartilhado">via fazenda âncora</div>
+                    <div class="src" x-show="r.whats_compartilhado" style="color:#b8860b" title="mesmo número em vários cadastros distintos — provável central/contador">⚠ compartilhado — confirmar de quem é</div></div>
                 </template>
                 <template x-if="!r.whatsapp && r.email">
-                  <a class="mail" :href="'mailto:'+r.email" x-text="r.email"></a>
+                  <a class="mail" :class="r.email_tier==='contador'?'warn':''" :href="'mailto:'+r.email" :title="r.email_tier==='contador'?(r.email+' — parece contador/escritório, confirmar'):r.email"><span x-show="r.email_tier==='contador'" style="color:#b8860b">⚠ </span><span x-text="r.email"></span></a>
                 </template>
                 <span x-show="!r.whatsapp && !r.email" style="color:#bbb">—</span>
               </td>

@@ -2036,7 +2036,9 @@ def _leads_total(uf, segmento):
 # ---------------------------------------------------------------------------
 FAZ_COLS = ("prioridade","nome_fazenda","razao","cnpj_completo","uf","municipio","decisor",
     "operador_jovem","n_decisores","dono_n_fazendas","capital_mi","sinal_genetico","touros_nelore",
-    "whatsapp","whats_alta_conf","celular","instagram","followers","porte_digital","email","email_tier",
+    "whatsapp","whats_alta_conf",
+    "(whatsapp IS NOT NULL AND regexp_replace(whatsapp,'\\D','','g') IN (SELECT fone FROM prospeccao.contato_compartilhado)) AS whats_compartilhado",
+    "celular","instagram","followers","porte_digital","email","email_tier",
     "telefone_rfb","dominio","linkedin","canal_recomendado","cnpj_basico",
     # --- colunas de DEMANDA (matview prospeccao.lead_demanda, superset de fazenda_nacional) ---
     "matrizes_municipio","sicor_credito_matriz_flag","deserto_vet","prioridade_final")
@@ -2228,7 +2230,13 @@ def holdings_list(uf: str = None, canal: str = None, tipo: str = None,
             f"""
             SELECT cnpj14, cnpj_basico, razao, nome_fantasia, tipo, uf, municipio,
                    cnae_principal, capital_social, situacao, email,
-                   whatsapp, whats_origem, canal, n_socios_agro, ancora_razao, score
+                   CASE WHEN email ~* 'cont(abil|ador|abilidade)|escritorio|fiscal|assessoria|advoc'
+                          THEN 'contador'
+                        WHEN email IS NOT NULL THEN 'ok' END AS email_tier,
+                   whatsapp, whats_origem,
+                   (whatsapp IS NOT NULL AND regexp_replace(whatsapp,'\\D','','g')
+                        IN (SELECT fone FROM prospeccao.contato_compartilhado)) AS whats_compartilhado,
+                   canal, n_socios_agro, ancora_razao, score
             FROM prospeccao.holding_lead_ui
             WHERE {wsql}
             ORDER BY {col} {dir_sql} NULLS LAST, capital_social DESC NULLS LAST, cnpj14
@@ -2962,7 +2970,9 @@ def ilp_leads(uf: str = None, limit: int = 100):
         rows = query(
             f"""SELECT il.ilp_score, il.uf, il.municipio, il.nome_fazenda, il.razao, il.cnpj_completo,
                    il.decisor, il.capital_mi, il.dono_n_fazendas, il.whatsapp, ld.whats_alta_conf,
-                   il.email, il.canal_recomendado, il.delta_agri_recente_ha, il.pasto_resta_ha
+                   (il.whatsapp IS NOT NULL AND regexp_replace(il.whatsapp,'\\D','','g')
+                        IN (SELECT fone FROM prospeccao.contato_compartilhado)) AS whats_compartilhado,
+                   il.email, ld.email_tier, il.canal_recomendado, il.delta_agri_recente_ha, il.pasto_resta_ha
                 FROM prospeccao.ilp_lead il
                 LEFT JOIN prospeccao.lead_demanda ld ON ld.cnpj_basico = il.cnpj_basico
                 WHERE {' AND '.join(where)}
