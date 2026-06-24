@@ -2937,6 +2937,35 @@ def demanda_pasto_vigor(uf: str = None, limit: int = 2000, min_ha: int = 1000):
         return _error(e)
 
 
+@app.get("/api/demanda/lavoura")
+def demanda_lavoura(uf: str = None, limit: int = 2000, min_ha: int = 5000):
+    """Área de LAVOURA (temporária) por município — IBGE/PAM via BigBase dos Dados
+    (mercado.pam_lavoura, ano mais recente). Onde a agricultura avança = frente
+    ILP (pecuária→grão) e território de inputs agrícolas (BASF)."""
+    try:
+        return query(
+            """
+            WITH lav AS (
+                SELECT codigo_ibge, SUM(area_plantada) AS ha
+                FROM mercado.pam_lavoura
+                WHERE ano = (SELECT max(ano) FROM mercado.pam_lavoura)
+                GROUP BY 1
+            )
+            SELECT m.nome AS municipio, m.uf, m.latitude AS lat, m.longitude AS lng,
+                   ROUND(l.ha) AS lavoura_ha
+            FROM lav l
+            JOIN referencia.municipio m ON m.codigo_ibge = l.codigo_ibge
+            WHERE l.ha > %(min_ha)s
+              AND (%(uf)s IS NULL OR m.uf = %(uf)s)
+            ORDER BY lavoura_ha DESC
+            LIMIT %(limit)s
+            """,
+            {"uf": uf, "limit": min(limit, 2000), "min_ha": min_ha},
+        )
+    except Exception as e:
+        return _error(e)
+
+
 def _territorio_dados(uf):
     """Agrega a inteligência comercial de um estado (panorama, municípios prioritários
     = Desertos Vet por rebanho, e grandes grupos). Base do relatório territorial."""
