@@ -40,6 +40,7 @@
       <option value="pasto">🌱 Área de pasto (MapBiomas)</option>
       <option value="vigor">⚠️ Pasto degradado (MapBiomas)</option>
       <option value="lavoura">🌾 Área de lavoura (PAM/IBGE)</option>
+      <option value="ilp">🔄 Transição ILP (pecuária→grão)</option>
       <option value="leite">🥛 Produção de leite</option>
       <option value="valor">💰 Valor da produção</option>
     </select>
@@ -81,6 +82,7 @@ function mapa(){
       pasto:{title:'Área de pasto (MapBiomas 2024)',items:[{c:'#1b5e20',l:'> 500 mil ha'},{c:'#43a047',l:'200–500 mil'},{c:'#81c784',l:'50–200 mil'},{c:'#c8e6c9',l:'< 50 mil ha'}]},
       vigor:{title:'Pasto degradado (% do pasto · MapBiomas 2022)',items:[{c:'#b71c1c',l:'≥ 50% degradado'},{c:'#e65100',l:'30–50%'},{c:'#f9a825',l:'15–30%'},{c:'#cddc39',l:'< 15%'}]},
       lavoura:{title:'Área de lavoura (PAM/IBGE)',items:[{c:'#f57f17',l:'> 200 mil ha'},{c:'#fbc02d',l:'50–200 mil'},{c:'#fff176',l:'10–50 mil'},{c:'#fff9c4',l:'< 10 mil ha'}]},
+      ilp:{title:'Transição ILP (% fazendas pecuária→grão)',items:[{c:'#6a1b9a',l:'≥ 40% das fazendas'},{c:'#8e24aa',l:'25–40%'},{c:'#ab47bc',l:'15–25%'},{c:'#ce93d8',l:'< 15%'}]},
       leite:{title:'Produção de leite',items:[{c:'#1976d2',l:'mil L/ano'}]},
       valor:{title:'Valor da produção',items:[{c:'#d4a017',l:'R$ mil/ano'}]}
     },
@@ -128,6 +130,12 @@ function mapa(){
           const c=ha>=200000?'#f57f17':ha>=50000?'#fbc02d':ha>=10000?'#fff176':'#fff9c4';
           L.circleMarker([p.lat,p.lng],{radius:Math.max(4,Math.min(20,Math.sqrt(ha)/70)),color:'#e65100',fillColor:c,fillOpacity:.7,weight:1})
             .bindPopup(`<b>${this.esc(p.municipio)} (${this.esc(p.uf)})</b><br>Lavoura: <b>${(ha/1000).toLocaleString('pt-BR',{maximumFractionDigits:0})}</b> mil ha plantados<br><span style="color:#888">IBGE/PAM · ano mais recente</span>`).addTo(g); });
+      } else if(this.mapLayer==='ilp'){
+        pts=await this.jget(`/api/demanda/ilp-transicao?${ufq}min_faz=50&limit=2000`);
+        (pts||[]).forEach(p=>{ if(p.lat==null)return; const pct=Number(p.pct_transicao), nf=Number(p.fazendas);
+          const c=pct>=40?'#6a1b9a':pct>=25?'#8e24aa':pct>=15?'#ab47bc':'#ce93d8';
+          L.circleMarker([p.lat,p.lng],{radius:Math.max(4,Math.min(20,Math.sqrt(nf)/12)),color:'#4a148c',fillColor:c,fillOpacity:.7,weight:1})
+            .bindPopup(`<b>${this.esc(p.municipio)} (${this.esc(p.uf)})</b><br>Transição ILP: <b>${nf.toLocaleString('pt-BR')}</b> fazendas com lavoura > pasto<br><b style="color:${c}">${pct}%</b> das fazendas agro do município<br><span style="color:#888">por fazenda · MapBiomas/CAR</span>`).addTo(g); });
       } else if(this.mapLayer==='leite'){
         pts=await this.jget(`/api/externo/leite/mapa?${ufq}min_litros=5000`);
         (pts||[]).forEach(p=>{ if(p.lat==null)return;

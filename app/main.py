@@ -2989,6 +2989,37 @@ def demanda_lavoura(uf: str = None, limit: int = 2000, min_ha: int = 5000):
         return _error(e)
 
 
+@app.get("/api/demanda/ilp-transicao")
+def demanda_ilp_transicao(uf: str = None, limit: int = 2000, min_faz: int = 50):
+    """Transição ILP por município (pecuária→grão): fração das fazendas CAR onde a
+    LAVOURA já supera o PASTO (área por fazenda via MapBiomas, geometria CAR). Sinal
+    fino de QUEM está convertendo — alvo de inputs agrícolas (BASF/Pasto-pra-Grão)."""
+    try:
+        return query(
+            """
+            WITH t AS (
+                SELECT codigo_ibge_mun,
+                       count(*) FILTER (WHERE area_lavoura_ha > area_pasto_ha AND area_pasto_ha > 0) AS n_trans,
+                       count(*) FILTER (WHERE area_pasto_ha > 0 OR area_lavoura_ha > 0) AS n_agro
+                FROM prospeccao.imovel_rural
+                WHERE codigo_ibge_mun ~ '^[0-9]+$'
+                GROUP BY 1
+            )
+            SELECT m.nome AS municipio, m.uf, m.latitude AS lat, m.longitude AS lng,
+                   t.n_trans AS fazendas,
+                   ROUND(100.0 * t.n_trans / NULLIF(t.n_agro, 0)) AS pct_transicao
+            FROM t JOIN referencia.municipio m ON m.codigo_ibge = t.codigo_ibge_mun::integer
+            WHERE t.n_trans > %(min_faz)s
+              AND (%(uf)s IS NULL OR m.uf = %(uf)s)
+            ORDER BY t.n_trans DESC
+            LIMIT %(limit)s
+            """,
+            {"uf": uf, "limit": min(limit, 2000), "min_faz": min_faz},
+        )
+    except Exception as e:
+        return _error(e)
+
+
 def _territorio_dados(uf):
     """Agrega a inteligência comercial de um estado (panorama, municípios prioritários
     = Desertos Vet por rebanho, e grandes grupos). Base do relatório territorial."""
