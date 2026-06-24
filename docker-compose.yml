@@ -70,8 +70,32 @@ services:
       # Prospecção privada (servida em /prospec/, atrás de Basic Auth) — read-only
       - ./prospeccao-campanella:/var/www/prospec:ro
       - ./nginx/.htpasswd_prospec:/etc/nginx/.htpasswd_prospec:ro
+      # Cardápios publicados pelo Cliente Inteligente (servidos em /loja/<slug>/) — read-only
+      - ./ci-lojas:/var/www/lojas:ro
     depends_on:
       - api
+      - ci-api
+
+  # Backend do Cliente Inteligente (Fase 2): contas, backup cifrado, publicar cardápio.
+  # Separado da api do Agro (produtos distintos). SQLite + filesystem, sem custo extra.
+  ci-api:
+    build: ./ci-api
+    restart: always
+    mem_limit: 256m
+    logging: *default-logging
+    environment:
+      TZ: America/Sao_Paulo
+    expose:
+      - "8000"
+    volumes:
+      - ./ci-data:/data
+      - ./ci-lojas:/data/lojas
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health',timeout=3).getcode()==200 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   certbot:
     # pinada na versão em produção — :latest flutua
