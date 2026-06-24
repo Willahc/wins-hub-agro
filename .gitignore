@@ -50,6 +50,11 @@ ci/
 # Prospecção Campanella — artefatos gerados + lista de leads (PII), não é código do produto
 prospeccao-campanella/
 
+# Backend do Cliente Inteligente: dados de runtime (sqlite/backups cifrados) e
+# cardápios publicados pelos lojistas — não versionar (dados, não código)
+ci-data/
+ci-lojas/
+
 # flag efêmero do cron de reload do cert (scripts/reload_nginx_cert.sh)
 certbot/conf/.nginx-reload-needed
 
