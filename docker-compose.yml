@@ -67,6 +67,9 @@ services:
       - ./certbot/www:/var/www/certbot
       - ./certbot/conf:/etc/letsencrypt
       - ./ci:/var/www/ci
+      # Prospecção privada (servida em /prospec/, atrás de Basic Auth) — read-only
+      - ./prospeccao-campanella:/var/www/prospec:ro
+      - ./nginx/.htpasswd_prospec:/etc/nginx/.htpasswd_prospec:ro
     depends_on:
       - api
 

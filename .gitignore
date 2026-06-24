@@ -30,6 +30,9 @@ data/
 *MFA_QR*.png
 *.recovery.asc
 
+# Senha do /prospec (Basic Auth, hash apr1) — segredo, não versionar
+nginx/.htpasswd_prospec
+
 # Deliverables de prospecção (PII) movidos da raiz
 deliverables/
 # Exports de prospecção (PII: decisor/WhatsApp/e-mail) — geráveis via scripts
@@ -43,6 +46,9 @@ app/frontend/dl/*.pdf
 # Cliente Inteligente — projeto SEPARADO, repo próprio: github.com/Willahc/cliente-inteligente
 # (servido daqui via mount do compose; versionado no repo dele, não neste)
 ci/
+
+# Prospecção Campanella — artefatos gerados + lista de leads (PII), não é código do produto
+prospeccao-campanella/
 
 # flag efêmero do cron de reload do cert (scripts/reload_nginx_cert.sh)
 certbot/conf/.nginx-reload-needed
