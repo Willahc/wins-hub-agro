@@ -27,6 +27,7 @@ WITH base AS (
     ld.deserto_vet,
     ld.tem_canal,
     he.email_decisor AS email_hunter,
+    he.verif_status AS email_verif,
     -- ====== SCORE DE FIT (0-100), pesos na ordem do brief ======
     LEAST(100, (
         -- (2) sinal genetico — maior peso entre os criterios pontuados
@@ -85,7 +86,7 @@ ranked AS (
   FROM base
 )
 SELECT uf, rn AS rank_uf, municipio, nome_fazenda, razao, cnpj_completo, cnpj_basico,
-       decisor, operador_jovem, whatsapp, whats_alta_conf, email_hunter, instagram, followers,
+       decisor, operador_jovem, whatsapp, whats_alta_conf, email_hunter, email_verif, instagram, followers,
        capital_mi, sinal_genetico, touros_nelore, matrizes_municipio, deserto_vet, tem_canal,
        score_fit
 FROM ranked
