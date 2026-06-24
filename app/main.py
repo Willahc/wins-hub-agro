@@ -140,15 +140,38 @@ PROTOCOLO_IATF = [
 
 # Heurística DEP(PES) -> % prenhez estimada (ANCP). base + DEP×coef, limitada a [50,90].
 # Coeficiente provisório — calibrar com zootecnista; SEMPRE exibir com "~" (estimativa).
-PRENHEZ_BASE = 65.0
+PRENHEZ_BASE = 65.0           # prior (constante) — fallback da base calibrada
 PRENHEZ_COEF = 0.3
+# Brief A/F2 — base de prenhez AUTO-CALIBRADA pelos DGs reais (cache em memória + fallback).
+_CALIB_PRENHEZ = {"base": None, "ts": 0.0}
+_CALIB_TTL = 300.0
+
+
+def _prenhez_base():
+    """Base de prenhez do motor: a CALIBRADA pelos DGs reais (fazenda.calibracao_prenhez)
+    quando existe, senão o prior PRENHEZ_BASE. Cache em memória (TTL) + fallback seguro —
+    o motor aprende sozinho com o resultado real agregado de todas as fazendas."""
+    now = time.time()
+    if _CALIB_PRENHEZ["base"] is not None and (now - _CALIB_PRENHEZ["ts"]) < _CALIB_TTL:
+        return _CALIB_PRENHEZ["base"]
+    base = PRENHEZ_BASE
+    try:
+        r = query("SELECT base_calibrada FROM fazenda.calibracao_prenhez WHERE id = 1")
+        if r and not isinstance(r, dict) and r[0].get("base_calibrada") is not None:
+            base = float(r[0]["base_calibrada"])
+    except Exception:
+        base = PRENHEZ_BASE
+    _CALIB_PRENHEZ["base"] = base
+    _CALIB_PRENHEZ["ts"] = now
+    return base
 
 
 def _prenhez_est(pes_dep):
-    """Taxa de prenhez estimada (%) a partir do DEP de Perímetro Escrotal. None se sem dado."""
+    """Taxa de prenhez estimada (%) a partir do DEP de Perímetro Escrotal. None se sem dado.
+    Usa a base AUTO-CALIBRADA (Brief A/F2 — o motor aprende com o realizado)."""
     if pes_dep is None:
         return None
-    return int(max(50, min(90, round(PRENHEZ_BASE + float(pes_dep) * PRENHEZ_COEF))))
+    return int(max(50, min(90, round(_prenhez_base() + float(pes_dep) * PRENHEZ_COEF))))
 
 # Mapeamento prioridade -> caracteristica_id (IDs reais confirmados no B0 da Sessão 3).
 # Só usamos traços com objetivo_aumentar=TRUE (maior = melhor), pois o score normaliza
@@ -4703,10 +4726,42 @@ def campo_cruzamento(req: CruzamentoIn):
         return _error(e)
 
 
+def _recalc_calibracao_prenhez(cur):
+    """Brief A/F2: recalcula a base de prenhez do motor a partir dos DGs reais e persiste
+    em fazenda.calibracao_prenhez. Shrinkage p/ o prior (k=20) sobre os snapshots FIXOS de
+    previsão → estável/idempotente (sem feedback loop). Refresca o cache. Nunca lança."""
+    try:
+        cur.execute(
+            """SELECT COUNT(*) AS n,
+                      ROUND(100.0*COUNT(*) FILTER (WHERE resultado='prenhe')/NULLIF(COUNT(*),0)) AS real,
+                      ROUND(AVG(prenhez_est)) AS prev
+                 FROM fazenda.cruzamento
+                WHERE resultado IN ('prenhe','vazia') AND prenhez_est IS NOT NULL""")
+        o = cur.fetchone()
+        n = (o and o.get("n")) or 0
+        if not n or o.get("real") is None or o.get("prev") is None:
+            return
+        k = 20
+        base = round(PRENHEZ_BASE + (n / (n + k)) * (float(o["real"]) - float(o["prev"])), 1)
+        base = max(50.0, min(90.0, base))
+        conf = "alta" if n >= 30 else ("média" if n >= 10 else "baixa")
+        cur.execute(
+            """INSERT INTO fazenda.calibracao_prenhez (id, base_calibrada, n, confianca, atualizado_em)
+                    VALUES (1, %(b)s, %(n)s, %(c)s, now())
+               ON CONFLICT (id) DO UPDATE SET base_calibrada=EXCLUDED.base_calibrada,
+                    n=EXCLUDED.n, confianca=EXCLUDED.confianca, atualizado_em=now()""",
+            {"b": base, "n": n, "c": conf})
+        _CALIB_PRENHEZ["base"] = base
+        _CALIB_PRENHEZ["ts"] = time.time()
+    except Exception:
+        pass  # calibração nunca pode quebrar o registro de DG
+
+
 @app.post("/api/campo/cruzamento/dg")
 def campo_cruzamento_dg(req: DGIn):
     """Registra o diagnóstico de gestação de um cruzamento (Brief A — o REALIZADO da
-    previsão de prenhez). UPDATE idempotente por natureza (regravar o mesmo valor é seguro)."""
+    previsão de prenhez). UPDATE idempotente por natureza (regravar o mesmo valor é seguro).
+    Após gravar, RE-CALIBRA a base do motor (Brief A/F2) na mesma transação."""
     try:
         res = (req.resultado or "").lower()
         if res not in ("prenhe", "vazia", "pendente"):
@@ -4723,6 +4778,7 @@ def campo_cruzamento_dg(req: DGIn):
             row = cur.fetchone()
             if not row:
                 return {"error": "cruzamento não encontrado"}
+            _recalc_calibracao_prenhez(cur)   # o motor aprende com este DG
             return {"id": row["id"], "resultado": row["resultado"], "ok": True}
     except Exception as e:
         return _error(e)
@@ -4821,7 +4877,8 @@ def aprendizado_prenhez(cliente_id: int = None):
             k = 20  # peso do prior: até ~20 DGs confia mais no chute (não persegue ruído)
             ajuste = (o["prenhez_real"] - o["prenhez_prev"])
             base_sugerida = round(PRENHEZ_BASE + (n / (n + k)) * ajuste)
-            calib = {"base_atual": PRENHEZ_BASE, "base_sugerida": base_sugerida,
+            calib = {"base_prior": PRENHEZ_BASE, "base_calibrada": _prenhez_base(),
+                     "base_sugerida": base_sugerida, "n": n, "auto": True,
                      "confianca": "alta" if n >= 30 else ("média" if n >= 10 else "baixa")}
         return {"por_touro": por_touro, "overall": o, "calibracao": calib}
     except Exception as e:
