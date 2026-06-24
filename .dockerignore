@@ -1,0 +1,18 @@
+# Contexto de build da imagem api — só precisa de app/ + requirements.txt.
+# Tudo abaixo é dado/tooling/repo-separado e NÃO deve entrar na imagem.
+.git
+.gitignore
+data/
+deliverables/
+exports/
+backups/
+ci/
+certbot/
+nginx/
+**/__pycache__/
+*.pyc
+*.pyo
+.venv*
+.env.gcp
+*.log
+/tmp

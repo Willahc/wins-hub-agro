@@ -2390,7 +2390,8 @@ def api_farm(cnpj: str):
         if f.get("municipio"):   # corte: prioriza INSEMINADOR (tier A); senão melhor contato/CRMV
             regiao = query("""SELECT nome, COALESCE(NULLIF(profissao,''),
                        CASE crmv_cat WHEN 'Z' THEN 'zootecnista' WHEN 'V' THEN 'veterinario' END) AS prof,
-                       crmv, COALESCE(whatsapp,celular,prospeccao.cel_whats(tel_melhor)) AS contato, email_receita AS email
+                       crmv, COALESCE(whatsapp,celular,prospeccao.cel_whats(tel_melhor)) AS contato,
+                       (COALESCE(whatsapp,celular) IS NOT NULL) AS contato_conf, email_receita AS email
                 FROM prospeccao.v_tecnico_fazenda_ui
                 WHERE upper(municipio)=upper(%(m)s) AND uf=%(uf)s AND categoria IS NOT NULL AND nome !~ '^[0-9]'
                 ORDER BY (tier='A-inseminador') DESC, (COALESCE(whatsapp,celular) IS NOT NULL) DESC,
@@ -2454,7 +2455,8 @@ def api_farm(cnpj: str):
                     ORDER BY 1 LIMIT 8""", {"uf": uf, "c": cb, "k": k})
                 conexoes["tecnicos"] = query("""
                     SELECT DISTINCT t.nome, COALESCE(NULLIF(t.profissao,''),'técnico') AS prof, t.crmv,
-                           COALESCE(t.whatsapp,t.celular,t.tel_receita) AS contato
+                           COALESCE(t.whatsapp,t.celular,t.tel_receita) AS contato,
+                           (COALESCE(t.whatsapp,t.celular) IS NOT NULL) AS contato_conf
                     FROM prospeccao.tecnico_social t
                     WHERE t.uf=%(uf)s AND t.nome !~ '^[0-9]'
                       AND %(k)s IN (prospeccao.fone_key(t.whatsapp), prospeccao.fone_key(t.celular),
@@ -2956,14 +2958,15 @@ def ilp_leads(uf: str = None, limit: int = 100):
     try:
         where = ["TRUE"]; p = {"lim": min(max(limit, 1), 1000)}
         if uf:
-            where.append("uf = %(uf)s"); p["uf"] = uf.upper()
+            where.append("il.uf = %(uf)s"); p["uf"] = uf.upper()
         rows = query(
-            f"""SELECT ilp_score, uf, municipio, nome_fazenda, razao, cnpj_completo,
-                   decisor, capital_mi, dono_n_fazendas, whatsapp, email, canal_recomendado,
-                   delta_agri_recente_ha, pasto_resta_ha
-                FROM prospeccao.ilp_lead
+            f"""SELECT il.ilp_score, il.uf, il.municipio, il.nome_fazenda, il.razao, il.cnpj_completo,
+                   il.decisor, il.capital_mi, il.dono_n_fazendas, il.whatsapp, ld.whats_alta_conf,
+                   il.email, il.canal_recomendado, il.delta_agri_recente_ha, il.pasto_resta_ha
+                FROM prospeccao.ilp_lead il
+                LEFT JOIN prospeccao.lead_demanda ld ON ld.cnpj_basico = il.cnpj_basico
                 WHERE {' AND '.join(where)}
-                ORDER BY ilp_score DESC, capital_mi DESC NULLS LAST
+                ORDER BY il.ilp_score DESC, il.capital_mi DESC NULLS LAST
                 LIMIT %(lim)s""", p)
         return {"rows": rows, "total": len(rows)}
     except Exception as e:
@@ -3663,7 +3666,7 @@ def api_tecnico(cnpj: str):
             p = {"lat": g["lat"], "lon": g["lon"]}
             nearby = query(_VIZ_CTE + """
                 SELECT f.cnpj_completo, f.nome_fazenda, f.municipio, f.uf, f.decisor,
-                       f.sinal_genetico, f.touros_nelore, f.whatsapp, f.capital_mi, f.canal_recomendado,
+                       f.sinal_genetico, f.touros_nelore, f.whatsapp, f.whats_alta_conf, f.capital_mi, f.canal_recomendado,
                        viz.km, d.classificacao_vet, count(*) OVER() AS total
                 FROM viz
                 JOIN prospeccao.fazenda_ibge fi ON fi.codigo_ibge=viz.codigo_ibge

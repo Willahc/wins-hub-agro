@@ -104,10 +104,11 @@
               <td data-label="Canal recomendado"><span class="badge" :class="canalBadge(r.canal_recomendado)" x-text="r.canal_recomendado"></span></td>
               <td data-label="Contato">
                 <div style="display:flex;gap:6px;flex-wrap:wrap">
-                  <a x-show="r.whatsapp" class="badge ok" :href="'https://wa.me/55'+r.whatsapp" target="_blank" title="WhatsApp">WhatsApp<span x-show="r.whats_alta_conf"> ✓</span></a>
+                  <a x-show="r.whatsapp&&r.whats_alta_conf" class="badge ok" :href="'https://wa.me/55'+r.whatsapp" target="_blank" title="WhatsApp verificado (DDD bate a UF / origem pública)">WhatsApp ✓</a>
+                  <a x-show="r.whatsapp&&!r.whats_alta_conf" class="badge warn" :href="'https://wa.me/55'+r.whatsapp" target="_blank" title="número NÃO verificado — pode ser inferido do telefone da Receita (contador/terceiro/antigo). Confirmar antes de abordar.">WhatsApp? a confirmar</a>
                   <a x-show="r.email" class="badge info" :href="'mailto:'+r.email" :title="r.email" x-text="emailLabel(r.email_tier)"></a>
                   <a x-show="r.instagram" class="badge neutral" :href="'https://instagram.com/'+r.instagram" target="_blank" x-text="'@'+r.instagram"></a>
-                  <span x-show="!r.whatsapp&&!r.email&&!r.instagram&&r.telefone_rfb" class="badge neutral mono" x-text="r.telefone_rfb"></span>
+                  <span x-show="!r.whatsapp&&!r.email&&!r.instagram&&r.telefone_rfb" class="badge neutral mono" title="telefone do cadastro da Receita — a confirmar (pode ser contador/terceiro/antigo)" x-text="'☎ '+r.telefone_rfb+' (Receita)'"></span>
                 </div>
               </td>
               <td data-label="Grupo"><span x-show="r.dono_n_fazendas>1" class="badge gold" x-text="r.dono_n_fazendas+' faz.'"></span></td>

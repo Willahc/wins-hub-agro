@@ -141,7 +141,8 @@
                 <td data-label="Decisor" x-text="l.decisor||'—'"></td>
                 <td data-label="Δ lavoura recente" x-text="l.delta_agri_recente_ha?('+'+fmtN(l.delta_agri_recente_ha)+' ha'):'—'" title="hectares de lavoura ganhos 2020→2024 no município"></td>
                 <td data-label="Contato">
-                  <a x-show="l.whatsapp" class="badge ok" :href="'https://wa.me/55'+l.whatsapp" target="_blank">WhatsApp</a>
+                  <a x-show="l.whatsapp&&l.whats_alta_conf" class="badge ok" :href="'https://wa.me/55'+l.whatsapp" target="_blank" title="WhatsApp verificado">WhatsApp ✓</a>
+                  <a x-show="l.whatsapp&&!l.whats_alta_conf" class="badge warn" :href="'https://wa.me/55'+l.whatsapp" target="_blank" title="número NÃO verificado — pode ser inferido da Receita. Confirmar antes de abordar.">WhatsApp? a confirmar</a>
                   <a x-show="!l.whatsapp && l.email" class="badge info" :href="'mailto:'+l.email" :title="l.email">e-mail</a>
                   <span x-show="!l.whatsapp && !l.email" style="color:#bbb">—</span>
                 </td>

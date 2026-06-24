@@ -98,7 +98,8 @@
                   <td data-label="Cobertura"><span class="badge" :class="covBadge(r.classificacao_vet)" x-text="r.classificacao_vet||'—'"></span></td>
                   <td data-label="Decisor" x-text="cleanNome(r.decisor)||'—'"></td>
                   <td data-label="Contato">
-                    <a x-show="r.whatsapp" class="badge ok" :href="'https://wa.me/55'+zap(r.whatsapp)" target="_blank">WhatsApp</a>
+                    <a x-show="r.whatsapp&&r.whats_alta_conf" class="badge ok" :href="'https://wa.me/55'+zap(r.whatsapp)" target="_blank" title="WhatsApp verificado">WhatsApp ✓</a>
+                    <a x-show="r.whatsapp&&!r.whats_alta_conf" class="badge warn" :href="'https://wa.me/55'+zap(r.whatsapp)" target="_blank" title="número NÃO verificado — pode ser inferido da Receita. Confirmar antes de abordar.">WhatsApp? a confirmar</a>
                     <span x-show="!r.whatsapp" style="color:#ccc">—</span>
                   </td>
                 </tr>
@@ -160,7 +161,8 @@ function tficha(){
     contatos(t){
       let h=[];
       const z=t.whatsapp||t.celular||t.tel_melhor;
-      if(z) h.push(`<a class="badge ok" href="https://wa.me/55${this.zap(z)}" target="_blank">WhatsApp</a>`);
+      const zOk=!!(t.whatsapp||t.celular);
+      if(z) h.push(`<a class="badge ${zOk?'ok':'warn'}" href="https://wa.me/55${this.zap(z)}" target="_blank" title="${zOk?'WhatsApp/celular do técnico':'telefone da Receita — a confirmar (pode ser inferido/antigo)'}">${zOk?'WhatsApp':'cel. RFB? a confirmar'}</a>`);
       if(t.email) h.push(`<a class="badge info" href="mailto:${t.email}">e-mail</a>`);
       if(t.instagram) h.push(`<a class="badge neutral" href="https://instagram.com/${String(t.instagram).replace(/^@/,'')}" target="_blank">@${String(t.instagram).replace(/^@/,'')}</a>`);
       if(t.site) h.push(`<a class="badge neutral" href="${/^https?:/.test(t.site)?t.site:'http://'+t.site}" target="_blank">site</a>`);

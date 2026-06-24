@@ -278,15 +278,17 @@ function ficha(){
     igHandle(s){ return s? String(s).replace(/^@/,'').replace(/^.*instagram\.com\//,'').replace(/\/.*$/,'') : ''; },
     contatos(f){
       let h=[];
-      if(f.whatsapp) h.push(`<a class="badge ok" href="https://wa.me/55${this.zapDigits(f.whatsapp)}" target="_blank">WhatsApp${f.whats_alta_conf?' ✓':''}</a>`);
+      if(f.whatsapp&&f.whats_alta_conf) h.push(`<a class="badge ok" href="https://wa.me/55${this.zapDigits(f.whatsapp)}" target="_blank" title="WhatsApp verificado (DDD bate a UF / origem pública)">WhatsApp ✓</a>`);
+      else if(f.whatsapp) h.push(`<a class="badge warn" href="https://wa.me/55${this.zapDigits(f.whatsapp)}" target="_blank" title="número NÃO verificado — pode ser inferido do telefone da Receita. Confirmar antes de abordar.">WhatsApp? a confirmar</a>`);
       if(f.email) h.push(`<a class="badge ${f.email_tier==='valid'?'info':'neutral'}" href="mailto:${f.email}" title="${f.email}">e-mail${f.email_tier==='rfb'||f.email_tier==='rfb-contador'?' (Receita)':''}</a>`);
       if(f.instagram) h.push(`<a class="badge neutral" href="https://instagram.com/${this.igHandle(f.instagram)}" target="_blank">@${this.igHandle(f.instagram)}</a>`);
-      if(f.telefone_rfb && !f.whatsapp) h.push(`<a class="badge neutral mono" href="tel:+55${this.zapDigits(f.telefone_rfb)}">${f.telefone_rfb}</a>`);
+      if(f.telefone_rfb && !f.whatsapp) h.push(`<a class="badge neutral mono" href="tel:+55${this.zapDigits(f.telefone_rfb)}" title="telefone do cadastro da Receita — a confirmar (pode ser contador/terceiro/antigo)">☎ ${f.telefone_rfb} (Receita)</a>`);
       return h.length? h.join(' ') : '<span style="color:#ccc">sem canal</span>';
     },
     contatoTec(t){
       let h=[];
-      if(t.contato) h.push(`<a class="badge ok" href="https://wa.me/55${this.zapDigits(t.contato)}" target="_blank">${this.zapDigits(t.contato).length>=10?'WhatsApp':t.contato}</a>`);
+      if(t.contato){ const ok = t.contato_conf!==false;
+        h.push(`<a class="badge ${ok?'ok':'warn'}" href="https://wa.me/55${this.zapDigits(t.contato)}" target="_blank" title="${ok?'WhatsApp/celular do técnico':'celular inferido do telefone da Receita — não verificado, confirmar antes'}">${ok?(this.zapDigits(t.contato).length>=10?'WhatsApp':t.contato):'cel. RFB? a confirmar'}</a>`); }
       if(t.email) h.push(`<a class="badge info" href="mailto:${t.email}">e-mail</a>`);
       return h.length? h.join(' ') : '<span style="color:#ccc">sem contato</span>';
     },
