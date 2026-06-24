@@ -39,3 +39,10 @@ exports/
 
 # PDF de pricing interno (gerável via scripts/gen_valuation_pdf.py)
 app/frontend/dl/*.pdf
+
+# Cliente Inteligente — projeto SEPARADO, repo próprio: github.com/Willahc/cliente-inteligente
+# (servido daqui via mount do compose; versionado no repo dele, não neste)
+ci/
+
+# flag efêmero do cron de reload do cert (scripts/reload_nginx_cert.sh)
+certbot/conf/.nginx-reload-needed
