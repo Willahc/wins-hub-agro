@@ -2,13 +2,16 @@
 -- acender_fazenda_matriz.sql
 -- WiNS Hub Agro — prospeccao
 --
--- Popula prospeccao.fazenda_area a partir do pasto por fazenda computado via
--- MapBiomas (imovel_rural.area_pasto_ha — ver scripts/pasto_por_fazenda_br.py),
+-- Popula prospeccao.fazenda_area a partir da ÁREA DE PASTEJO por fazenda computada
+-- via MapBiomas (imovel_rural — ver scripts/pasto_full_br.py),
 -- ACENDENDO a view prospeccao.v_fazenda_matriz (atribuir_matrizes_fazenda.sql).
 --
--- area_ha = area_pasto_ha (classe 15, pasto plantado) — o driver certo p/
---   distribuir matrizes/bovinos (gado pasta em pasto, não em soja/floresta).
--- Só fazendas com pasto > 0 (CHECK area_ha > 0; farm sem pasto = 0 matriz).
+-- area_ha = area_pasto_ha (classe 15, pasto plantado) + area_campo_ha (classe 12,
+--   campo nativo) = ÁREA DE PASTEJO real. Incluir o campo nativo corrige a
+--   subatribuição em RS/Pampa, MS/Pantanal e cerrados de campo, onde o gado pasta
+--   em campo natural (não em pasto plantado). É o driver certo p/ distribuir
+--   matrizes/bovinos (gado não pasta em soja/floresta).
+-- Só fazendas com pastejo > 0 (CHECK area_ha > 0; sem pastejo = 0 matriz).
 -- SEM cnpj_basico/CPF: só codigo_car (identifica o imóvel, não a pessoa) — LGPD.
 --
 -- Idempotente: limpa as linhas de origem MapBiomas e reinsere.
@@ -17,12 +20,14 @@
 -- =============================================================================
 BEGIN;
 
-DELETE FROM prospeccao.fazenda_area WHERE fonte_geomatch = 'MAPBIOMAS_C15';
+DELETE FROM prospeccao.fazenda_area WHERE fonte_geomatch IN ('MAPBIOMAS_C15','MAPBIOMAS_PASTEJO');
 
 INSERT INTO prospeccao.fazenda_area (codigo_car, codigo_ibge, area_ha, fonte_geomatch)
-SELECT codigo_car, codigo_ibge_mun::integer, area_pasto_ha, 'MAPBIOMAS_C15'
+SELECT codigo_car, codigo_ibge_mun::integer,
+       COALESCE(area_pasto_ha,0) + COALESCE(area_campo_ha,0), 'MAPBIOMAS_PASTEJO'
 FROM prospeccao.imovel_rural
-WHERE area_pasto_ha > 0 AND codigo_ibge_mun ~ '^[0-9]+$';
+WHERE COALESCE(area_pasto_ha,0) + COALESCE(area_campo_ha,0) > 0
+  AND codigo_ibge_mun ~ '^[0-9]+$';
 
 COMMIT;
 
