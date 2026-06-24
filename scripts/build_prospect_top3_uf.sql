@@ -60,9 +60,15 @@ WITH base AS (
     ))::int AS score_fit
   FROM prospeccao.lead_demanda ld
   LEFT JOIN prospeccao.hunter_email he ON he.cnpj_basico = ld.cnpj_basico
-  -- FILTRO DURO: so entra quem tem WhatsApp verificado no banco
-  WHERE ld.whatsapp IS NOT NULL
-    AND ld.whatsapp <> ''
+  -- FILTRO DURO: so entra WhatsApp de ALTA CONFIANCA (verificado: DDD bate a UF,
+  -- origem Serper/marca/IG/site). ANTES exigia so 'whatsapp <> ''', o que deixava
+  -- entrar os numeros INFERIDOS do telefone declarado na Receita (contador/3os/
+  -- numero velho) = "pessoas avulsas / outros negocios". Todas as 12 UFs tem >=4
+  -- leads alta-conf, entao o Top 3 continua cheio. (jun/24)
+  WHERE ld.whats_alta_conf IS TRUE
+    -- exclui número compartilhado por >=3 decisores distintos (central/contador):
+    -- mesmo alta-conf, não é o contato confiável daquele lead específico.
+    AND regexp_replace(ld.whatsapp,'\D','','g') NOT IN (SELECT fone FROM prospeccao.contato_compartilhado)
     AND ld.uf IN ('MS','GO','MT','TO','PA','BA','MG','RO','MA','PI','PR','SP')
 ),
 ranked AS (
