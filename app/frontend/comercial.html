@@ -60,6 +60,33 @@
     <div class="m"><div class="k">💵 Dólar</div><div class="v" x-text="dolar?('R$ '+fmtN(dolar.valor)):'—'"></div><div class="d">USD/BRL</div></div>
   </div>
 
+  <!-- ====== Aprendizado (Brief A — o motor calibra com o DG real) ====== -->
+  <div class="card" style="padding:18px;margin-bottom:16px" x-show="aprend && aprend.overall && aprend.overall.n">
+    <h2 style="font-size:17px;margin:0 0 4px;color:#1a3a1a">🧠 Aprendizado — o motor calibra com o resultado real</h2>
+    <div class="sub" style="font-size:12px;margin-bottom:10px">Cada diagnóstico de gestação (DG) registrado no campo <b>recalibra automaticamente</b> a base de prenhez do motor (shrinkage para o prior — não persegue ruído). O fosso: a plataforma aprende com o realizado agregado de todas as fazendas.</div>
+    <div class="macro" style="margin-bottom:10px">
+      <div class="m"><div class="k">Prenhez prevista</div><div class="v" x-text="aprend.overall.prenhez_prev!=null?aprend.overall.prenhez_prev+'%':'—'"></div></div>
+      <div class="m"><div class="k">Prenhez realizada</div><div class="v" x-text="aprend.overall.prenhez_real!=null?aprend.overall.prenhez_real+'%':'—'"></div><div class="d" x-text="'n='+aprend.overall.n+' DGs'"></div></div>
+      <div class="m" x-show="aprend.calibracao"><div class="k">Base auto-calibrada</div><div class="v" x-text="aprend.calibracao?aprend.calibracao.base_calibrada:'—'"></div><div class="d" x-text="aprend.calibracao?('era '+aprend.calibracao.base_prior+' · confiança '+aprend.calibracao.confianca):''"></div></div>
+    </div>
+    <div class="table-scroll" x-show="aprend.por_touro && aprend.por_touro.length">
+      <table class="data">
+        <thead><tr><th>Touro</th><th>DGs</th><th>Prevista</th><th>Realizada</th><th>Δ</th></tr></thead>
+        <tbody>
+          <template x-for="t in aprend.por_touro" :key="t.touro_id">
+            <tr>
+              <td data-label="Touro" x-text="cleanNome(t.touro_nome)"></td>
+              <td data-label="DGs" x-text="t.n"></td>
+              <td data-label="Prevista" x-text="t.prenhez_prev!=null?t.prenhez_prev+'%':'—'"></td>
+              <td data-label="Realizada" x-text="t.prenhez_real!=null?t.prenhez_real+'%':'—'"></td>
+              <td data-label="Δ" :style="(t.prenhez_real-t.prenhez_prev)>=0?'color:#2d5a2d;font-weight:700':'color:#c62828;font-weight:700'" x-text="(t.prenhez_real!=null&&t.prenhez_prev!=null)?(((t.prenhez_real-t.prenhez_prev)>=0?'+':'')+(t.prenhez_real-t.prenhez_prev)+' pp'):'—'"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
   <!-- ====== Território de oportunidade (matview territorio_oportunidade) ====== -->
   <div class="card" style="padding:18px;margin-bottom:16px">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px">
@@ -329,9 +356,11 @@ function comercial(){
     touroModal:false, touro:null, _radar:null,
     terr:{rows:[], uf:'', gap:false, loading:false},
     ilp:{rows:[], uf:'', loading:false},
+    aprend:null,
     async boot(){
       try{ this.ufs=await (await fetch('/api/ufs')).json(); }catch(e){ this.ufs=[]; }
       try{ this.racas=await (await fetch('/api/racas/todas')).json(); }catch(e){ this.racas=[]; }
+      try{ this.aprend=await (await fetch('/api/aprendizado/prenhez')).json(); }catch(e){ this.aprend=null; }
       this.macro();
       this.loadTerritorio();
       this.loadILP();
