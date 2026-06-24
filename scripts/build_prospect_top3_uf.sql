@@ -66,6 +66,9 @@ WITH base AS (
   -- numero velho) = "pessoas avulsas / outros negocios". Todas as 12 UFs tem >=4
   -- leads alta-conf, entao o Top 3 continua cheio. (jun/24)
   WHERE ld.whats_alta_conf IS TRUE
+    -- exclui número compartilhado por >=3 decisores distintos (central/contador):
+    -- mesmo alta-conf, não é o contato confiável daquele lead específico.
+    AND regexp_replace(ld.whatsapp,'\D','','g') NOT IN (SELECT fone FROM prospeccao.contato_compartilhado)
     AND ld.uf IN ('MS','GO','MT','TO','PA','BA','MG','RO','MA','PI','PR','SP')
 ),
 ranked AS (
