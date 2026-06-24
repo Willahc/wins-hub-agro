@@ -46,3 +46,6 @@ ci/
 
 # flag efêmero do cron de reload do cert (scripts/reload_nginx_cert.sh)
 certbot/conf/.nginx-reload-needed
+
+# dumps de geometria CAR (grandes, regeneráveis)
+data/car_geom/
