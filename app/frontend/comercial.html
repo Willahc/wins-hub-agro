@@ -138,11 +138,13 @@
                 <td data-label="Município" x-text="l.municipio"></td>
                 <td data-label="UF" x-text="l.uf"></td>
                 <td data-label="Capital" x-text="l.capital_mi?('R$ '+l.capital_mi+' M'):'—'"></td>
-                <td data-label="Decisor" x-text="l.decisor||'—'"></td>
+                <td data-label="Decisor"><span x-text="l.decisor||'—'"></span><span x-show="ehEmpresa(l.decisor)" class="badge warn" style="font-size:9px;margin-left:4px" title="razão social (LTDA/holding), não pessoa física — buscar o sócio responsável">⚠ razão social</span></td>
                 <td data-label="Δ lavoura recente" x-text="l.delta_agri_recente_ha?('+'+fmtN(l.delta_agri_recente_ha)+' ha'):'—'" title="hectares de lavoura ganhos 2020→2024 no município"></td>
                 <td data-label="Contato">
-                  <a x-show="l.whatsapp" class="badge ok" :href="'https://wa.me/55'+l.whatsapp" target="_blank">WhatsApp</a>
-                  <a x-show="!l.whatsapp && l.email" class="badge info" :href="'mailto:'+l.email" :title="l.email">e-mail</a>
+                  <a x-show="l.whatsapp&&l.whats_alta_conf&&!l.whats_compartilhado" class="badge ok" :href="'https://wa.me/55'+l.whatsapp" target="_blank" title="WhatsApp verificado">WhatsApp ✓</a>
+                  <a x-show="l.whatsapp&&l.whats_compartilhado" class="badge warn" :href="'https://wa.me/55'+l.whatsapp" target="_blank" title="número compartilhado por vários cadastros distintos (provável central/contador) — confirmar de quem é">WhatsApp? compartilhado</a>
+                  <a x-show="l.whatsapp&&!l.whats_alta_conf&&!l.whats_compartilhado" class="badge warn" :href="'https://wa.me/55'+l.whatsapp" target="_blank" title="número NÃO verificado — pode ser inferido da Receita. Confirmar antes de abordar.">WhatsApp? a confirmar</a>
+                  <a x-show="!l.whatsapp && l.email" class="badge" :class="(l.email_tier==='rfb-contador')?'warn':'info'" :href="'mailto:'+l.email" :title="(l.email_tier==='rfb-contador')?(l.email+' (parece contador/escritório)'):l.email" x-text="(l.email_tier==='rfb-contador')?'e-mail contador':((l.email_tier==='rfb')?'e-mail Receita':'e-mail')"></a>
                   <span x-show="!l.whatsapp && !l.email" style="color:#bbb">—</span>
                 </td>
               </tr>
@@ -407,6 +409,7 @@ function comercial(){
     },
     scoreClass(s){ return s>=0.66?'alta':(s>=0.4?'media':'baixa'); },
     cleanNome(s){ return s? s.replace(/\s*\(.*$/,'').trim() : '—'; },
+    ehEmpresa(s){ return !!s && /\b(LTDA|EIRELI|S\/A|S\.A\b|PARTICIPAC|HOLDING|EMPREENDIMENT|INVESTIMENT|COOPERATIV)\b/i.test(s); },
     depVal(v){ return v==null?'—':Number(v).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:2}); },
     fmtN(n){ return (n==null)?'—':Number(n).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:2}); },
     brl(n){ return (n==null)?'—':Number(n).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); },

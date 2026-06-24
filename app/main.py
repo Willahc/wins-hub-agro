@@ -1961,11 +1961,12 @@ SEGMENTO_CNAE = {"corte": "0151201", "leite": "0151202"}
 # colunas ordenáveis da lista de leads -> nome real (whitelist: nunca interpola
 # string crua do cliente no SQL).
 LEADS_SORT = {"empresa": "nome", "municipio": "municipio", "uf": "uf", "porte": "porte", "score": "score"}
-# score = nº de canais de contato confirmados (decisor + email + telefone + whatsapp(celular inferido) + linkedin)
+# score = nº de canais de contato CONFIRMADOS (decisor + email + telefone + linkedin).
+# NÃO conta whatsapp_rfb: é cel_whats(telefone_1) — derivado do mesmo telefone já
+# contado acima, então contava o mesmo canal em dobro e inflava leads só-RFB.
 _LEADS_SCORE = ("((decisor IS NOT NULL AND decisor<>'')::int "
                 "+ (email IS NOT NULL AND email<>'')::int "
                 "+ (telefone_1 IS NOT NULL AND telefone_1<>'')::int "
-                "+ (whatsapp_rfb IS NOT NULL)::int "
                 "+ (linkedin IS NOT NULL AND linkedin<>'')::int)")
 
 
@@ -2036,7 +2037,9 @@ def _leads_total(uf, segmento):
 # ---------------------------------------------------------------------------
 FAZ_COLS = ("prioridade","nome_fazenda","razao","cnpj_completo","uf","municipio","decisor",
     "operador_jovem","n_decisores","dono_n_fazendas","capital_mi","sinal_genetico","touros_nelore",
-    "whatsapp","whats_alta_conf","celular","instagram","followers","porte_digital","email","email_tier",
+    "whatsapp","whats_alta_conf",
+    "(whatsapp IS NOT NULL AND regexp_replace(whatsapp,'\\D','','g') IN (SELECT fone FROM prospeccao.contato_compartilhado)) AS whats_compartilhado",
+    "celular","instagram","followers","porte_digital","email","email_tier",
     "telefone_rfb","dominio","linkedin","canal_recomendado","cnpj_basico",
     # --- colunas de DEMANDA (matview prospeccao.lead_demanda, superset de fazenda_nacional) ---
     "matrizes_municipio","sicor_credito_matriz_flag","deserto_vet","prioridade_final")
@@ -2228,7 +2231,13 @@ def holdings_list(uf: str = None, canal: str = None, tipo: str = None,
             f"""
             SELECT cnpj14, cnpj_basico, razao, nome_fantasia, tipo, uf, municipio,
                    cnae_principal, capital_social, situacao, email,
-                   whatsapp, whats_origem, canal, n_socios_agro, ancora_razao, score
+                   CASE WHEN email ~* 'cont(abil|ador|abilidade)|escritorio|fiscal|assessoria|advoc'
+                          THEN 'contador'
+                        WHEN email IS NOT NULL THEN 'ok' END AS email_tier,
+                   whatsapp, whats_origem,
+                   (whatsapp IS NOT NULL AND regexp_replace(whatsapp,'\\D','','g')
+                        IN (SELECT fone FROM prospeccao.contato_compartilhado)) AS whats_compartilhado,
+                   canal, n_socios_agro, ancora_razao, score
             FROM prospeccao.holding_lead_ui
             WHERE {wsql}
             ORDER BY {col} {dir_sql} NULLS LAST, capital_social DESC NULLS LAST, cnpj14
@@ -2390,7 +2399,8 @@ def api_farm(cnpj: str):
         if f.get("municipio"):   # corte: prioriza INSEMINADOR (tier A); senão melhor contato/CRMV
             regiao = query("""SELECT nome, COALESCE(NULLIF(profissao,''),
                        CASE crmv_cat WHEN 'Z' THEN 'zootecnista' WHEN 'V' THEN 'veterinario' END) AS prof,
-                       crmv, COALESCE(whatsapp,celular,prospeccao.cel_whats(tel_melhor)) AS contato, email_receita AS email
+                       crmv, COALESCE(whatsapp,celular,prospeccao.cel_whats(tel_melhor)) AS contato,
+                       (COALESCE(whatsapp,celular) IS NOT NULL) AS contato_conf, email_receita AS email
                 FROM prospeccao.v_tecnico_fazenda_ui
                 WHERE upper(municipio)=upper(%(m)s) AND uf=%(uf)s AND categoria IS NOT NULL AND nome !~ '^[0-9]'
                 ORDER BY (tier='A-inseminador') DESC, (COALESCE(whatsapp,celular) IS NOT NULL) DESC,
@@ -2454,7 +2464,8 @@ def api_farm(cnpj: str):
                     ORDER BY 1 LIMIT 8""", {"uf": uf, "c": cb, "k": k})
                 conexoes["tecnicos"] = query("""
                     SELECT DISTINCT t.nome, COALESCE(NULLIF(t.profissao,''),'técnico') AS prof, t.crmv,
-                           COALESCE(t.whatsapp,t.celular,t.tel_receita) AS contato
+                           COALESCE(t.whatsapp,t.celular,t.tel_receita) AS contato,
+                           (COALESCE(t.whatsapp,t.celular) IS NOT NULL) AS contato_conf
                     FROM prospeccao.tecnico_social t
                     WHERE t.uf=%(uf)s AND t.nome !~ '^[0-9]'
                       AND %(k)s IN (prospeccao.fone_key(t.whatsapp), prospeccao.fone_key(t.celular),
@@ -2956,14 +2967,17 @@ def ilp_leads(uf: str = None, limit: int = 100):
     try:
         where = ["TRUE"]; p = {"lim": min(max(limit, 1), 1000)}
         if uf:
-            where.append("uf = %(uf)s"); p["uf"] = uf.upper()
+            where.append("il.uf = %(uf)s"); p["uf"] = uf.upper()
         rows = query(
-            f"""SELECT ilp_score, uf, municipio, nome_fazenda, razao, cnpj_completo,
-                   decisor, capital_mi, dono_n_fazendas, whatsapp, email, canal_recomendado,
-                   delta_agri_recente_ha, pasto_resta_ha
-                FROM prospeccao.ilp_lead
+            f"""SELECT il.ilp_score, il.uf, il.municipio, il.nome_fazenda, il.razao, il.cnpj_completo,
+                   il.decisor, il.capital_mi, il.dono_n_fazendas, il.whatsapp, ld.whats_alta_conf,
+                   (il.whatsapp IS NOT NULL AND regexp_replace(il.whatsapp,'\\D','','g')
+                        IN (SELECT fone FROM prospeccao.contato_compartilhado)) AS whats_compartilhado,
+                   il.email, ld.email_tier, il.canal_recomendado, il.delta_agri_recente_ha, il.pasto_resta_ha
+                FROM prospeccao.ilp_lead il
+                LEFT JOIN prospeccao.lead_demanda ld ON ld.cnpj_basico = il.cnpj_basico
                 WHERE {' AND '.join(where)}
-                ORDER BY ilp_score DESC, capital_mi DESC NULLS LAST
+                ORDER BY il.ilp_score DESC, il.capital_mi DESC NULLS LAST
                 LIMIT %(lim)s""", p)
         return {"rows": rows, "total": len(rows)}
     except Exception as e:
@@ -3354,10 +3368,12 @@ _TEC_TEL_ANY = ("(SELECT max(NULLIF(ev.ddd_1,'')||NULLIF(ev.telefone_1,'')) FROM
                 "WHERE ev.cnpj_basico=v_tecnico_fazenda_ui.cnpj_basico AND NULLIF(ev.telefone_1,'') IS NOT NULL)")
 _TEC_EMAIL = f"COALESCE(email_receita, {_TEC_EMAIL_ANY})"
 _TEC_TEL = f"COALESCE(tel_melhor, {_TEC_TEL_ANY})"
-# score = nº de canais de contato confirmados (nome real + tel + whatsapp/cel(confirmado/publicado OU celular-RFB) + email + instagram + CRMV)
+# score = nº de canais de contato confirmados (nome real + tel + whatsapp/cel CONFIRMADO/PUBLICADO + email + instagram + CRMV).
+# NÃO conta o celular-RFB (cel_whats do tel_melhor): é derivado do mesmo tel já
+# contado acima → contava o canal em dobro. Só whatsapp/celular real ou zap público.
 _TEC_SCORE = ("((nome !~ '^[0-9]' AND nome <> '(sem nome fantasia)')::int "
               f"+ ({_TEC_TEL} IS NOT NULL)::int "
-              f"+ (COALESCE(whatsapp,celular) IS NOT NULL OR {_TEC_ZAP_PUB} IS NOT NULL OR {_TEC_ZAP_RFB} IS NOT NULL)::int "
+              f"+ (COALESCE(whatsapp,celular) IS NOT NULL OR {_TEC_ZAP_PUB} IS NOT NULL)::int "
               f"+ ({_TEC_EMAIL} IS NOT NULL)::int "
               "+ (instagram IS NOT NULL)::int "
               "+ COALESCE(crmv_confiavel,false)::int)")
@@ -3663,7 +3679,7 @@ def api_tecnico(cnpj: str):
             p = {"lat": g["lat"], "lon": g["lon"]}
             nearby = query(_VIZ_CTE + """
                 SELECT f.cnpj_completo, f.nome_fazenda, f.municipio, f.uf, f.decisor,
-                       f.sinal_genetico, f.touros_nelore, f.whatsapp, f.capital_mi, f.canal_recomendado,
+                       f.sinal_genetico, f.touros_nelore, f.whatsapp, f.whats_alta_conf, f.capital_mi, f.canal_recomendado,
                        viz.km, d.classificacao_vet, count(*) OVER() AS total
                 FROM viz
                 JOIN prospeccao.fazenda_ibge fi ON fi.codigo_ibge=viz.codigo_ibge

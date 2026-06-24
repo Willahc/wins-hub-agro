@@ -138,7 +138,8 @@
             <span x-show="r.n_alta>0" class="badge gold" style="margin-left:4px" x-text="r.n_alta+' sinal alto'"></span>
             <div class="fz-sub" x-show="r.touros_total>0" x-text="fmt(r.touros_total)+' touros no alcance'"></div>
           </div>
-          <a x-show="r.contato" class="badge ok" :href="'https://wa.me/55'+telDigits(r.contato)" target="_blank" @click.stop>WhatsApp</a>
+          <a x-show="r.contato && r.fone_tipo==='celular'" class="badge ok" :href="'https://wa.me/55'+telDigits(r.contato)" target="_blank" @click.stop title="celular do técnico">WhatsApp</a>
+          <a x-show="r.contato && r.fone_tipo!=='celular'" class="badge neutral mono" :href="'tel:+55'+telDigits(r.contato)" @click.stop title="telefone fixo (clínica/central) — não é WhatsApp">☎ fixo</a>
           <span class="fz-sub" style="color:#2d5a2d;white-space:nowrap" x-text="exp[r.id]?'▾ ocultar':'▸ ver fazendas'"></span>
         </div>
         <div class="cart-faz" x-show="exp[r.id]">
