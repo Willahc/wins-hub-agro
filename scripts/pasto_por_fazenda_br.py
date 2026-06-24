@@ -85,7 +85,16 @@ def proc_mun(ibge, uf, nome, ano, win_mp):
     feats=fetch_all(uf, ibge)
     if not feats:
         open(done,"w").write("0"); return (ibge, nome, 0, 0.0)
-    bb=[bbox_lat(f["geometry"]) for f in feats]
+    # guarda anti-coordenada-corrompida: descarta polígono cujo bbox cai fora do Brasil
+    # (lon -74..-28, lat -34..6) — senão um ponto ruim estoura o tamanho da janela.
+    keep=[]
+    for f in feats:
+        b=bbox_lat(f["geometry"])
+        if -74<=b[0]<=-28 and -74<=b[2]<=-28 and -34<=b[1]<=6 and -34<=b[3]<=6:
+            keep.append((f,b))
+    if not keep:
+        open(done,"w").write("0"); return (ibge, nome, 0, 0.0)
+    feats=[k[0] for k in keep]; bb=[k[1] for k in keep]
     geoms=[f["geometry"] for f in feats]
     minx=min(b[0] for b in bb); miny=min(b[1] for b in bb)
     maxx=max(b[2] for b in bb); maxy=max(b[3] for b in bb)
