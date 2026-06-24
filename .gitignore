@@ -30,6 +30,9 @@ data/
 *MFA_QR*.png
 *.recovery.asc
 
+# Senha do /prospec (Basic Auth, hash apr1) — segredo, não versionar
+nginx/.htpasswd_prospec
+
 # Deliverables de prospecção (PII) movidos da raiz
 deliverables/
 # Exports de prospecção (PII: decisor/WhatsApp/e-mail) — geráveis via scripts
