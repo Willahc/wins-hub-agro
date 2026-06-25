@@ -13,12 +13,10 @@ import jwt
 import json
 from pdf_html import (gerar_parecer_cruzamento, gerar_parecer_matching,  # HTML/CSS -> WeasyPrint
                       gerar_cotacao_acasalamento, gerar_briefing_chegada,
-                      gerar_proposta_simulador, gerar_relatorio_territorial,
+                      gerar_relatorio_territorial,
                       gerar_dossie_fazenda)
 import external_apis
-import psycopg2
-import psycopg2.extras
-from psycopg2 import pool as pgpool
+from db import _get_pool, query, scalar, _tx, _cur
 import asyncio
 import logging
 import io
@@ -131,16 +129,6 @@ def _error(e):
     logger.exception("Erro ao processar requisição: %s", e)
     return {"error": "Erro interno ao processar a requisição."}
 
-DB_CONFIG = {
-    "host": os.getenv("DB_HOST", "db"),
-    "port": int(os.getenv("DB_PORT", 5432)),
-    "dbname": os.getenv("POSTGRES_DB", "wins_agro"),
-    # least-privilege: a app conecta como DB_USER (wins_app, só DML nos schemas de
-    # negócio) — POSTGRES_USER/PASSWORD ficam só p/ o container do banco (superuser).
-    "user": os.getenv("DB_USER") or os.getenv("POSTGRES_USER", "postgres"),
-    "password": os.getenv("DB_PASSWORD") or os.getenv("POSTGRES_PASSWORD", ""),
-}
-
 # IQGg = Índice de Qualificação Genética Genômica (Básico) — catalogo.caracteristica.id = 20
 IQGG_ID = 20
 PD_ID = 5    # Peso à Desmama (210d) — DEP usada p/ o ganho financeiro por cria (R$/cria)
@@ -202,64 +190,6 @@ PRIORIDADE_DEP = {
     "marmoreio": 18,    # MAR — Marmoreio (dados de Nelore + Wagyu)
     "geral": 20,        # IQGg
 }
-
-
-# Pool de conexões (reaproveita conexões em vez de abrir uma nova por query).
-_POOL = None
-
-
-def _get_pool():
-    global _POOL
-    if _POOL is None:
-        _POOL = pgpool.ThreadedConnectionPool(1, 12, **DB_CONFIG)
-    return _POOL
-
-
-def _fetch(sql, params, dict_rows):
-    """Executa um SELECT usando o pool. Só leitura -> autocommit (sem transações
-    pendentes). Em conexão morta (OperationalError), descarta e tenta 1x de novo."""
-    pool = _get_pool()
-    err = None
-    for _ in range(2):
-        conn = pool.getconn()
-        try:
-            conn.autocommit = True
-            cur = (conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-                   if dict_rows else conn.cursor())
-            cur.execute(sql, params or {})
-            rows = cur.fetchall()
-            pool.putconn(conn)
-            return rows
-        except psycopg2.OperationalError as e:
-            err = e
-            try:
-                pool.putconn(conn, close=True)  # conexão morta -> remove do pool
-            except Exception:
-                pass
-        except Exception:
-            try:
-                pool.putconn(conn)
-            except Exception:
-                pass
-            raise
-    raise err
-
-
-def query(sql, params=None):
-    """Run a SELECT and return a list of dict rows (decimals cast to float)."""
-    result = []
-    for row in _fetch(sql, params, True):
-        d = dict(row)
-        for k, v in d.items():
-            # JSON-serialize numeric/Decimal as float
-            if v.__class__.__name__ == "Decimal":
-                d[k] = float(v)
-        result.append(d)
-    return result
-
-
-def scalar(sql, params=None):
-    return _fetch(sql, params, False)[0][0]
 
 
 def audit(request, acao, detalhe=None, n_linhas=None):
@@ -560,107 +490,13 @@ async def wa_login_complete(request: Request):
 
 # ---------------------------------------------------------------------------
 # Feature 5 — Simulador público (Mari abre na fazenda; sem login; ZERO PII)
+# Extraído para routers/simulador.py (Fase 2 da modularização). Registrado aqui,
+# DEPOIS que templates/_error/_prenhez_est/constantes genéticas já foram definidos
+# acima — o router importa esses nomes de `main`, então a ordem resolve o ciclo.
 # ---------------------------------------------------------------------------
-@app.get("/simulador", response_class=HTMLResponse)
-def simulador_page(request: Request):
-    return templates.TemplateResponse("simulador.html", {"request": request})
+from routers.simulador import router as simulador_router  # noqa: E402
 
-
-@app.get("/pasto-limpo", response_class=HTMLResponse)
-def pasto_limpo_page(request: Request):
-    """Simulador de ROI 'Pasto Limpo' (herbicida -> recuperacao de lotacao). Ferramenta de
-    venda baseada em valor (payback/ROI). Standalone, calculo no cliente, ZERO PII."""
-    return templates.TemplateResponse("pasto_limpo.html", {"request": request})
-
-
-@app.get("/api/simulador/touros")
-def simulador_touros():
-    """Catálogo público p/ o simulador: SÓ os touros do Monte Sião com preço de dose
-    (é ferramenta de venda DELES, não comparador de mercado). DEP de peso (ganho/cria) +
-    prenhez estimada. Sem PII — só genética + preço. O cálculo financeiro é feito no cliente."""
-    try:
-        rows = query(
-            f"""
-            SELECT r.id, r.nome, ra.sigla AS raca_sigla,
-                   MAX(a.valor) FILTER (WHERE a.caracteristica_id = {PD_ID})   AS pd,
-                   MAX(a.valor) FILTER (WHERE a.caracteristica_id = {PES_ID})  AS pes,
-                   MAX(a.valor) FILTER (WHERE a.caracteristica_id = {IQGG_ID}) AS iqgg,
-                   MIN(o.preco_dose_brl) AS preco_dose
-            FROM mercado.reprodutor r
-            JOIN catalogo.raca ra ON ra.id = r.raca_id
-            JOIN mercado.touro_oferta o ON o.reprodutor_id = r.id
-                 AND o.preco_dose_brl > 0 AND o.central_id = %(central)s
-            LEFT JOIN mercado.avaliacao a ON a.reprodutor_id = r.id
-                 AND a.caracteristica_id IN ({PD_ID}, {PES_ID}, {IQGG_ID})
-            WHERE r.sexo = 'M'
-            GROUP BY r.id, r.nome, ra.sigla
-            ORDER BY MAX(a.valor) FILTER (WHERE a.caracteristica_id = {IQGG_ID}) DESC NULLS LAST
-            """, {"central": MONTE_SIAO_CENTRAL_ID})
-        for t in rows:
-            t["prenhez_est"] = _prenhez_est(t.get("pes"))
-        arroba = (external_apis.boi_gordo() or {}).get("valor")
-        return {"touros": rows, "arroba": arroba}
-    except Exception as e:
-        return _error(e)
-
-
-@app.get("/api/simulador/proposta")
-async def simulador_proposta(t: int, m: int = 100, p: float = 60, a: float = None):
-    """PDF da proposta de retorno (Feature 5) — público, ZERO PII. `t`=touro Monte Sião,
-    `m`=matrizes, `p`=prenhez atual %, `a`=preço @ (default = boi gordo ao vivo)."""
-    try:
-        import math
-        # endpoint PÚBLICO: clamp de tudo que entra no cálculo/PDF. float('nan'/'inf')
-        # passa pelo parse do FastAPI e estoura no round(); valores absurdos não fazem
-        # sentido e encarecem o WeasyPrint de graça.
-        m = max(0, min(int(m), 100_000))
-        p = float(p) if (p is not None and math.isfinite(float(p))) else 60.0
-        p = max(0.0, min(p, 100.0))
-        if a is not None:
-            a = float(a)
-            a = a if (math.isfinite(a) and 0 < a <= 5000) else None
-        rows = query(
-            f"""SELECT r.id, r.nome, ra.nome AS raca,
-                       MAX(av.valor) FILTER (WHERE av.caracteristica_id = {PD_ID})  AS pd,
-                       MAX(av.valor) FILTER (WHERE av.caracteristica_id = {PES_ID}) AS pes,
-                       MIN(o.preco_dose_brl) AS preco_dose
-                FROM mercado.reprodutor r
-                JOIN catalogo.raca ra ON ra.id = r.raca_id
-                JOIN mercado.touro_oferta o ON o.reprodutor_id = r.id
-                     AND o.preco_dose_brl > 0 AND o.central_id = %(central)s
-                LEFT JOIN mercado.avaliacao av ON av.reprodutor_id = r.id
-                     AND av.caracteristica_id IN ({PD_ID}, {PES_ID})
-                WHERE r.id = %(id)s
-                GROUP BY r.id, r.nome, ra.nome""",
-            {"id": t, "central": MONTE_SIAO_CENTRAL_ID})
-        if not rows:
-            return JSONResponse({"error": "touro fora do catálogo Monte Sião"}, status_code=404)
-        b = rows[0]
-        # handler é async: o fetch da arroba (HTTP externo, até 20s) vai pro threadpool
-        # p/ não bloquear o event loop inteiro do uvicorn.
-        arroba = a if (a and a > 0) else \
-            (await run_in_threadpool(external_apis.boi_gordo) or {}).get("valor")
-        pd, pes, preco_dose = b.get("pd"), b.get("pes"), b.get("preco_dose")
-        ganho_cria = round(pd * arroba / 30) if (pd and pd > 0 and arroba) else None
-        prenhez_esp = _prenhez_est(pes) or int(p)
-        matrizes = max(0, int(m))
-        total_bezerros = round(matrizes * prenhez_esp / 100)
-        bezerros_add = max(0, round(matrizes * max(0, prenhez_esp - p) / 100))
-        ganho_safra = (total_bezerros * ganho_cria) if ganho_cria else 0
-        equil = (-(-int(preco_dose) // ganho_cria)) if (preco_dose and ganho_cria and ganho_cria > 0) else None
-        dados = {
-            "touro_nome": b.get("nome"), "raca": b.get("raca"), "matrizes": matrizes,
-            "prenhez_atual": round(p), "prenhez_esperada": prenhez_esp, "arroba": round(arroba) if arroba else None,
-            "ganho_cria": ganho_cria, "total_bezerros": total_bezerros, "bezerros_adicionais": bezerros_add,
-            "ganho_genetico_safra": ganho_safra, "equilibrio": equil, "preco_dose": preco_dose,
-            "data_str": datetime.now().strftime("%d/%m/%Y"),
-        }
-        pdf = await run_in_threadpool(gerar_proposta_simulador, dados)
-        nome = (b.get("nome") or "touro").replace(" ", "_")[:30]
-        return Response(content=pdf, media_type="application/pdf",
-                        headers={"Content-Disposition": f'inline; filename="proposta_{nome}.pdf"'})
-    except Exception as e:
-        return _error(e)
+app.include_router(simulador_router)
 
 
 # ---------------------------------------------------------------------------
@@ -4021,37 +3857,9 @@ async def leads_enriquecido(uf: str = None, segmento: str = "corte", top: int = 
 # load_rebanho_cliente.py) para ela entrar no acasalamento ao vivo. Todos os
 # writes são idempotentes por `uuid` (replay seguro do outbox quando o link cai).
 # ===========================================================================
-from contextlib import contextmanager
 
 # coluna do índice genômico próprio -> caracteristica_id (igual ao loader)
 _GENOMICO = {"iqgg": 20, "gpd": 8, "aol": 16, "pes": 12, "mar": 18}
-
-
-@contextmanager
-def _tx():
-    """Transação de escrita via pool: commit no sucesso, rollback no erro."""
-    pool = _get_pool()
-    conn = pool.getconn()
-    closed = False
-    try:
-        conn.autocommit = False
-        yield conn
-        conn.commit()
-    except Exception:
-        try:
-            conn.rollback()
-        except Exception:
-            closed = True
-        raise
-    finally:
-        try:
-            pool.putconn(conn, close=closed)
-        except Exception:
-            pass
-
-
-def _cur(conn):
-    return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
 
 class ClienteIn(BaseModel):
