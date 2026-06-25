@@ -40,6 +40,14 @@ def init_db():
       CREATE TABLE IF NOT EXISTS sessions(
         token TEXT PRIMARY KEY, conta_id TEXT, criado TEXT);
     """)
+    # Recuperação por código (Onda 1): rec_wrap = chave AES embrulhada pelo código de
+    # recuperação (cliente); rec_hash = PBKDF2 do código (p/ autorizar o reset). O servidor
+    # NUNCA vê o código nem a chave — zero-knowledge preservado. Migração idempotente.
+    for col in ("rec_hash", "rec_wrap"):
+        try:
+            c.execute(f"ALTER TABLE contas ADD COLUMN {col} TEXT")
+        except sqlite3.OperationalError:
+            pass
     c.commit(); c.close()
 
 
@@ -101,7 +109,7 @@ def register(p: dict = Body(...)):
         c.close(); raise HTTPException(409, "esse endereço já está em uso")
     salt = secrets.token_hex(8)
     cid = secrets.token_hex(8)
-    c.execute("INSERT INTO contas VALUES(?,?,?,?,?,?)",
+    c.execute("INSERT INTO contas(id,fone,slug,salt,pass_hash,criado) VALUES(?,?,?,?,?,?)",
               (cid, fone, slug, salt, hash_senha(senha, salt), ts()))
     c.commit(); c.close()
     return {"token": nova_sessao(cid), "slug": slug, "salt": salt}
@@ -176,4 +184,59 @@ def me(x_token: str = Header(None)):
     r = conta_do_token(x_token)
     pub = os.path.exists(os.path.join(LOJAS, r["slug"], "index.html"))
     bak = os.path.exists(os.path.join(BACKUPS, r["id"] + ".b64"))
-    return {"slug": r["slug"], "fone": r["fone"], "publicado": pub, "temBackup": bak}
+    tem_rec = bool(r["rec_wrap"]) if "rec_wrap" in r.keys() else False
+    return {"slug": r["slug"], "fone": r["fone"], "publicado": pub,
+            "temBackup": bak, "temRecuperacao": tem_rec}
+
+
+@app.put("/api/recovery")
+def set_recovery(p: dict = Body(...), x_token: str = Header(None)):
+    """Grava o código de recuperação (embrulho da chave + hash de autorização).
+    Ambos vêm do cliente já derivados; o servidor só armazena bytes opacos."""
+    r = conta_do_token(x_token)
+    rec_hash = (p.get("rec_hash") or "").strip()
+    rec_wrap = (p.get("rec_wrap") or "").strip()
+    if not rec_hash or not rec_wrap or len(rec_wrap) > 4000:
+        raise HTTPException(400, "recuperação inválida")
+    c = db()
+    c.execute("UPDATE contas SET rec_hash=?, rec_wrap=? WHERE id=?",
+              (rec_hash, rec_wrap, r["id"]))
+    c.commit(); c.close()
+    return {"ok": True}
+
+
+@app.get("/api/recovery/info")
+def recovery_info(fone: str = ""):
+    """Devolve o necessário p/ recuperar SEM senha: salt, o embrulho da chave e o
+    backup cifrado. Tudo é opaco sem o código de recuperação (que só o dono tem)."""
+    fone = re.sub(r'\D', '', fone or "")
+    c = db()
+    r = c.execute("SELECT * FROM contas WHERE fone=?", (fone,)).fetchone()
+    c.close()
+    if not r or not (r["rec_wrap"] if "rec_wrap" in r.keys() else None):
+        raise HTTPException(404, "conta sem recuperação configurada")
+    path = os.path.join(BACKUPS, r["id"] + ".b64")
+    backup = open(path, "r", encoding="utf-8").read() if os.path.exists(path) else None
+    return {"salt": r["salt"], "rec_wrap": r["rec_wrap"], "backup": backup}
+
+
+@app.post("/api/recovery/reset")
+def recovery_reset(p: dict = Body(...)):
+    """Reset de senha autorizado pelo código de recuperação (rec_hash). O cliente
+    decifra o backup com a chave recuperada, escolhe nova senha e reembrulha a chave."""
+    fone = re.sub(r'\D', '', p.get("fone", ""))
+    rec_hash = (p.get("rec_hash") or "").strip()
+    new_senha = p.get("new_senha", "") or ""
+    new_rec_wrap = (p.get("new_rec_wrap") or "").strip()
+    if len(new_senha) < 8:
+        raise HTTPException(400, "senha muito curta (mín. 8)")
+    c = db()
+    r = c.execute("SELECT * FROM contas WHERE fone=?", (fone,)).fetchone()
+    if not r or not (r["rec_hash"] if "rec_hash" in r.keys() else None):
+        c.close(); raise HTTPException(404, "conta sem recuperação configurada")
+    if not secrets.compare_digest(r["rec_hash"], rec_hash):
+        c.close(); raise HTTPException(401, "código de recuperação incorreto")
+    c.execute("UPDATE contas SET pass_hash=?, rec_wrap=COALESCE(?, rec_wrap) WHERE id=?",
+              (hash_senha(new_senha, r["salt"]), new_rec_wrap or None, r["id"]))
+    c.commit(); c.close()
+    return {"token": nova_sessao(r["id"]), "slug": r["slug"], "salt": r["salt"]}
