@@ -1,12 +1,19 @@
 /* WiNS Hub Agro — design system (jun/13). Self-hosted, CSP-safe ('self'), sem build.
    Identidade: verde floresta + dourado. Cara enterprise p/ cliente grande. */
+
+/* Inter self-hosted (subset latin) — tipografia estável em qualquer SO */
+@font-face{font-family:'Inter';font-style:normal;font-weight:400;font-display:swap;src:url('/static/vendor/inter-400.woff2') format('woff2')}
+@font-face{font-family:'Inter';font-style:normal;font-weight:500;font-display:swap;src:url('/static/vendor/inter-500.woff2') format('woff2')}
+@font-face{font-family:'Inter';font-style:normal;font-weight:600;font-display:swap;src:url('/static/vendor/inter-600.woff2') format('woff2')}
+@font-face{font-family:'Inter';font-style:normal;font-weight:700;font-display:swap;src:url('/static/vendor/inter-700.woff2') format('woff2')}
+@font-face{font-family:'Inter';font-style:normal;font-weight:800;font-display:swap;src:url('/static/vendor/inter-800.woff2') format('woff2')}
 :root{
   /* marca */
   --brand-900:#13301a; --brand-800:#1a3a1a; --brand-700:#235c2e; --brand-600:#2e7d32;
   --brand-500:#3a8f3f; --brand-400:#4a9e4a; --brand-100:#e8f5e9; --brand-50:#f3faf4;
   --gold-600:#a07a00; --gold-500:#b8860b; --gold-400:#d9a441; --gold-100:#fff8e1;
   /* neutros (slate) */
-  --ink-900:#0f1a12; --ink-700:#2a352c; --ink-500:#586458; --ink-400:#7c887e; --ink-300:#aeb7af;
+  --ink-900:#0f1a12; --ink-700:#2a352c; --ink-500:#4f5a50; --ink-400:#6b7670; --ink-300:#aeb7af;
   --line:#e4e9e4; --line-2:#eef2ee; --surface:#ffffff; --surface-2:#f7f9f7; --bg:#f1f4f1;
   /* semântico */
   --ok:#2e7d32; --ok-bg:#e8f5e9; --warn:#a07a00; --warn-bg:#fff8e1; --danger:#c0392b; --danger-bg:#fdecea;
@@ -17,13 +24,16 @@
   --sh-2:0 4px 12px rgba(16,32,18,.08),0 2px 4px rgba(16,32,18,.05);
   --sh-3:0 12px 32px rgba(16,32,18,.12);
   --fz-xs:11px; --fz-sm:12.5px; --fz:14px; --fz-md:15px; --fz-lg:18px; --fz-xl:22px; --fz-2xl:30px;
-  --ff:'Segoe UI',-apple-system,BlinkMacSystemFont,Roboto,Inter,'Helvetica Neue',Arial,sans-serif;
+  --ff:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
   --t:160ms cubic-bezier(.4,0,.2,1);
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
 body{font-family:var(--ff);font-size:var(--fz);color:var(--ink-900);background:var(--bg);
   -webkit-font-smoothing:antialiased;line-height:1.45}
+/* foco visível por teclado em todo elemento interativo (acessibilidade) */
+:where(a,button,.btn,.nav-item,input,select,textarea,[tabindex]):focus-visible{
+  outline:2px solid var(--brand-500);outline-offset:2px;border-radius:var(--r-sm)}
 a{color:var(--brand-600);text-decoration:none}
 h1,h2,h3{margin:0;font-weight:650;letter-spacing:-.01em;color:var(--ink-900)}
 h1{font-size:var(--fz-2xl)} h2{font-size:var(--fz-xl)} h3{font-size:var(--fz-lg)}
@@ -63,7 +73,7 @@ h1{font-size:var(--fz-2xl)} h2{font-size:var(--fz-xl)} h3{font-size:var(--fz-lg)
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:18px}
 .stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:15px 17px;box-shadow:var(--sh-1)}
 .stat .k{font-size:var(--fz-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--ink-400);font-weight:600}
-.stat .v{font-size:var(--fz-2xl);font-weight:700;color:var(--brand-700);margin-top:4px;line-height:1}
+.stat .v{font-size:var(--fz-2xl);font-weight:700;color:var(--brand-700);margin-top:4px;line-height:1;font-variant-numeric:tabular-nums}
 .stat .d{font-size:var(--fz-sm);color:var(--ink-500);margin-top:4px}
 
 .btn{display:inline-flex;align-items:center;gap:7px;border:1px solid transparent;border-radius:var(--r-sm);
@@ -85,7 +95,7 @@ h1{font-size:var(--fz-2xl)} h2{font-size:var(--fz-xl)} h3{font-size:var(--fz-lg)
 /* tabela de dados */
 .table-wrap{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;box-shadow:var(--sh-1)}
 .table-scroll{overflow:auto;max-height:calc(100vh - 290px)}
-table.data{width:100%;border-collapse:collapse;font-size:var(--fz-sm)}
+table.data{width:100%;border-collapse:collapse;font-size:var(--fz-sm);font-variant-numeric:tabular-nums}
 table.data thead th{position:sticky;top:0;background:var(--surface-2);color:var(--ink-500);text-align:left;
   font-weight:600;font-size:var(--fz-xs);text-transform:uppercase;letter-spacing:.04em;padding:11px 14px;
   border-bottom:1px solid var(--line);white-space:nowrap;cursor:pointer;user-select:none;z-index:1}
@@ -146,5 +156,25 @@ table.data .fz-sub{color:var(--ink-400);font-size:var(--fz-xs)}
 
 /* cabeçalho ordenável por clique (.data th.sortable) com indicador ↑/↓ */
 table.data th.sortable{ cursor:pointer; user-select:none; white-space:nowrap; }
-table.data th.sortable:hover{ background:#eef3ee; }
-table.data th .sort-ind{ color:#2d5a2d; font-weight:700; }
+table.data th.sortable:hover{ background:var(--surface-2); }
+table.data th .sort-ind{ color:var(--brand-600); font-weight:700; }
+
+/* ===== KPI cards compartilhados (.macro/.m) — unifica as cópias de comercial/holdings/prospeccao ===== */
+.macro{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.macro .m{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:13px 15px;box-shadow:var(--sh-1)}
+.macro .m .k{font-size:var(--fz-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--ink-400);font-weight:600}
+.macro .m .v{font-size:var(--fz-xl);font-weight:700;color:var(--brand-700);margin-top:3px;line-height:1.05;font-variant-numeric:tabular-nums}
+.macro .m .s{font-size:var(--fz-sm);color:var(--ink-500);margin-top:3px}
+
+/* ===== Modal compartilhado (.ov/.mdl) — unifica as cópias de comercial/cruzamento ===== */
+.ov{position:fixed;inset:0;background:rgba(15,26,18,.45);display:none;align-items:center;justify-content:center;z-index:200;padding:20px}
+.ov.open{display:flex}
+.mdl{background:var(--surface);border-radius:var(--r-lg);box-shadow:var(--sh-3);max-width:760px;width:100%;max-height:88vh;overflow:auto}
+.mdl-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--surface)}
+.mdl-head h3{font-size:var(--fz-lg)}
+.mdl-body{padding:18px 20px}
+.mdl .x{background:none;border:none;cursor:pointer;color:var(--ink-400);font-size:20px;line-height:1;padding:4px}
+.mdl .x:hover{color:var(--ink-700)}
+table.mini{width:100%;border-collapse:collapse;font-size:var(--fz-sm);font-variant-numeric:tabular-nums}
+table.mini th,table.mini td{padding:7px 10px;border-bottom:1px solid var(--line-2);text-align:left}
+table.mini th{color:var(--ink-500);font-weight:600;font-size:var(--fz-xs);text-transform:uppercase;letter-spacing:.04em}

@@ -63,7 +63,9 @@
         <span class="secure-note" title="Sessão segura, acesso auditado">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
           conexão segura</span>
-        <button class="btn btn-ghost" style="padding:6px 10px" title="Registrar login por digital neste aparelho" onclick="winsBioRegister()">🔒 Digital</button>
+        <button class="btn btn-ghost" style="padding:6px 10px" title="Registrar login por digital neste aparelho" onclick="winsBioRegister()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 11c-1.1 0-2 .9-2 2 0 2-.5 4-1.5 5.5"/><path d="M7 13a5 5 0 0 1 8-4"/><path d="M5 11a7 7 0 0 1 11-5.5"/><path d="M12 13c0 3-.7 5.5-2 8"/><path d="M15 13.5c0 2.5-.4 4.3-1 6"/></svg>
+          Digital</button>
         <span class="user-chip"><span class="av">{{ (user.name or 'U')[0]|upper }}</span>{{ user.name or user.sub }}</span>
       </div>
     </header>

@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instala ferramentas de qualidade + deps de teste
+        run: pip install ruff pytest pyjwt bcrypt pyotp
+
+      - name: Lint (ruff — bugs reais, F/E9)
+        run: ruff check .
+
+      - name: Testes (núcleo de auth, sem banco)
+        run: pytest
+
+      - name: Auditoria de dependências (não bloqueante por ora)
+        run: |
+          pip install pip-audit
+          pip-audit -r app/requirements.txt || true

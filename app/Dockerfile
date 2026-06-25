@@ -1,4 +1,6 @@
-FROM python:3.11-slim
+# Base pinada por digest (supply-chain): reprodutível e imune a re-tag de 'slim'.
+# Atualizar o digest junto com a versão do Python, conscientemente.
+FROM python:3.11-slim@sha256:cdbd05fb6f457ca275ff51ce00d93d865ca0b6a25f5ffb08262d94f6835771e5
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1

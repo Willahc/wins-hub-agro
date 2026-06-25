@@ -368,10 +368,10 @@ def _mon_section_html(mon: dict) -> str:
                 extra.append(f"+{_brl(ch['valor_cria'])}/cria")
             if ch.get("roi") is not None:
                 extra.append(f"ROI {ch['roi']:.1f}×")
-            ms = " · ".join(extra) or ch.get("nota", "")
+            " · ".join(extra) or ch.get("nota", "")
         else:
             mv = '<div class="mv nd">informar preço</div>'
-            ms = ch.get("nota", "")
+            ch.get("nota", "")
         cards += (f'<div class="mon{" rec" if is_rec else ""}">'
                   f'<div class="mt">{ch["label"]}{badge}</div>{mv}</div>')
     return ('<div style="break-inside:avoid">'
@@ -555,7 +555,7 @@ def gerar_parecer_matching(perfil: dict, touros: list) -> bytes:
 
     # --- tabela Top 10 ---
     ganho_col = "+R$/filha" if is_leite else "+R$/cria"
-    dep_curto = prio_label.split(" (")[0]
+    prio_label.split(" (")[0]
     sem_preco = True
     rows = ""
     for i, td in enumerate(top10, 1):

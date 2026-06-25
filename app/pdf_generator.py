@@ -47,7 +47,7 @@ def gerar_parecer_pdf(perfil: dict, touros: list) -> bytes:
         topMargin=2 * cm, bottomMargin=2 * cm
     )
 
-    styles = getSampleStyleSheet()
+    getSampleStyleSheet()
     story = []
 
     # --- CAPA ---
@@ -405,7 +405,7 @@ def gerar_parecer_cruzamento(cruz: dict) -> bytes:
 UF_NOME = {
     "TO": "Tocantins", "MT": "Mato Grosso", "MS": "Mato Grosso do Sul",
     "GO": "Goiás", "PA": "Pará", "MG": "Minas Gerais", "SP": "São Paulo",
-    "BA": "Bahia", "RO": "Rondônia", "MA": "Maranhão", "GO": "Goiás",
+    "BA": "Bahia", "RO": "Rondônia", "MA": "Maranhão",
 }
 
 
@@ -427,7 +427,7 @@ def gerar_relatorio_territorial(uf: str, dados: dict) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=2 * cm, rightMargin=2 * cm,
                             topMargin=2 * cm, bottomMargin=2 * cm)
-    styles = getSampleStyleSheet()
+    getSampleStyleSheet()
     story = []
     st_titulo = ParagraphStyle('t', fontSize=26, textColor=BRANCO, alignment=TA_CENTER,
                                fontName='Helvetica-Bold', spaceAfter=8)
