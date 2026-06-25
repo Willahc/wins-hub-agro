@@ -90,8 +90,8 @@ def register(p: dict = Body(...)):
     slug = (p.get("slug", "") or "").lower().strip()
     if len(fone) < 10:
         raise HTTPException(400, "telefone inválido")
-    if len(senha) < 4:
-        raise HTTPException(400, "senha muito curta (mín. 4)")
+    if len(senha) < 8:
+        raise HTTPException(400, "senha muito curta (mín. 8)")
     if not SLUG_RE.match(slug):
         raise HTTPException(400, "endereço inválido (use letras, números e hífen)")
     c = db()
@@ -114,7 +114,12 @@ def login(p: dict = Body(...)):
     c = db()
     r = c.execute("SELECT * FROM contas WHERE fone=?", (fone,)).fetchone()
     c.close()
-    if not r or r["pass_hash"] != hash_senha(senha, r["salt"]):
+    # comparação em tempo constante (evita timing side-channel). Se a conta não existe,
+    # ainda computa um hash p/ não vazar a existência da conta pelo tempo de resposta.
+    salt = r["salt"] if r else "0" * 16
+    ok = secrets.compare_digest(
+        (r["pass_hash"] if r else "x" * 64), hash_senha(senha, salt))
+    if not r or not ok:
         raise HTTPException(401, "telefone ou senha incorretos")
     return {"token": nova_sessao(r["id"]), "slug": r["slug"], "salt": r["salt"]}
 
@@ -125,7 +130,18 @@ async def put_backup(request: Request, x_token: str = Header(None)):
     blob = await request.body()
     if len(blob) > MAX_BACKUP:
         raise HTTPException(413, "backup grande demais")
-    with open(os.path.join(BACKUPS, r["id"] + ".b64"), "wb") as f:
+    if not blob:
+        raise HTTPException(400, "backup vazio")
+    path = os.path.join(BACKUPS, r["id"] + ".b64")
+    # Rede de segurança contra perda silenciosa: antes de sobrescrever, preserva a
+    # versão anterior como .prev (1 nível de histórico). Se um 2º aparelho subir um
+    # backup quase vazio por engano, o backup bom ainda é recuperável manualmente.
+    if os.path.exists(path):
+        try:
+            os.replace(path, path + ".prev")
+        except OSError:
+            pass
+    with open(path, "wb") as f:
         f.write(blob)
     return {"ok": True, "bytes": len(blob), "em": ts()}
 
