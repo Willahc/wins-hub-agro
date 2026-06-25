@@ -9,7 +9,8 @@ Capacidades:
 
 Sem dependência de SMS/Cloud API. SQLite + filesystem. Isolamento por token→conta.
 """
-import os, re, time, json, secrets, hashlib, sqlite3
+import os, re, time, json, datetime, secrets, hashlib, sqlite3
+import argon2
 from fastapi import FastAPI, HTTPException, Header, Request, Body
 from fastapi.responses import PlainTextResponse
 
@@ -57,38 +58,67 @@ def init_db():
         c.execute("ALTER TABLE contas ADD COLUMN backup_ver INTEGER DEFAULT 0")
     except sqlite3.OperationalError:
         pass
+    # Expiração de sessão (revogável). Sessões antigas ficam com expira NULL = válidas.
+    try:
+        c.execute("ALTER TABLE sessions ADD COLUMN expira TEXT")
+    except sqlite3.OperationalError:
+        pass
     c.commit(); c.close()
 
 
 init_db()
 
 
-def hash_senha(senha, salt):
+_ph = argon2.PasswordHasher()          # Argon2id (defaults seguros)
+SESSAO_DIAS = 60                       # validade do token de sessão
+
+
+def hash_senha_pbkdf2(senha, salt):    # esquema LEGADO (contas antigas)
     return hashlib.pbkdf2_hmac('sha256', senha.encode(), salt.encode(), 120000).hex()
 
 
-def nova_sessao(conta_id):
-    token = secrets.token_urlsafe(24)
-    c = db()
-    c.execute("INSERT INTO sessions VALUES(?,?,?)", (token, conta_id, ts()))
-    c.commit(); c.close()
-    return token
+def verify_senha(stored, senha, salt):
+    """Confere a senha. Argon2id p/ contas novas; PBKDF2 (tempo constante) p/ legado."""
+    if not stored:
+        return False
+    if stored.startswith("$argon2"):
+        try:
+            _ph.verify(stored, senha); return True
+        except Exception:
+            return False
+    return secrets.compare_digest(stored, hash_senha_pbkdf2(senha, salt))
 
 
 def ts():
     return time.strftime("%Y-%m-%dT%H:%M:%S")
 
 
+def ts_mais(dias):
+    return (datetime.datetime.utcnow() + datetime.timedelta(days=dias)).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def nova_sessao(conta_id):
+    token = secrets.token_urlsafe(24)
+    c = db()
+    c.execute("DELETE FROM sessions WHERE expira IS NOT NULL AND expira < ?", (ts(),))  # limpa expiradas
+    c.execute("INSERT INTO sessions(token,conta_id,criado,expira) VALUES(?,?,?,?)",
+              (token, conta_id, ts(), ts_mais(SESSAO_DIAS)))
+    c.commit(); c.close()
+    return token
+
+
 def conta_do_token(token):
     if not token:
         raise HTTPException(401, "sem token")
     c = db()
+    # sessão legada (expira NULL) segue válida; nova expira em SESSAO_DIAS
     r = c.execute(
-        "SELECT c.* FROM contas c JOIN sessions s ON s.conta_id=c.id WHERE s.token=?",
-        (token,)).fetchone()
+        "SELECT c.* FROM contas c JOIN sessions s ON s.conta_id=c.id "
+        "WHERE s.token=? AND (s.expira IS NULL OR s.expira > ?)",
+        (token, ts())).fetchone()
     c.close()
     if not r:
-        raise HTTPException(401, "sessão inválida — entre de novo")
+        raise HTTPException(401, "sessão inválida ou expirada — entre de novo")
     return r
 
 
@@ -119,7 +149,7 @@ def register(p: dict = Body(...)):
     salt = secrets.token_hex(8)
     cid = secrets.token_hex(8)
     c.execute("INSERT INTO contas(id,fone,slug,salt,pass_hash,criado) VALUES(?,?,?,?,?,?)",
-              (cid, fone, slug, salt, hash_senha(senha, salt), ts()))
+              (cid, fone, slug, salt, _ph.hash(senha), ts()))
     c.commit(); c.close()
     return {"token": nova_sessao(cid), "slug": slug, "salt": salt}
 
@@ -131,14 +161,25 @@ def login(p: dict = Body(...)):
     c = db()
     r = c.execute("SELECT * FROM contas WHERE fone=?", (fone,)).fetchone()
     c.close()
-    # comparação em tempo constante (evita timing side-channel). Se a conta não existe,
-    # ainda computa um hash p/ não vazar a existência da conta pelo tempo de resposta.
-    salt = r["salt"] if r else "0" * 16
-    ok = secrets.compare_digest(
-        (r["pass_hash"] if r else "x" * 64), hash_senha(senha, salt))
+    ok = verify_senha(r["pass_hash"] if r else "", senha, r["salt"] if r else "0" * 16)
     if not r or not ok:
         raise HTTPException(401, "telefone ou senha incorretos")
+    # Rehash: migra contas legado (PBKDF2) p/ Argon2id no login bem-sucedido.
+    if not r["pass_hash"].startswith("$argon2"):
+        c = db()
+        c.execute("UPDATE contas SET pass_hash=? WHERE id=?", (_ph.hash(senha), r["id"]))
+        c.commit(); c.close()
     return {"token": nova_sessao(r["id"]), "slug": r["slug"], "salt": r["salt"]}
+
+
+@app.post("/api/logout")
+def logout(x_token: str = Header(None)):
+    """Revoga o token no servidor (não só some no cliente)."""
+    if x_token:
+        c = db()
+        c.execute("DELETE FROM sessions WHERE token=?", (x_token,))
+        c.commit(); c.close()
+    return {"ok": True}
 
 
 @app.put("/api/backup")
@@ -263,6 +304,6 @@ def recovery_reset(p: dict = Body(...)):
     if not secrets.compare_digest(r["rec_hash"], rec_hash):
         c.close(); raise HTTPException(401, "código de recuperação incorreto")
     c.execute("UPDATE contas SET pass_hash=?, rec_wrap=COALESCE(?, rec_wrap) WHERE id=?",
-              (hash_senha(new_senha, r["salt"]), new_rec_wrap or None, r["id"]))
+              (_ph.hash(new_senha), new_rec_wrap or None, r["id"]))
     c.commit(); c.close()
     return {"token": nova_sessao(r["id"]), "slug": r["slug"], "salt": r["salt"]}
