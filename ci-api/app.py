@@ -26,8 +26,12 @@ MAX_HTML   = 2_000_000
 
 
 def db():
-    c = sqlite3.connect(DB)
+    # WAL + busy_timeout: evita "database is locked" sob escrita concorrente
+    # (vários backups/registros ao mesmo tempo). WAL é persistente; timeout é por conexão.
+    c = sqlite3.connect(DB, timeout=10)
     c.row_factory = sqlite3.Row
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("PRAGMA busy_timeout=5000")
     return c
 
 
