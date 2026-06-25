@@ -16,8 +16,10 @@ DROP TABLE IF EXISTS cnpj.stg_empresas_full;
 DROP TABLE IF EXISTS cnpj.stg_socios_match;
 DROP TABLE IF EXISTS cnpj.stg_estab_holding;
 
--- 2) Índices mortos não-PK (idx_scan=0). ~233 MB. As PKs surrogate ficam.
-DROP INDEX IF EXISTS prospeccao.imovel_rural_codigo_sigef_key;       -- 191 MB
+-- 2) Índices mortos NÃO-PK e NÃO-constraint (idx_scan=0). ~42 MB.
+--    OBS: imovel_rural_codigo_sigef_key foi DELIBERADAMENTE mantido — apesar de
+--    idx_scan=0, é uma constraint UNIQUE (garante unicidade de codigo_sigef na
+--    ingestão). Seu valor é integridade, não busca; não vale trocar por 191 MB.
 DROP INDEX IF EXISTS prospeccao.ix_sigsif_abate_ibge;               -- 40 MB
 DROP INDEX IF EXISTS prospeccao.idx_cnpjrural_cnae;
 DROP INDEX IF EXISTS prospeccao.idx_cnpjrural_situ;
