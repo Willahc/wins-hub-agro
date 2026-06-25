@@ -4,82 +4,89 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WiNS Hub Agro — Login</title>
+    <link rel="icon" href="/static/vendor/icon-192.png">
+    <link rel="stylesheet" href="/static/assets/app.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Segoe UI', sans-serif;
-            background: linear-gradient(135deg, #1a3a1a 0%, #2d5a2d 50%, #1a3a1a 100%);
+            font-family: var(--ff);
+            background: linear-gradient(135deg, var(--brand-900) 0%, var(--brand-700) 55%, var(--brand-900) 100%);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
+            padding: 20px;
         }
         .card {
-            background: white;
-            border-radius: 16px;
-            padding: 48px 40px;
+            background: var(--surface);
+            border-radius: var(--r-lg);
+            padding: 44px 38px;
             width: 100%;
             max-width: 400px;
-            box-shadow: 0 30px 80px rgba(0,0,0,0.45);
+            box-shadow: 0 24px 64px rgba(15,26,18,.35), 0 4px 12px rgba(15,26,18,.18);
         }
         .logo {
             text-align: center;
             margin-bottom: 28px;
         }
         .logo .dna {
-            width: 46px; height: 46px; color: #4a9e4a; margin-bottom: 10px;
+            width: 46px; height: 46px; color: var(--brand-500); margin-bottom: 10px;
         }
         .logo .dna svg { width: 100%; height: 100%; }
         .logo h1 {
             font-size: 28px;
-            color: #1a3a1a;
+            color: var(--brand-900);
             font-weight: 800;
+            letter-spacing: -.02em;
         }
-        .logo span { color: #4a9e4a; }
-        .logo p { color: #666; font-size: 14px; margin-top: 4px; }
+        .logo span { color: var(--brand-500); }
+        .logo p { color: var(--ink-500); font-size: 14px; margin-top: 4px; }
         .tagline {
-            font-size: 12px; color: #2d5a2d; font-weight: 600;
-            background: #e8f5e9; border-radius: 8px; padding: 9px 12px;
+            font-size: 12px; color: var(--brand-700); font-weight: 600;
+            background: var(--brand-50); border: 1px solid var(--brand-100);
+            border-radius: var(--r-sm); padding: 9px 12px;
             margin-top: 14px; line-height: 1.5;
         }
         .card-foot {
             text-align: center; margin-top: 26px; padding-top: 18px;
-            border-top: 1px solid #eef2ee; color: #9aa39a; font-size: 12px; font-weight: 600;
+            border-top: 1px solid var(--line-2); color: var(--ink-400); font-size: 12px; font-weight: 600;
         }
-        .field { margin-bottom: 20px; }
-        label { display: block; font-size: 13px; font-weight: 600; color: #333; margin-bottom: 6px; }
-        input {
+        .field { margin-bottom: 18px; }
+        label { display: block; font-size: 13px; font-weight: 600; color: var(--ink-700); margin-bottom: 6px; }
+        .card input {
             width: 100%;
-            padding: 12px 16px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
+            padding: 12px 14px;
+            border: 1px solid var(--line);
+            border-radius: var(--r-sm);
             font-size: 15px;
-            transition: border-color 0.2s;
+            font-family: inherit;
+            transition: var(--t);
             outline: none;
         }
-        input:focus { border-color: #4a9e4a; }
-        .btn {
+        .card input:focus { border-color: var(--brand-400); box-shadow: 0 0 0 3px var(--brand-100); }
+        .card .btn {
             width: 100%;
-            padding: 14px;
-            background: #2d5a2d;
-            color: white;
+            justify-content: center;
+            padding: 13px;
+            background: var(--brand-600);
+            color: #fff;
             border: none;
-            border-radius: 8px;
-            font-size: 16px;
+            border-radius: var(--r-sm);
+            font-size: 15px;
             font-weight: 700;
             cursor: pointer;
-            transition: background 0.2s;
+            transition: var(--t);
             margin-top: 8px;
         }
-        .btn:hover { background: #1a3a1a; }
+        .card .btn:hover { background: var(--brand-700); }
         .error {
-            background: #fff3f3;
+            background: var(--danger-bg);
             border: 1px solid #ffcdd2;
-            color: #c62828;
+            color: var(--danger);
             padding: 12px;
-            border-radius: 8px;
+            border-radius: var(--r-sm);
             font-size: 14px;
-            margin-bottom: 20px;
+            margin-bottom: 18px;
             text-align: center;
         }
     </style>
@@ -115,8 +122,10 @@
             {% endif %}
             <button type="submit" class="btn">Entrar</button>
         </form>
-        <button type="button" id="bioBtn" class="btn" style="display:none;background:#1a3a1a"
-                onclick="bioLogin()">🔒 Entrar com digital</button>
+        <button type="button" id="bioBtn" class="btn" style="display:none;background:var(--brand-900);gap:8px"
+                onclick="bioLogin()">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 11c-1.1 0-2 .9-2 2 0 2-.5 4-1.5 5.5"/><path d="M7 13a5 5 0 0 1 8-4"/><path d="M5 11a7 7 0 0 1 11-5.5"/><path d="M12 13c0 3-.7 5.5-2 8"/></svg>
+          Entrar com digital</button>
         <div id="bioErr" class="error" style="display:none;margin-top:14px"></div>
         <div class="card-foot">Plataforma de Inteligência Genética Bovina</div>
     </div>

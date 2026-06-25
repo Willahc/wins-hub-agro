@@ -1,0 +1,18 @@
+[tool.ruff]
+# Conjunto de regras inicial CONSERVADOR para ter CI verde sobre o código atual.
+# O estilo do projeto usa ';' e ':' em uma linha de propósito (E701/E702), então
+# essas não entram agora. Expandir o `select` aos poucos (E,I,UP,B) à medida que
+# o monolito for sendo modularizado — ver DOSSIE / relatório de maturidade.
+line-length = 120
+target-version = "py311"
+extend-exclude = ["**/__pycache__", "ci-api", "scripts"]
+
+[tool.ruff.lint]
+# F = pyflakes (variáveis/imports não usados, f-strings quebradas, chaves duplicadas)
+# E9 = erros de sintaxe/runtime. São bugs reais, não estilo.
+select = ["F", "E9"]
+
+[tool.pytest.ini_options]
+testpaths = ["app/tests"]
+pythonpath = ["app"]
+addopts = "-q"

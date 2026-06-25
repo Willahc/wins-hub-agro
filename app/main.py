@@ -29,12 +29,30 @@ import threading
 
 logger = logging.getLogger("wins_agro")
 
+# Logging estruturado configurável por env (LOG_LEVEL). Antes os logs caíam no
+# default do uvicorn sem formato/timestamp; agora todo log tem nível+timestamp+origem
+# e o nível é ajustável sem redeploy de código (LOG_LEVEL=DEBUG p/ diagnóstico).
+logging.basicConfig(
+    level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S%z",
+)
+
 # docs/openapi desligados: app single-tenant não deve expor o mapa de rotas/schemas
 # (incl. endpoints de PII/lead) a quem não está autenticado. O middleware só protege /api/*.
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+
+@app.exception_handler(Exception)
+async def _unhandled(request: Request, exc: Exception):
+    """Rede de segurança: qualquer exceção que escape de um handler vira 500 (não 200)
+    com corpo genérico, e o stack real é logado. Permite que monitoramento/cliente
+    distingam falha de sucesso pelo status HTTP. Coexiste com o _error() por-rota."""
+    logger.exception("Exceção não tratada em %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse({"error": "Erro interno ao processar a requisição."}, status_code=500)
 # Versão do shell — bumpar a cada deploy de front. O cliente compara com /api/version e
 # se auto-atualiza (limpa cache + reload) se estiver velho. Mata o "downgrade pra v1".
-APP_VERSION = "2026-06-18.1"
+APP_VERSION = "2026-06-25.1"
 # /static aponta SÓ para os diretórios de assets (CSS/JS/imagens/fontes), nunca
 # para a raiz de frontend/. Montar frontend/ inteiro vazava sem autenticação os
 # templates crus (/static/login.html) e, pior, a pasta dl/ — PDFs internos
@@ -2297,7 +2315,7 @@ def holdings_csv(request: Request, uf: str = None, canal: str = None, tipo: str 
                   "cnae": cnae, "cnae_like": f"%{cnae}%" if cnae else None,
                   "capital_min": _num(capital_min), "socios_min": _num(socios_min)}
         rows = query(
-            f"""
+            """
             SELECT razao, nome_fantasia, tipo, uf, municipio, cnae_principal, capital_social,
                    n_socios_agro, ancora_razao, whatsapp, whats_origem,
                    CASE WHEN (whatsapp IS NOT NULL AND regexp_replace(whatsapp,'\\D','','g')
