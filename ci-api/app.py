@@ -52,6 +52,11 @@ def init_db():
             c.execute(f"ALTER TABLE contas ADD COLUMN {col} TEXT")
         except sqlite3.OperationalError:
             pass
+    # Versão do backup p/ optimistic concurrency (auto-sync multi-dispositivo)
+    try:
+        c.execute("ALTER TABLE contas ADD COLUMN backup_ver INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
     c.commit(); c.close()
 
 
@@ -137,7 +142,8 @@ def login(p: dict = Body(...)):
 
 
 @app.put("/api/backup")
-async def put_backup(request: Request, x_token: str = Header(None)):
+async def put_backup(request: Request, x_token: str = Header(None),
+                     x_base_ver: str = Header(None)):
     r = conta_do_token(x_token)
     blob = await request.body()
     if len(blob) > MAX_BACKUP:
@@ -145,9 +151,18 @@ async def put_backup(request: Request, x_token: str = Header(None)):
     if not blob:
         raise HTTPException(400, "backup vazio")
     path = os.path.join(BACKUPS, r["id"] + ".b64")
-    # Rede de segurança contra perda silenciosa: antes de sobrescrever, preserva a
-    # versão anterior como .prev (1 nível de histórico). Se um 2º aparelho subir um
-    # backup quase vazio por engano, o backup bom ainda é recuperável manualmente.
+    cur_ver = (r["backup_ver"] if "backup_ver" in r.keys() and r["backup_ver"] is not None else 0)
+    # Optimistic concurrency: se o cliente diz em qual versão baseou (X-Base-Ver) e a
+    # nuvem já avançou (outro aparelho), rejeita com 409 — o cliente baixa antes de
+    # sobrescrever. Sem o header (ex.: reset de recuperação), grava direto.
+    if x_base_ver is not None and os.path.exists(path):
+        try:
+            base = int(x_base_ver)
+        except ValueError:
+            base = -1
+        if base != cur_ver:
+            raise HTTPException(409, {"msg": "conflito — a nuvem tem uma versão mais nova", "ver": cur_ver})
+    # 1 nível de histórico (.prev) como rede contra perda silenciosa
     if os.path.exists(path):
         try:
             os.replace(path, path + ".prev")
@@ -155,7 +170,11 @@ async def put_backup(request: Request, x_token: str = Header(None)):
             pass
     with open(path, "wb") as f:
         f.write(blob)
-    return {"ok": True, "bytes": len(blob), "em": ts()}
+    new_ver = cur_ver + 1
+    c = db()
+    c.execute("UPDATE contas SET backup_ver=? WHERE id=?", (new_ver, r["id"]))
+    c.commit(); c.close()
+    return {"ok": True, "bytes": len(blob), "ver": new_ver, "em": ts()}
 
 
 @app.get("/api/backup")
@@ -164,7 +183,9 @@ def get_backup(x_token: str = Header(None)):
     path = os.path.join(BACKUPS, r["id"] + ".b64")
     if not os.path.exists(path):
         raise HTTPException(404, "sem backup na nuvem")
-    return PlainTextResponse(open(path, "r", encoding="utf-8").read())
+    cur_ver = (r["backup_ver"] if "backup_ver" in r.keys() and r["backup_ver"] is not None else 0)
+    return PlainTextResponse(open(path, "r", encoding="utf-8").read(),
+                             headers={"X-Backup-Ver": str(cur_ver)})
 
 
 @app.put("/api/loja")
@@ -189,8 +210,9 @@ def me(x_token: str = Header(None)):
     pub = os.path.exists(os.path.join(LOJAS, r["slug"], "index.html"))
     bak = os.path.exists(os.path.join(BACKUPS, r["id"] + ".b64"))
     tem_rec = bool(r["rec_wrap"]) if "rec_wrap" in r.keys() else False
+    ver = (r["backup_ver"] if "backup_ver" in r.keys() and r["backup_ver"] is not None else 0)
     return {"slug": r["slug"], "fone": r["fone"], "publicado": pub,
-            "temBackup": bak, "temRecuperacao": tem_rec}
+            "temBackup": bak, "temRecuperacao": tem_rec, "backupVer": ver}
 
 
 @app.put("/api/recovery")
