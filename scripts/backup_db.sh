@@ -121,3 +121,36 @@ else
   say "AVISO: dump local OK ($FILE, ${ENCSIZE} bytes) mas OFFSITE_TARGET VAZIO — offsite NÃO feito"
   notify fail "OFFSITE_TARGET vazio — offsite NÃO feito (regressão de config?)"
 fi
+
+# ---------------------------------------------------------------------------
+# Cliente Inteligente (ci-api): contas + backups CIFRADOS dos clientes + cardápios.
+# Vivem só nesta VPS (bind mounts ci-data/ci-lojas). Os .b64 já são ZERO-KNOWLEDGE
+# (bytes opacos), então cifrar de novo p/ offsite não fere a privacidade. SEM este
+# backup, perder o volume = perder TODAS as contas e backups de nuvem dos clientes,
+# sem recuperação possível. Tar -> GPG (mesma chave) -> rotação -> offsite.
+CI_BASE=/root/wins_agro_v1
+if [ -d "$CI_BASE/ci-data" ]; then
+  TARGETS="ci-data"
+  [ -d "$CI_BASE/ci-lojas" ] && TARGETS="$TARGETS ci-lojas"
+  CIFILE="$DEST/ci_data_$(date +%Y%m%d_%H%M%S).tar"
+  # shellcheck disable=SC2086
+  if tar -cf "$CIFILE" -C "$CI_BASE" $TARGETS 2>>"$LOG" \
+     && gpg --batch --yes --trust-model always --encrypt --recipient "$GPG_RECIPIENT" \
+            --output "$CIFILE.gpg" "$CIFILE" 2>>"$LOG"; then
+    shred -u "$CIFILE" 2>/dev/null || rm -f "$CIFILE"
+    chmod 600 "$CIFILE.gpg"
+    CISIZE=$(stat -c%s "$CIFILE.gpg")
+    find "$DEST" -name 'ci_data_*.tar.gpg' -mtime +"$KEEP_DAYS" -delete
+    if [ -n "$OFFSITE_TARGET" ]; then
+      scp -o BatchMode=yes -o ConnectTimeout=15 "$CIFILE.gpg" "$OFFSITE_TARGET/" >> "$LOG" 2>&1 \
+        && say "OK: ci-data (${CISIZE}B) + offsite" \
+        || { say "AVISO: ci-data local OK mas OFFSITE FALHOU"; notify fail "ci-data offsite FALHOU"; }
+    else
+      say "OK: ci-data (${CISIZE}B) local (offsite NÃO configurado)"
+    fi
+  else
+    rm -f "$CIFILE" "$CIFILE.gpg" 2>/dev/null
+    say "ERRO: backup do ci-data falhou (tar/gpg)"
+    notify fail "backup do ci-data falhou (tar/gpg)"
+  fi
+fi
