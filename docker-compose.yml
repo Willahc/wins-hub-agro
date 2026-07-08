@@ -81,6 +81,7 @@ services:
   ci-api:
     build: ./ci-api
     restart: always
+    env_file: .env
     mem_limit: 256m
     logging: *default-logging
     environment:

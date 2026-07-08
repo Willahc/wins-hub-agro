@@ -45,7 +45,8 @@ app/frontend/dl/*.pdf
 
 # Cliente Inteligente — projeto SEPARADO, repo próprio: github.com/Willahc/cliente-inteligente
 # (servido daqui via mount do compose; versionado no repo dele, não neste)
-ci/
+ci/*
+!ci/admin-claims.html
 
 # Prospecção Campanella — artefatos gerados + lista de leads (PII), não é código do produto
 prospeccao-campanella/
@@ -60,3 +61,17 @@ certbot/conf/.nginx-reload-needed
 
 # dumps de geometria CAR (grandes, regeneráveis)
 data/car_geom/
+
+# ── Proteções adicionais Cliente Inteligente ──
+ci-data/*.db
+ci-data/admin_token.txt
+**/admin_token.txt
+backups_*/
+backups_marco_*/
+backups_teste_*/
+*.tar.gz
+*.sqlite
+*.sqlite3
+master/
+staging/
+enriquecimento_v5max_cnpj/
