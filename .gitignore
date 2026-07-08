@@ -47,6 +47,7 @@ app/frontend/dl/*.pdf
 # (servido daqui via mount do compose; versionado no repo dele, não neste)
 ci/*
 !ci/admin-claims.html
+!ci/index.html
 
 # Prospecção Campanella — artefatos gerados + lista de leads (PII), não é código do produto
 prospeccao-campanella/

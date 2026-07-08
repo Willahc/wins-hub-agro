@@ -6,14 +6,14 @@ Classificacao: **parcialmente integrado**.
 
 One Pages, App comerciante e Prospecção interna compartilham a mesma base historica de 813 estabelecimentos. A chave tecnica mais confiavel hoje e o `place_id` extraido do `maps_url`. A correspondencia entre One Pages e Prospecção bate **813/813**.
 
-O problema e que essa correspondencia ainda nao virou fluxo operacional. As camadas nao possuem Base Mestre comum, nao trocam status e, embora o claim ja esteja preparado, o vinculo oficial conta <-> estabelecimento ainda depende de autenticacao no backend.
+O problema e que essa correspondencia ainda nao virou fluxo operacional completo. As camadas nao possuem Base Mestre comum e nao trocam status, mas o vinculo conta <-> estabelecimento ja e persistido via `/api/claim-estabelecimento` apos login/cadastro no app.
 
 ## Matriz de fluxo atual
 
 | Origem | Destino | Existe integracao? | Como funciona hoje | Problema | Correcao recomendada |
 |---|---|---|---|---|---|
 | Prospecção | One Page | Parcial por dados historicos | Ambas derivam dos mesmos 813 estabelecimentos e reconciliam por `place_id`. | A ficha de prospeccao nao mostra link da One Page correspondente. | Incluir `onepage_url` e botao "Abrir pagina publica". |
-| One Page | App | Operacional | A One Page publica o botao "Sou o responsavel por este comercio" com `claim_place_id` e `claim_slug`. | O app ainda precisa persistir oficialmente o vinculo quando o usuario autentica. | `claim_place_id` leva ao App e `claim-seed` preenche o onboarding seguro. |
+| One Page | App | Operacional | A One Page publica o botao "Sou o responsavel por este comercio" com `claim_place_id` e `claim_slug`. | O app ja persiste o vinculo via `/api/claim-estabelecimento` apos login/cadastro. | `claim_place_id` leva ao App, `claim-seed` preenche onboarding e `/api/claim-estabelecimento` persiste o vinculo. |
 | App | One Page | Parcial, mas separado | O app publica em `/loja/<slug>/`. | Esse caminho e separado de `/loja/cliente-inteligente/negocios/<slug>/`; pode haver duas paginas para o mesmo comercio. | Definir se a pagina do app substitui, complementa ou reivindica a One Page inicial. |
 | Prospecção | App | Nao operacional | Segmento, oferta e modulos existem isolados na prospeccao. | O app nao usa esses dados para onboarding ou seed. | Gerar `app_seed` por segmento e `place_id`. |
 | App | Prospecção | Parcial | O app ja preenche seed seguro e tenta persistir o claim. | Ainda nao ha verificacao manual/documental do responsavel. | Persistir o claim em `estabelecimento_claims` e depois expor status para a prospecção. |
