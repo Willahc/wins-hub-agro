@@ -1,0 +1,9 @@
+dbs:
+  - path: /data/ci.db
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_REPLICA_BUCKET}
+        path: db
+        endpoint: ${LITESTREAM_REPLICA_ENDPOINT}
+        access-key-id: ${AWS_ACCESS_KEY_ID}
+        secret-access-key: ${AWS_SECRET_ACCESS_KEY}

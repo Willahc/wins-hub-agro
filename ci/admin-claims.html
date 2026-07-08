@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Claims</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:#f5f5f5;color:#333;padding:16px}
+.card{background:#fff;border-radius:8px;padding:16px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+h1{font-size:1.3em;margin-bottom:12px}
+label{font-size:.85em;font-weight:600;display:block;margin-bottom:4px}
+input,select,button{font-size:.9em;padding:8px;border:1px solid #ccc;border-radius:4px}
+input[type=text]{width:100%;margin-bottom:8px}
+button{cursor:pointer;background:#2563eb;color:#fff;border:none;padding:8px 16px;border-radius:4px}
+button:hover{background:#1d4ed8}
+button:disabled{opacity:.5;cursor:not-allowed}
+.btn-sm{padding:4px 10px;font-size:.8em;border-radius:3px;margin:2px}
+.btn-verified{background:#16a34a}
+.btn-rejected{background:#dc2626}
+.btn-pending{background:#ca8a04}
+.btn-claimed{background:#6b7280}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
+.filtros{margin-bottom:12px}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75em;font-weight:600;color:#fff}
+.badge-pending_verification{background:#ca8a04}
+.badge-claimed{background:#6b7280}
+.badge-verified{background:#16a34a}
+.badge-rejected{background:#dc2626}
+table{width:100%;border-collapse:collapse;font-size:.85em}
+th,td{padding:8px;border-bottom:1px solid #eee;text-align:left}
+th{background:#f9fafb;font-weight:600;position:sticky;top:0}
+tr:hover{background:#f0f7ff}
+.wrap{max-height:70vh;overflow:auto}
+.note-input{width:120px;padding:4px;border:1px solid #ccc;border-radius:3px;font-size:.8em}
+.status-msg{padding:8px;border-radius:4px;margin-bottom:8px;font-size:.85em}
+.ok{background:#dcfce7;color:#166534}
+.err{background:#fee2e2;color:#991b1b}
+@media(max-width:768px){.row{flex-direction:column}table{font-size:.75em}}
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>Admin — Claims de Estabelecimentos</h1>
+  <div id="msg" class="status-msg" style="display:none"></div>
+  <label for="token">Token Admin:</label>
+  <div class="row">
+    <input type="text" id="token" placeholder="Cole o token aqui..." style="flex:1;min-width:200px">
+    <button onclick="salvarToken()">Salvar token neste navegador</button>
+    <button onclick="carregarClaims()">Carregar claims</button>
+  </div>
+  <div class="filtros" style="margin-top:12px">
+    <div class="row">
+      <div>
+        <label for="filtroStatus">Status:</label>
+        <select id="filtroStatus">
+          <option value="">Todos</option>
+          <option value="pending_verification">pending_verification</option>
+          <option value="claimed">claimed</option>
+          <option value="verified">verified</option>
+          <option value="rejected">rejected</option>
+        </select>
+      </div>
+      <div style="flex:1">
+        <label for="filtroQ">Busca (nome/place_id/telefone):</label>
+        <input type="text" id="filtroQ" placeholder="Buscar...">
+      </div>
+      <div><button onclick="carregarClaims()">Filtrar</button></div>
+    </div>
+  </div>
+  <div id="health" style="font-size:.8em;color:#666"></div>
+</div>
+
+<div class="card">
+  <div class="wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Nome</th>
+          <th>Segmento</th>
+          <th>Telefone</th>
+          <th>Endereço</th>
+          <th>Status</th>
+          <th>Conta</th>
+          <th>Place ID</th>
+          <th>Claim Slug</th>
+          <th>Criado</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+  <div id="vazio" style="display:none;text-align:center;padding:32px;color:#999">
+    Nenhum claim encontrado.
+  </div>
+</div>
+
+<script>
+const API = window.location.origin;
+const LS_KEY = 'ci_admin_token';
+
+function getToken() {
+  return document.getElementById('token').value.trim() || localStorage.getItem(LS_KEY) || '';
+}
+
+function salvarToken() {
+  const t = document.getElementById('token').value.trim();
+  if (t) { localStorage.setItem(LS_KEY, t); showMsg('ok', 'Token salvo no navegador.'); }
+  else showMsg('err', 'Cole um token primeiro.');
+}
+
+function showMsg(type, text) {
+  const el = document.getElementById('msg');
+  el.className = 'status-msg ' + type;
+  el.textContent = text;
+  el.style.display = 'block';
+  if (type === 'ok') setTimeout(() => el.style.display = 'none', 3000);
+}
+
+async function apiFetch(path, opts = {}) {
+  const token = getToken();
+  if (!token) { showMsg('err', 'Cole o token admin.'); return null; }
+  const r = await fetch(API + path, {
+    ...opts,
+    headers: { 'x-admin-token': token, 'Content-Type': 'application/json', ...opts.headers }
+  });
+  if (r.status === 401) { showMsg('err', 'Token inválido ou expirado.'); return null; }
+  if (!r.ok) { const e = await r.text(); showMsg('err', 'Erro: ' + e); return null; }
+  return r.json();
+}
+
+async function carregarClaims() {
+  const s = document.getElementById('filtroStatus').value;
+  const q = document.getElementById('filtroQ').value;
+  let url = '/api/admin/claims?limit=200';
+  if (s) url += '&status=' + encodeURIComponent(s);
+  if (q) url += '&q=' + encodeURIComponent(q);
+  const data = await apiFetch(url);
+  if (!data) return;
+  renderClaims(data.claims);
+  // health
+  const h = await apiFetch('/api/admin/claims/health');
+  if (h) document.getElementById('health').textContent =
+    `Total: ${h.total_claims} | ${Object.entries(h.por_status).map(([k,v]) => k+':'+v).join(' | ')}`;
+}
+
+function renderClaims(claims) {
+  const tbody = document.getElementById('tbody');
+  const vazio = document.getElementById('vazio');
+  if (!claims.length) { tbody.innerHTML = ''; vazio.style.display = 'block'; return; }
+  vazio.style.display = 'none';
+  tbody.innerHTML = claims.map(c => `
+    <tr>
+      <td>${c.id}</td>
+      <td>${esc(c.nome_comercial)}</td>
+      <td>${esc(c.segmento)}</td>
+      <td>${esc(c.telefone)}</td>
+      <td>${esc(c.endereco)}</td>
+      <td><span class="badge badge-${c.status}">${c.status}</span></td>
+      <td style="font-size:.75em">${esc(c.conta_id)}</td>
+      <td style="font-size:.75em">${esc(c.place_id)}</td>
+      <td style="font-size:.75em">${esc(c.claim_slug)}</td>
+      <td style="font-size:.75em">${esc(c.created_at)}</td>
+      <td>
+        <button class="btn-sm btn-verified" onclick="mudarStatus(${c.id},'verified')">Verified</button>
+        <button class="btn-sm btn-rejected" onclick="mudarStatus(${c.id},'rejected')">Rejected</button>
+        <button class="btn-sm btn-pending" onclick="mudarStatus(${c.id},'pending_verification')">Pending</button>
+        <button class="btn-sm btn-claimed" onclick="mudarStatus(${c.id},'claimed')">Claimed</button>
+        <br><input class="note-input" placeholder="Nota admin" id="note-${c.id}" value="${esc(c.admin_note||'')}">
+      </td>
+    </tr>
+  `).join('');
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+async function mudarStatus(id, status) {
+  const note = document.getElementById('note-' + id)?.value || '';
+  const data = await apiFetch('/api/admin/claims/' + id, {
+    method: 'PATCH',
+    body: JSON.stringify({ status, admin_note: note })
+  });
+  if (data) { showMsg('ok', 'Status atualizado.'); carregarClaims(); }
+}
+
+// Auto-load token do localStorage
+document.getElementById('token').value = localStorage.getItem(LS_KEY) || '';
+</script>
+
+</body>
+</html>
