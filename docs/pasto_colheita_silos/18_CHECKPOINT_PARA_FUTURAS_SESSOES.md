@@ -1,0 +1,76 @@
+# Checkpoint para futuras sessões
+
+## Estado
+
+- Branch/commit analisado: `master` / `84fcf70e15567ddc6c812d638c816204e5ae9035`.
+- Análise feita só por código, SQL e documentação; banco/dados reais não foram acessados.
+- Nesta sessão só foram criados Markdown em `docs/pasto_colheita_silos/`.
+
+## Arquivos-chave atuais
+
+- `app/main.py`: monólito, auth middleware, páginas/APIs/Campo/território.
+- `app/auth.py`, `app/db.py`, `app/external_apis.py`.
+- `app/frontend/base.html`, `mapa.html`, `campo.html`, `sw.js`.
+- `app/routers/simulador.py` e `_pasto_limpo_*`.
+- `scripts/migration_*.sql`, `ingest_mapbiomas_pasto.py`, `ingest_pam_lavoura.py`, `pasto_full_br.py`, `ndvi_pasto_gee.py`.
+- `docker-compose.yml`, `nginx/nginx.conf`.
+
+## Fatos e objetivo
+
+- FastAPI/Jinja/Alpine/Leaflet/PostgreSQL/Docker Compose; Cliente Inteligente separado.
+- Conta/sessão atual é single-tenant; endpoints aceitam IDs sem ownership por organização.
+- Há animais, grupos, pesagens, Campo offline parcial, PDF, mapas e dados municipais reutilizáveis.
+- Não há módulos operacionais de estoque/pasto/safra/silo/clima.
+- Objetivo prioritário: **Autonomia Alimentar + Estoque de Silagem**, manual antes de satélite/sensor.
+
+## Decisões tomadas
+
+1. Preservar stack; modularizar novos domínios, sem reescrita.
+2. Fase 0 multiusuário/autorização/unidades/fórmulas antes do MVP.
+3. Estoque por ledger; runs e fórmulas com snapshot/versão.
+4. Satélite é sinal com validação de campo.
+5. Silo de silagem e silo de grãos são domínios separados.
+6. Radar usa déficit teórico; capacidade cadastrada não é disponibilidade.
+7. Agro–Log por API/outbox/inbox, sem banco compartilhado.
+8. PostGIS só após spike.
+
+## Abertas/riscos/dependências
+
+- mapear organização/`fazenda.cliente`; papéis e migração;
+- validar parâmetros com especialistas;
+- validar licenças/acessos INMET, ZARC, Conab, MapBiomas, CAR e Copernicus;
+- medir VPS e definir worker/storage;
+- endurecer offline localStorage;
+- obter contrato/sandbox WiNS Hub Log.
+
+## Ordem recomendada
+
+1. Ler `00`, `01`, `04`, `05`, `06`, `09`, `14`, `16`, `17`.
+2. Fazer discovery de identidade e schema sem banco de produção.
+3. Especificar Fase 0 e threat model.
+4. Criar ambiente PostgreSQL de teste/dados sintéticos.
+5. Validar fórmulas/unidades do MVP com especialista.
+6. Só então planejar migrations/implementação incremental.
+
+## Não fazer
+
+- não estender IDs confiados do navegador;
+- não hardcode parâmetro agronômico;
+- não tratar NDVI/MapBiomas como diagnóstico;
+- não afirmar vaga de armazém pelo SICARM;
+- não processar mosaico nacional na VPS;
+- não misturar Cliente Inteligente/Agro/Log por banco;
+- não implementar antes de ler estes documentos e verificar se o HEAD mudou.
+
+## Próximos comandos seguros
+
+```bash
+git status --short --branch
+git rev-parse HEAD
+rg -n "cliente_id|animal_id|farm_id|organization" app scripts --glob '*.py' --glob '*.sql'
+rg -n "@app\.|APIRouter" app --glob '*.py'
+rg -n "CREATE TABLE|REFERENCES|CREATE INDEX" scripts --glob '*.sql'
+python3 -m compileall -q app   # somente se a próxima tarefa tocar Python
+```
+
+Se o HEAD não for o commit acima, revisar diffs e atualizar o inventário antes de implementar.
