@@ -50,7 +50,13 @@ mappings sintéticos e primeira vertical legada de baixo risco. Ler os documento
 
 **PRÓXIMO PASSO:** Fase 0E: backfill de dados reais em produção e liberação gradual do endpoint `/api/v2/farms` usando feature flags.
 
+## Atualização — Fase 0E1 inventariada e remediada sob regras estritas de privacidade
 
+**IMPLEMENTADO:** Ferramenta de inventário `inventory_readonly.py` executada com transação estrita de leitura e rollback sistemático em produção. Coleta controlada recuperada com segurança no host sob permissões restritas (700/600). Remediação de privacidade com exclusão total de dados de auditoria, WebAuthn e sessões, reclassificando propostas para a Classe F (sem evidência suficiente).
+
+**TESTADO:** Validação de segurança estática no repositório, teste de integridade em staging sintético (escrita nula comprovada com 34 contagens idênticas pré/pós), e todos os 87 testes do host validados e aprovados.
+
+**PRÓXIMO PASSO:** Fase 0E2: revisão humana de mappings e consolidação do roadmap de backfill.
 
 ## Estado
 

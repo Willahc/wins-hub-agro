@@ -182,3 +182,21 @@ SELECT setval(pg_get_serial_sequence('foundation.organizations', 'id'), 4);
 SELECT setval(pg_get_serial_sequence('foundation.operational_farms', 'id'), 7);
 SELECT setval(pg_get_serial_sequence('foundation.organization_memberships', 'id'), 11);
 SELECT setval(pg_get_serial_sequence('foundation.farm_access', 'id'), 5);
+
+-- Semeando tabelas legadas para o inventário
+DELETE FROM fazenda.cliente CASCADE;
+INSERT INTO fazenda.cliente (id, razao_social, uf, municipio, plano_contratado) VALUES
+(17, 'Fazenda Demonstração Staging', 'TO', 'Porto Nacional', 'premium');
+
+-- Mock audit log and webauthn credentials for staging rehearsal
+DELETE FROM prospeccao.audit_log;
+DELETE FROM prospeccao.webauthn_credential;
+
+INSERT INTO prospeccao.audit_log (usuario, acao, detalhe) VALUES
+('mari@winshubagro.cloud', 'login_ok', 'via=passkey'),
+('williamvnvn@gmail.com', 'login_ok', 'via=passkey'),
+('sre@wins', 'login_ok', 'via=passkey');
+
+INSERT INTO prospeccao.webauthn_credential (cred_id, user_email, public_key) VALUES
+('cred_1', 'mari@winshubagro.cloud', 'pubkey_1'),
+('cred_2', 'williamvnvn@gmail.com', 'pubkey_2');

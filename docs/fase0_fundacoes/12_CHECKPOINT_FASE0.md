@@ -44,3 +44,9 @@ deste diretório, além de `docs/pasto_colheita_silos/18_CHECKPOINT...`.
 **IMPLEMENTADO E TESTADO EM STAGING PERSISTENTE:** rota `GET /api/v2/farms` com suporte completo a autenticação JWT real, autorização baseada no `ActorContext`, validação automática de memberships ativas e restrição server-side de farm access. Staging persistente isolado rodando em rede própria e API binded em `127.0.0.1:18080`.
 
 **DECISÃO:** GO para implantação da fundação multi-tenant e ativação controlada (Fase 0E). A feature flag `ENABLE_FARMS_V2` permanece desativada por padrão em produção.
+
+## Atualização Fase 0E1
+
+**IMPLEMENTADO E TESTADO EM STAGING E PRODUÇÃO (READ-ONLY):** Ferramenta de inventário `inventory_readonly.py` executada de forma estritamente somente leitura via transação isolada com rollback obrigatório em produção. Geração de mappings e checklist de auditoria privados. Remediação de privacidade com remoção total de dependência de dados de auditoria, WebAuthn e sessões, reclassificando propostas para a Classe F. Relatório público sanitizado de evidências contendo apenas HMACs e contagens agregadas de recursos operacionais.
+
+**DECISÃO:** GO para prosseguir à Fase 0E2 (Revisão Humana de Mappings). A coleta em produção está concluída e validada. A feature flag permanece desligada em produção.

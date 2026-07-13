@@ -36,3 +36,13 @@ migração em massa das rotas legadas, RLS e deploy.
 - `27_EVIDENCIAS_FASE0D.md`: latências, planos de queries e testes HTTP;
 - `28_SEGURANCA_E_IDOR_FARMS_V2.md`: controles contra IDOR e vazamentos;
 - `29_GO_NO_GO_FASE0D.md`: matriz de decisão de go/no-go do staging.
+
+## Fase 0E1
+
+- `30_FASE0E1_INVENTARIO_READONLY.md`: arquitetura de inventário somente leitura;
+- `31_MODELO_PROPOSTA_MAPPING.md`: modelo e schema da proposta de mapping;
+- `32_PRIVACIDADE_E_MINIMIZACAO.md`: diretrizes de privacidade e minimização;
+- `33_METODOLOGIA_CLASSIFICACAO_MAPPING.md`: classes de confiança e conflito;
+- `34_EVIDENCIAS_SANITIZADAS_FASE0E1.md`: relatório público de evidências sanitizadas;
+- `35_RUNBOOK_INVENTARIO_READONLY.md`: manual de execução e validação da ferramenta;
+- `36_GO_NO_GO_FASE0E1.md`: matriz de decisão e parecer técnico.
