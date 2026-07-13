@@ -1,0 +1,580 @@
+{% extends "base.html" %}
+{% block title %}Pasto Vivo · WiNS Hub Agro{% endblock %}
+{% block topbar %}Pasto Vivo{% endblock %}
+{% block content %}
+<div x-data="pastoVivo()" x-init="init()">
+
+  <div class="page-head">
+    <div>
+      <h1>Pasto Vivo</h1>
+      <div class="sub">Acompanhe piquetes, medições, pastejo e períodos de descanso.</div>
+    </div>
+  </div>
+
+  <!-- Seletor de fazenda -->
+  <div class="card pad" style="margin-bottom:16px">
+    <label class="small" style="font-weight:600;display:block;margin-bottom:6px">Fazenda</label>
+    <select class="select" style="width:100%;max-width:400px" x-model="selectedFarm" @change="loadPaddocks()">
+      <option value="">Selecione uma fazenda…</option>
+      <template x-for="f in farms" :key="f.id">
+        <option :value="f.id" x-text="f.name"></option>
+      </template>
+    </select>
+  </div>
+
+  <template x-if="selectedFarm">
+    <div>
+      <!-- KPI Cards -->
+      <div class="stats">
+        <div class="stat">
+          <div class="k">Piquetes ativos</div>
+          <div class="v" x-text="kpis.active_paddocks"></div>
+          <div class="d">unidades</div>
+        </div>
+        <div class="stat">
+          <div class="k">Área total</div>
+          <div class="v" x-text="fmtD(kpis.total_area_ha)"></div>
+          <div class="d">hectares</div>
+        </div>
+        <div class="stat">
+          <div class="k">Área pronta</div>
+          <div class="v" style="color:var(--ok)" x-text="fmtD(kpis.ready_area_ha)"></div>
+          <div class="d">hectares</div>
+        </div>
+        <div class="stat">
+          <div class="k">Área em pastejo</div>
+          <div class="v" style="color:var(--brand-500)" x-text="fmtD(kpis.grazing_area_ha)"></div>
+          <div class="d">hectares</div>
+        </div>
+        <div class="stat">
+          <div class="k">Área em descanso</div>
+          <div class="v" style="color:var(--gold-500)" x-text="fmtD(kpis.resting_area_ha)"></div>
+          <div class="d">hectares</div>
+        </div>
+        <div class="stat">
+          <div class="k">MS utilizável</div>
+          <div class="v" x-text="fmtD(kpis.total_usable_dm_kg)"></div>
+          <div class="d">kg MS</div>
+        </div>
+        <div class="stat">
+          <div class="k">Medições desatualizadas</div>
+          <div class="v" :style="kpis.stale_measurements > 0 ? 'color:var(--danger)' : ''" x-text="kpis.stale_measurements"></div>
+          <div class="d">acima de 14 dias</div>
+        </div>
+      </div>
+
+      <!-- Seção Piquetes -->
+      <div class="card pad" style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <h3 style="margin:0">Piquetes</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-ghost" @click="openImportModal()" x-show="enablePastureLive">Importar do Pasto Vivo</button>
+            <button class="btn btn-primary" @click="openPaddockModal()">+ Novo piquete</button>
+          </div>
+        </div>
+        <template x-if="paddocks.length === 0">
+          <div class="empty" style="padding:20px">Nenhum piquete cadastrado para esta fazenda.</div>
+        </template>
+        <template x-if="paddocks.length > 0">
+          <div class="table-scroll">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th>Nome</th>
+                  <th>Código</th>
+                  <th>Área (ha)</th>
+                  <th>Forrageira</th>
+                  <th>Última altura (cm)</th>
+                  <th>kg MS/ha</th>
+                  <th>MS utilizável (kg)</th>
+                  <th>Última medição</th>
+                  <th>Próxima liberação</th>
+                  <th>Estado</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="(p,i) in paddocks" :key="p.public_id || i">
+                  <tr>
+                    <td data-label="Nome" x-text="p.name"></td>
+                    <td data-label="Código" class="mono" x-text="p.code || '—'"></td>
+                    <td data-label="Área" x-text="fmtD(p.area_ha)"></td>
+                    <td data-label="Forrageira" x-text="p.grass_species || '—'"></td>
+                    <td data-label="Última altura" x-text="p.last_height_cm != null ? fmtD(p.last_height_cm) + ' cm' : '—'"></td>
+                    <td data-label="kg MS/ha" x-text="p.dm_kg_ha != null ? fmtD(p.dm_kg_ha) : '—'"></td>
+                    <td data-label="MS utilizável" x-text="p.usable_dm_kg != null ? fmtD(p.usable_dm_kg) : '—'"></td>
+                    <td data-label="Última medição">
+                      <span x-text="p.last_measurement_date || '—'"></span>
+                      <template x-if="isStale(p.last_measurement_date)">
+                        <span class="badge danger" style="margin-left:4px;font-size:var(--fz-xs)">Desatualizada</span>
+                      </template>
+                    </td>
+                    <td data-label="Próxima liberação" x-text="p.next_release_date || '—'"></td>
+                    <td data-label="Estado">
+                      <span :class="'badge ' + stateBadgeClass(p.state)" x-text="stateLabel(p.state)"></span>
+                      <span class="small muted" style="margin-left:4px" x-text="stateIcon(p.state)"></span>
+                    </td>
+                    <td data-label="Ações">
+                      <div style="display:flex;gap:4px;flex-wrap:wrap">
+                        <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="viewPaddock(p)" title="Visualizar">Ver</button>
+                        <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openMeasurementModal(p)" title="Medir">Medir</button>
+                        <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="startGrazing(p)" title="Iniciar pastejo" x-show="p.state !== 'grazing'">Pastejar</button>
+                        <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="stopGrazing(p)" title="Encerrar pastejo" x-show="p.state === 'grazing'">Encerrar</button>
+                        <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openPaddockModal(p)" title="Editar">Editar</button>
+                        <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="archivePaddock(p)" title="Arquivar">Arquivar</button>
+                      </div>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </template>
+      </div>
+
+      <!-- Timeline / Histórico -->
+      <div class="card pad" style="margin-bottom:16px">
+        <h3 style="margin:0 0 12px">Histórico de Atividades</h3>
+        <template x-if="timeline.length === 0">
+          <div class="empty" style="padding:20px">Nenhuma atividade registrada.</div>
+        </template>
+        <template x-if="timeline.length > 0">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <template x-for="(ev,i) in timeline" :key="i">
+              <div style="display:flex;align-items:flex-start;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)">
+                <div style="min-width:100px;font-size:var(--fz-sm);color:var(--muted)" x-text="ev.date"></div>
+                <div>
+                  <span class="badge" :class="eventBadgeClass(ev.event_type)" x-text="eventLabel(ev.event_type)"></span>
+                  <span class="small" style="margin-left:6px" x-text="ev.paddock_name"></span>
+                  <template x-if="ev.detail">
+                    <span class="small muted" style="margin-left:6px" x-text="'— ' + ev.detail"></span>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
+    </div>
+  </template>
+
+  <!-- Empty state -->
+  <template x-if="!selectedFarm && farms.length > 0">
+    <div class="card pad" style="text-align:center;padding:60px 20px">
+      <div class="muted">Selecione uma fazenda para começar.</div>
+    </div>
+  </template>
+
+  <div class="loading" x-show="loadingFarms"><div class="spinner"></div></div>
+
+  <!-- Modal: Criar/Editar Piquete -->
+  <template x-if="showPaddockModal">
+    <div class="modal-overlay" @click.self="showPaddockModal=false">
+      <div class="modal card pad" style="max-width:600px;width:100%">
+        <h3 style="margin:0 0 16px" x-text="editingPaddock ? 'Editar Piquete' : 'Novo Piquete'"></h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Nome *</label>
+            <input class="input" style="width:100%" x-model="paddockForm.name" placeholder="Ex: Piquete A1">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Código</label>
+            <input class="input" style="width:100%" x-model="paddockForm.code" placeholder="Ex: PA-01">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Área (ha) *</label>
+            <input class="input" type="number" min="0.01" step="0.01" style="width:100%" x-model="paddockForm.area_ha">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Forrageira</label>
+            <input class="input" style="width:100%" x-model="paddockForm.grass_species" placeholder="Ex: Brachiaria">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Altura de corte (cm)</label>
+            <input class="input" type="number" min="0" step="0.1" style="width:100%" x-model="paddockForm.cutting_height_cm">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Altura mínima descanso (cm)</label>
+            <input class="input" type="number" min="0" step="0.1" style="width:100%" x-model="paddockForm.rest_min_height_cm">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Dias mínimo descanso</label>
+            <input class="input" type="number" min="0" style="width:100%" x-model="paddockForm.rest_min_days">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Utilização máxima %</label>
+            <input class="input" type="number" min="0" max="100" step="1" style="width:100%" x-model="paddockForm.max_utilization_pct">
+          </div>
+          <div style="grid-column:1/-1">
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Observações</label>
+            <textarea class="input" style="width:100%;height:60px;resize:vertical" x-model="paddockForm.notes"></textarea>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
+          <button class="btn btn-ghost" @click="showPaddockModal=false">Cancelar</button>
+          <button class="btn btn-primary" @click="savePaddock()" :disabled="savingPaddock">
+            <template x-if="savingPaddock"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+            Salvar
+          </button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- Modal: Criar Medição -->
+  <template x-if="showMeasurementModal">
+    <div class="modal-overlay" @click.self="showMeasurementModal=false">
+      <div class="modal card pad" style="max-width:500px;width:100%">
+        <h3 style="margin:0 0 16px">Nova Medição</h3>
+        <div style="display:grid;gap:12px">
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Piquete</label>
+            <input class="input" style="width:100%" :value="measurementPaddock?.name" disabled>
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Data da medição</label>
+            <input class="input" type="date" style="width:100%" x-model="measurementForm.measurement_date">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Altura do pasto (cm)</label>
+            <input class="input" type="number" min="0" step="0.1" style="width:100%" x-model="measurementForm.height_cm">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Estimativa kg MS/ha</label>
+            <input class="input" type="number" min="0" step="1" style="width:100%" x-model="measurementForm.dm_kg_ha">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Observações</label>
+            <textarea class="input" style="width:100%;height:60px;resize:vertical" x-model="measurementForm.notes"></textarea>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
+          <button class="btn btn-ghost" @click="showMeasurementModal=false">Cancelar</button>
+          <button class="btn btn-primary" @click="saveMeasurement()" :disabled="savingMeasurement">
+            <template x-if="savingMeasurement"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+            Salvar medição
+          </button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- Modal: Detalhes do Piquete -->
+  <template x-if="showDetailModal">
+    <div class="modal-overlay" @click.self="showDetailModal=false">
+      <div class="modal card pad" style="max-width:700px;width:100%">
+        <h3 style="margin:0 0 16px" x-text="detailPaddock?.name || 'Detalhes do Piquete'"></h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">
+          <div>
+            <div class="small muted">Código</div>
+            <div class="mono" x-text="detailPaddock?.code || '—'"></div>
+          </div>
+          <div>
+            <div class="small muted">Área</div>
+            <div x-text="fmtD(detailPaddock?.area_ha) + ' ha'"></div>
+          </div>
+          <div>
+            <div class="small muted">Forrageira</div>
+            <div x-text="detailPaddock?.grass_species || '—'"></div>
+          </div>
+          <div>
+            <div class="small muted">Estado</div>
+            <div>
+              <span :class="'badge ' + stateBadgeClass(detailPaddock?.state)" x-text="stateLabel(detailPaddock?.state)"></span>
+              <span style="margin-left:4px" x-text="stateIcon(detailPaddock?.state)"></span>
+            </div>
+          </div>
+          <div>
+            <div class="small muted">Última altura</div>
+            <div x-text="detailPaddock?.last_height_cm != null ? fmtD(detailPaddock?.last_height_cm) + ' cm' : '—'"></div>
+          </div>
+          <div>
+            <div class="small muted">kg MS/ha</div>
+            <div x-text="detailPaddock?.dm_kg_ha != null ? fmtD(detailPaddock?.dm_kg_ha) : '—'"></div>
+          </div>
+          <div>
+            <div class="small muted">MS utilizável</div>
+            <div x-text="detailPaddock?.usable_dm_kg != null ? fmtD(detailPaddock?.usable_dm_kg) + ' kg' : '—'"></div>
+          </div>
+          <div>
+            <div class="small muted">Próxima liberação</div>
+            <div x-text="detailPaddock?.next_release_date || '—'"></div>
+          </div>
+        </div>
+        <template x-if="detailPaddock?.last_measurement_date">
+          <div style="margin-bottom:12px">
+            <span class="small muted">Última medição:</span>
+            <span class="small" x-text="detailPaddock.last_measurement_date"></span>
+            <template x-if="isStale(detailPaddock.last_measurement_date)">
+              <span class="badge danger" style="margin-left:6px;font-size:var(--fz-xs)">Desatualizada</span>
+            </template>
+          </div>
+        </template>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button class="btn btn-ghost" @click="showDetailModal=false">Fechar</button>
+          <button class="btn btn-primary" @click="showDetailModal=false; openMeasurementModal(detailPaddock)">Nova medição</button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- Modal: Importar do Pasto Vivo -->
+  <template x-if="showImportModal">
+    <div class="modal-overlay" @click.self="showImportModal=false">
+      <div class="modal card pad" style="max-width:700px;width:100%">
+        <h3 style="margin:0 0 16px">Importar do Pasto Vivo</h3>
+        <div class="small muted" style="margin-bottom:12px">Selecione os piquetes para importar dados de medição e pastejo.</div>
+        <template x-if="importLoading">
+          <div style="text-align:center;padding:20px"><div class="spinner"></div></div>
+        </template>
+        <template x-if="!importLoading && importSources.length === 0">
+          <div class="empty" style="padding:20px">Nenhuma fonte disponível no Pasto Vivo para esta fazenda.</div>
+        </template>
+        <template x-if="!importLoading && importSources.length > 0">
+          <div>
+            <div style="margin-bottom:12px">
+              <button class="btn btn-ghost" style="font-size:var(--fz-sm)" @click="selectAllImport()">Selecionar todos</button>
+              <button class="btn btn-ghost" style="font-size:var(--fz-sm)" @click="importSelection=[]">Desmarcar todos</button>
+            </div>
+            <div class="table-scroll">
+              <table class="data">
+                <thead>
+                  <tr>
+                    <th style="width:40px"></th>
+                    <th>Piquete</th>
+                    <th>Área (ha)</th>
+                    <th>Forrageira</th>
+                    <th>Última altura</th>
+                    <th>kg MS/ha</th>
+                    <th>Status medição</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="(s,i) in importSources" :key="s.paddock_id || i">
+                    <tr>
+                      <td>
+                        <input type="checkbox" :value="s.paddock_id" x-model="importSelection">
+                      </td>
+                      <td x-text="s.name"></td>
+                      <td x-text="fmtD(s.area_ha)"></td>
+                      <td x-text="s.grass_species || '—'"></td>
+                      <td x-text="s.last_height_cm != null ? fmtD(s.last_height_cm) + ' cm' : '—'"></td>
+                      <td x-text="s.dm_kg_ha != null ? fmtD(s.dm_kg_ha) : '—'"></td>
+                      <td>
+                        <template x-if="isStale(s.last_measurement_date)">
+                          <span class="badge warn" style="font-size:var(--fz-xs)">⚠ Medição desatualizada</span>
+                        </template>
+                        <template x-if="!isStale(s.last_measurement_date)">
+                          <span class="badge ok" style="font-size:var(--fz-xs)">Atualizada</span>
+                        </template>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </template>
+        <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
+          <button class="btn btn-ghost" @click="showImportModal=false">Cancelar</button>
+          <button class="btn btn-primary" @click="importSelectedPaddocks()" :disabled="importSelection.length === 0 || importingPaddocks">
+            <template x-if="importingPaddocks"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+            Importar (<span x-text="importSelection.length"></span>)
+          </button>
+        </div>
+      </div>
+    </div>
+  </template>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function pastoVivo(){
+  return {
+    farms:[], selectedFarm:'', paddocks:[], timeline:[], loadingFarms:false,
+    kpis:{active_paddocks:0,total_area_ha:0,ready_area_ha:0,grazing_area_ha:0,resting_area_ha:0,total_usable_dm_kg:0,stale_measurements:0},
+    showPaddockModal:false, editingPaddock:null, savingPaddock:false,
+    paddockForm:{name:'',code:'',area_ha:'',grass_species:'',cutting_height_cm:'',rest_min_height_cm:'',rest_min_days:'',max_utilization_pct:'',notes:''},
+    showMeasurementModal:false, measurementPaddock:null, savingMeasurement:false,
+    measurementForm:{measurement_date:new Date().toISOString().slice(0,10),height_cm:'',dm_kg_ha:'',notes:''},
+    showDetailModal:false, detailPaddock:null,
+    showImportModal:false, importLoading:false, importSources:[], importSelection:[], importingPaddocks:false,
+    enablePastureLive: {{ enable_pasture_live|tojson }},
+
+    async init(){
+      this.loadingFarms=true;
+      try{
+        const r=await fetch('/api/v2/farms?limit=100');
+        if(r.ok){const d=await r.json(); this.farms=d.items||[];}
+      }catch(e){}
+      this.loadingFarms=false;
+    },
+
+    async loadPaddocks(){
+      if(!this.selectedFarm) return;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/pasture-live/paddocks');
+        if(r.ok){
+          const d=await r.json();
+          this.paddocks=d.items||d.paddocks||[];
+          this.kpis=d.kpis||this.kpis;
+        }
+      }catch(e){}
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/pasture-live/timeline');
+        if(r.ok){const d=await r.json(); this.timeline=d.items||d.events||[];}
+      }catch(e){}
+    },
+
+    openPaddockModal(p){
+      if(p){
+        this.editingPaddock=p;
+        this.paddockForm={name:p.name||'',code:p.code||'',area_ha:p.area_ha||'',grass_species:p.grass_species||'',cutting_height_cm:p.cutting_height_cm||'',rest_min_height_cm:p.rest_min_height_cm||'',rest_min_days:p.rest_min_days||'',max_utilization_pct:p.max_utilization_pct||'',notes:p.notes||''};
+      } else {
+        this.editingPaddock=null;
+        this.paddockForm={name:'',code:'',area_ha:'',grass_species:'',cutting_height_cm:'',rest_min_height_cm:'',rest_min_days:'',max_utilization_pct:'',notes:''};
+      }
+      this.showPaddockModal=true;
+    },
+
+    async savePaddock(){
+      if(!this.paddockForm.name||!this.paddockForm.area_ha){alert('Nome e área são obrigatórios.');return;}
+      this.savingPaddock=true;
+      try{
+        const url=this.editingPaddock
+          ?'/api/v2/farms/'+this.selectedFarm+'/pasture-live/paddocks/'+this.editingPaddock.public_id
+          :'/api/v2/farms/'+this.selectedFarm+'/pasture-live/paddocks';
+        const method=this.editingPaddock?'PUT':'POST';
+        const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(this.paddockForm)});
+        if(r.ok){
+          this.showPaddockModal=false;
+          await this.loadPaddocks();
+        } else {
+          const e=await r.json();
+          alert(e.detail?.message||'Erro ao salvar piquete.');
+        }
+      }catch(e){alert('Erro de conexão.');}
+      this.savingPaddock=false;
+    },
+
+    viewPaddock(p){
+      this.detailPaddock=p;
+      this.showDetailModal=true;
+    },
+
+    openMeasurementModal(p){
+      this.measurementPaddock=p;
+      this.measurementForm={measurement_date:new Date().toISOString().slice(0,10),height_cm:p.last_height_cm||'',dm_kg_ha:p.dm_kg_ha||'',notes:''};
+      this.showMeasurementModal=true;
+    },
+
+    async saveMeasurement(){
+      if(!this.measurementPaddock){return;}
+      this.savingMeasurement=true;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/pasture-live/paddocks/'+this.measurementPaddock.public_id+'/measurements',{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(this.measurementForm)
+        });
+        if(r.ok){
+          this.showMeasurementModal=false;
+          await this.loadPaddocks();
+        } else {
+          const e=await r.json();
+          alert(e.detail?.message||'Erro ao salvar medição.');
+        }
+      }catch(e){alert('Erro de conexão.');}
+      this.savingMeasurement=false;
+    },
+
+    async startGrazing(p){
+      if(!confirm('Iniciar pastejo no piquete "'+p.name+'"?')) return;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/pasture-live/paddocks/'+p.public_id+'/grazing/start',{method:'POST'});
+        if(r.ok) await this.loadPaddocks();
+        else{const e=await r.json(); alert(e.detail?.message||'Erro ao iniciar pastejo.');}
+      }catch(e){alert('Erro de conexão.');}
+    },
+
+    async stopGrazing(p){
+      if(!confirm('Encerrar pastejo no piquete "'+p.name+'"?')) return;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/pasture-live/paddocks/'+p.public_id+'/grazing/stop',{method:'POST'});
+        if(r.ok) await this.loadPaddocks();
+        else{const e=await r.json(); alert(e.detail?.message||'Erro ao encerrar pastejo.');}
+      }catch(e){alert('Erro de conexão.');}
+    },
+
+    async archivePaddock(p){
+      if(!confirm('Arquivar o piquete "'+p.name+'"?')) return;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/pasture-live/paddocks/'+p.public_id,{method:'DELETE'});
+        if(r.ok) await this.loadPaddocks();
+        else{const e=await r.json(); alert(e.detail?.message||'Erro ao arquivar.');}
+      }catch(e){alert('Erro de conexão.');}
+    },
+
+    async openImportModal(){
+      this.importSelection=[];
+      this.importSources=[];
+      this.showImportModal=true;
+      this.importLoading=true;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/pasture-live/autonomy-sources');
+        if(r.ok){const d=await r.json(); this.importSources=d.items||d.sources||[];}
+      }catch(e){}
+      this.importLoading=false;
+    },
+
+    selectAllImport(){
+      this.importSelection=this.importSources.map(s=>s.paddock_id);
+    },
+
+    async importSelectedPaddocks(){
+      if(this.importSelection.length===0) return;
+      this.importingPaddocks=true;
+      try{
+        for(const pid of this.importSelection){
+          const src=this.importSources.find(s=>s.paddock_id===pid);
+          if(!src) continue;
+          const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/pasture-live/paddocks',{
+            method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({name:src.name,area_ha:src.area_ha,grass_species:src.grass_species,
+              code:src.code,last_height_cm:src.last_height_cm,dm_kg_ha:src.dm_kg_ha,
+              usable_dm_kg:src.usable_dm_kg,imported_from:'autonomy_sources'})
+          });
+        }
+        this.showImportModal=false;
+        await this.loadPaddocks();
+      }catch(e){alert('Erro ao importar.');}
+      this.importingPaddocks=false;
+    },
+
+    isStale(dateStr){
+      if(!dateStr) return true;
+      const d=new Date(dateStr);
+      const now=new Date();
+      return (now-d)>(14*24*60*60*1000);
+    },
+
+    stateLabel(s){
+      return {ready:'Pronto',grazing:'Em pastejo',resting:'Em descanso',overgrazed:'Sobrepastejado',drought:'Seco',undefined:'Indefinido'}[s]||s||'Indefinido';
+    },
+    stateIcon(s){
+      return {ready:'✓',grazing:'▶',resting:'⏸',overgrazed:'⚠',drought:'☀',undefined:'?'}[s]||'?';
+    },
+    stateBadgeClass(s){
+      return {ready:'ok',grazing:'brand',resting:'warn',overgrazed:'danger',drought:'neutral'}[s]||'neutral';
+    },
+    eventLabel(t){
+      return {measurement:'Medição',grazing_start:'Início pastejo',grazing_stop:'Fim pastejo',creation:'Criação',archive:'Arquivo'}[t]||t||'Evento';
+    },
+    eventBadgeClass(t){
+      return {measurement:'brand',grazing_start:'ok',grazing_stop:'warn',creation:'neutral',archive:'neutral'}[t]||'neutral';
+    },
+    fmtD(v){const n=Number(v);return isNaN(n)?'0':n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});},
+  }
+}
+</script>
+{% endblock %}

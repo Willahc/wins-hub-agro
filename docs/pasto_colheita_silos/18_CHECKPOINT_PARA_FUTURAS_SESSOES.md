@@ -120,6 +120,18 @@ mappings sintéticos e primeira vertical legada de baixo risco. Ler os documento
 5. Validar fórmulas/unidades do MVP com especialista.
 6. Só então planejar migrations/implementação incremental.
 
+## Atualização — Módulo Pasto Vivo Implementado
+
+**IMPLEMENTADO:** Documentação completa do módulo Pasto Vivo em `docs/pasto_vivo/`, incluindo:
+- Escopo e regras de negócio (01_ESCOPO_E_REGRAS.md)
+- Modelo de dados e API (02_MODELO_DADOS_E_API.md)
+- Guia do usuário (03_GUIA_USUARIO.md)
+- Staging, testes e limitações (04_STAGING_TESTES_E_LIMITACOES.md)
+
+**INTEGRAÇÃO:** Adicionada seção de integração com Autonomia Alimentar no README do módulo correspondente.
+
+**PRÓXIMO PASSO:** Implementar migrations e código do módulo Pasto Vivo seguindo a documentação criada.
+
 ## Não fazer
 
 - não estender IDs confiados do navegador;

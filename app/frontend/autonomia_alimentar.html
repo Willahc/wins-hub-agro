@@ -114,7 +114,10 @@
       <div class="card pad" style="margin-bottom:16px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <h3 style="margin:0">Pastagem Disponível</h3>
-          <button class="btn btn-ghost" @click="addPasture()">+ Adicionar área</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost" @click="openPastureImport()" x-show="enablePastureLive">Importar do Pasto Vivo</button>
+            <button class="btn btn-ghost" @click="addPasture()">+ Adicionar área</button>
+          </div>
         </div>
         <div class="table-scroll">
           <table class="data">
@@ -316,6 +319,72 @@
     </div>
   </template>
 
+  <!-- Modal: Importar do Pasto Vivo -->
+  <template x-if="showPastureImportModal">
+    <div class="modal-overlay" @click.self="showPastureImportModal=false">
+      <div class="modal card pad" style="max-width:700px;width:100%">
+        <h3 style="margin:0 0 16px">Importar do Pasto Vivo</h3>
+        <div class="small muted" style="margin-bottom:12px">Selecione os piquetes para importar dados de pastagem.</div>
+        <template x-if="pastureImportLoading">
+          <div style="text-align:center;padding:20px"><div class="spinner"></div></div>
+        </template>
+        <template x-if="!pastureImportLoading && pastureImportSources.length === 0">
+          <div class="empty" style="padding:20px">Nenhum piquete disponível no Pasto Vivo para esta fazenda.</div>
+        </template>
+        <template x-if="!pastureImportLoading && pastureImportSources.length > 0">
+          <div>
+            <div style="margin-bottom:12px">
+              <button class="btn btn-ghost" style="font-size:var(--fz-sm)" @click="pastureImportSelection=pastureImportSources.map(s=>s.paddock_id)">Selecionar todos</button>
+              <button class="btn btn-ghost" style="font-size:var(--fz-sm)" @click="pastureImportSelection=[]">Desmarcar todos</button>
+            </div>
+            <div class="table-scroll">
+              <table class="data">
+                <thead>
+                  <tr>
+                    <th style="width:40px"></th>
+                    <th>Piquete</th>
+                    <th>Área (ha)</th>
+                    <th>Forrageira</th>
+                    <th>kg MS/ha</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="(s,i) in pastureImportSources" :key="s.paddock_id || i">
+                    <tr>
+                      <td>
+                        <input type="checkbox" :value="s.paddock_id" x-model="pastureImportSelection">
+                      </td>
+                      <td x-text="s.name"></td>
+                      <td x-text="fmtD(s.area_ha)"></td>
+                      <td x-text="s.grass_species || '—'"></td>
+                      <td x-text="s.dm_kg_ha != null ? fmtD(s.dm_kg_ha) : '—'"></td>
+                      <td>
+                        <template x-if="isStaleMeasurement(s.last_measurement_date)">
+                          <span class="badge warn" style="font-size:var(--fz-xs)">⚠ Desatualizada</span>
+                        </template>
+                        <template x-if="!isStaleMeasurement(s.last_measurement_date)">
+                          <span class="badge ok" style="font-size:var(--fz-xs)">OK</span>
+                        </template>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </template>
+        <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
+          <button class="btn btn-ghost" @click="showPastureImportModal=false">Cancelar</button>
+          <button class="btn btn-primary" @click="confirmPastureImport()" :disabled="pastureImportSelection.length === 0 || importingPasture">
+            <template x-if="importingPasture"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+            Importar (<span x-text="pastureImportSelection.length"></span>)
+          </button>
+        </div>
+      </div>
+    </div>
+  </template>
+
   <div class="loading" x-show="loadingFarms"><div class="spinner"></div></div>
 </div>
 {% endblock %}
@@ -325,6 +394,8 @@
 function autonomiaAlimentar(){
   return {
     farms:[], selectedFarm:'', scenarios:[], loadingFarms:false, loading:false,
+    enablePastureLive: {{ enable_pasture_live|tojson }},
+    showPastureImportModal:false, pastureImportLoading:false, pastureImportSources:[], pastureImportSelection:[], importingPasture:false,
     form:{
       name:'Cenário', reference_date:new Date().toISOString().slice(0,10),
       target_days:90, safety_margin_pct:'0', notes:'',
@@ -437,6 +508,42 @@ function autonomiaAlimentar(){
         planning_available_dm_kg:'0',autonomy_days:'0',target_days:90,
         target_required_dm_kg:'0',balance_dm_kg:'0',balance_days:'0',
         status:'incomplete',estimated_end_date:null,warnings:[]};
+    },
+    async openPastureImport(){
+      this.pastureImportSelection=[];
+      this.pastureImportSources=[];
+      this.showPastureImportModal=true;
+      this.pastureImportLoading=true;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/pasture-live/autonomy-sources');
+        if(r.ok){const d=await r.json(); this.pastureImportSources=d.items||d.sources||[];}
+      }catch(e){}
+      this.pastureImportLoading=false;
+    },
+    async confirmPastureImport(){
+      if(this.pastureImportSelection.length===0) return;
+      this.importingPasture=true;
+      try{
+        for(const pid of this.pastureImportSelection){
+          const src=this.pastureImportSources.find(s=>s.paddock_id===pid);
+          if(!src) continue;
+          this.form.pastures.push({
+            name:src.name||src.code||'Importado',
+            area_ha:String(src.area_ha||''),
+            available_dm_kg_ha:String(src.dm_kg_ha||''),
+            utilization_pct:'50',
+            notes:'Importado do Pasto Vivo'
+          });
+        }
+        this.showPastureImportModal=false;
+      }catch(e){alert('Erro ao importar dados.');}
+      this.importingPasture=false;
+    },
+    isStaleMeasurement(dateStr){
+      if(!dateStr) return true;
+      const d=new Date(dateStr);
+      const now=new Date();
+      return (now-d)>(14*24*60*60*1000);
     },
     fmtD(v){ const n=Number(v); return isNaN(n)?'0':n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); },
     pctOf(part,total){ const p=Number(part)||0,t=Number(total)||0; return t>0?Math.round(p/t*100):'0'; },

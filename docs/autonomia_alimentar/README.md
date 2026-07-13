@@ -26,3 +26,36 @@ bash scripts/fase1_autonomia/apply_staging.sh
 # 3. Testar
 cd app && python3 -m unittest discover -s tests -p 'test_fase1_food_autonomy_*.py' -v
 ```
+
+## Integração com Pasto Vivo
+
+O módulo **Autonomia Alimentar** pode se integrar ao módulo **Pasto Vivo** para enriquecer os cálculos nutricionais com dados reais de pastagem.
+
+### Como funciona
+
+1. **Dados de entrada**: O Pasto Vivo fornece biomassa disponível por talhão
+2. **Cálculo de autonomia**: O sistema estima dias de autonomia baseado no consumo do rebanho
+3. **Recomendações**: Sugestões de manejo para manter a produção
+
+### Configuração
+
+Para ativar a integração:
+
+```bash
+# No docker-compose.staging.yml
+environment:
+  - ENABLE_PASTO_VIVO=true
+  - ENABLE_FOOD_AUTONOMY=true
+  - ENABLE_INTEGRATION_PASTO_VIVO_FOOD=true
+```
+
+### Uso
+
+1. Cadastre talhões no módulo Pasto Vivo
+2. Registre medições regularmente
+3. No Autonomia Alimentar, os dados aparecerão automaticamente em **Fontes de Alimentação**
+4. Ajuste os percentuais conforme necessário
+
+### Documentação
+
+Consulte a documentação completa em [`docs/pasto_vivo/`](../pasto_vivo/).

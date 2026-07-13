@@ -51,6 +51,7 @@ services:
       ENABLE_MULTI_TENANCY_FOUNDATION: "true"
       ENABLE_FARMS_V2: "true"
       ENABLE_FOOD_AUTONOMY: "true"
+      ENABLE_PASTURE_LIVE: "true"
       MARI_EMAIL: "mari@winshubagro.cloud"
       MARI_PASSWORD_HASH: "$$2b$$12$$vT2i6.VrwPS/.GDuQgKXKeXAIJxXaOgF0hSL36AcbxUe2dyH5AOWC"
       TZ: America/Sao_Paulo

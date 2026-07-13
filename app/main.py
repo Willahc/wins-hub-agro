@@ -80,6 +80,10 @@ templates = Jinja2Templates(directory="frontend")
 ENABLE_FOOD_AUTONOMY = os.getenv("ENABLE_FOOD_AUTONOMY", "").lower() in {"1", "true", "yes"}
 templates.env.globals["enable_food_autonomy"] = ENABLE_FOOD_AUTONOMY
 
+# Feature flag para o módulo Pasto Vivo (gestão de piquetes e pastejo)
+ENABLE_PASTURE_LIVE = os.getenv("ENABLE_PASTURE_LIVE", "").lower() in {"1", "true", "yes"}
+templates.env.globals["enable_pasture_live"] = ENABLE_PASTURE_LIVE
+
 
 @app.middleware("http")
 async def request_pipeline(request: Request, call_next):
@@ -520,6 +524,12 @@ if os.getenv("ENABLE_FOOD_AUTONOMY", "").lower() in {"1", "true", "yes"}:
     from routers.food_autonomy import router as food_autonomy_router  # noqa: E402
 
     app.include_router(food_autonomy_router)
+
+
+if ENABLE_PASTURE_LIVE:
+    from routers.pasture_live import router as pasture_live_router  # noqa: E402
+
+    app.include_router(pasture_live_router)
 
 
 # ---------------------------------------------------------------------------
@@ -4088,6 +4098,18 @@ if os.getenv("ENABLE_FOOD_AUTONOMY", "").lower() in {"1", "true", "yes"}:
             return RedirectResponse("/login")
         resp = templates.TemplateResponse("autonomia_alimentar.html",
             {"request": request, "user": user, "active": "autonomia_alimentar", "app_version": APP_VERSION})
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+
+
+if ENABLE_PASTURE_LIVE:
+    @app.get("/pasto-vivo", response_class=HTMLResponse)
+    def pasture_live_page(request: Request):
+        user = get_current_user(request)
+        if not user:
+            return RedirectResponse("/login")
+        resp = templates.TemplateResponse("pasto_vivo.html",
+            {"request": request, "user": user, "active": "pasto_vivo", "app_version": APP_VERSION})
         resp.headers["Cache-Control"] = "no-store"
         return resp
 
