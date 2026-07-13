@@ -1,0 +1,53 @@
+<style>
+  @font-face{font-family:'Inter';font-weight:400;font-display:swap;src:url('/static/vendor/inter-400.woff2') format('woff2')}
+  @font-face{font-family:'Inter';font-weight:600;font-display:swap;src:url('/static/vendor/inter-600.woff2') format('woff2')}
+  @font-face{font-family:'Inter';font-weight:700;font-display:swap;src:url('/static/vendor/inter-700.woff2') format('woff2')}
+  @font-face{font-family:'Inter';font-weight:800;font-display:swap;src:url('/static/vendor/inter-800.woff2') format('woff2')}
+  .pasto-limpo-page {
+    --pasto-verde:#235c2e;
+    --pasto-verde2:#3a8f3f;
+    --pasto-linha:#e4e9e4;
+    --pasto-cinza:#4f5a50;
+    color:#0f1a12;
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    max-width:672px;
+    margin:0 auto;
+  }
+  .pasto-limpo-page,
+  .pasto-limpo-page * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body.pasto-limpo-public { margin:0; background:#f1f4f1; }
+  body.pasto-limpo-public .pasto-limpo-page { max-width:100%; }
+  .pasto-limpo-page .pasto-limpo-top { background:var(--pasto-verde); color:#fff; padding:16px 18px; border-radius:14px 14px 0 0; }
+  body.pasto-limpo-public .pasto-limpo-page .pasto-limpo-top { border-radius:0; }
+  .pasto-limpo-page .pasto-limpo-brand { font-size:18px; font-weight:800; }
+  .pasto-limpo-page .pasto-limpo-brand span { color:#bfe3bf; }
+  .pasto-limpo-page .pasto-limpo-sub { font-size:12px; opacity:.85; margin-top:2px; }
+  .pasto-limpo-page .pasto-limpo-wrap { max-width:640px; margin:0 auto; padding:16px; }
+  .pasto-limpo-page .pasto-limpo-card { background:#fff; border:1px solid var(--pasto-linha); border-radius:14px; padding:16px; margin-bottom:14px; box-shadow:0 1px 3px rgba(0,0,0,.04); }
+  .pasto-limpo-page h3 { font-size:14px; margin:0 0 12px; color:var(--pasto-verde); }
+  .pasto-limpo-page label { display:block; font-size:12px; font-weight:600; color:var(--pasto-cinza); margin:10px 0 4px; }
+  .pasto-limpo-page input[type=number] { width:100%; padding:12px; border:1px solid var(--pasto-linha); border-radius:10px; font-size:16px; background:#fff; }
+  .pasto-limpo-page input[type=range] { width:100%; accent-color:var(--pasto-verde2); }
+  .pasto-limpo-page .pasto-limpo-slider-val { font-weight:800; color:var(--pasto-verde); font-size:15px; }
+  .pasto-limpo-page .pasto-limpo-hero { background:linear-gradient(135deg,#2d5a2d,#4a9e4a); color:#fff; border:none; }
+  .pasto-limpo-page .pasto-limpo-hero .pasto-limpo-big { font-size:30px; font-weight:800; line-height:1.1; margin:6px 0; }
+  .pasto-limpo-page .pasto-limpo-hero .pasto-limpo-lbl { font-size:13px; opacity:.9; }
+  .pasto-limpo-page .pasto-limpo-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .pasto-limpo-page .pasto-limpo-kpi { background:#f6faf6; border:1px solid var(--pasto-linha); border-radius:12px; padding:12px; text-align:center; }
+  .pasto-limpo-page .pasto-limpo-kpi .pasto-limpo-value { font-size:22px; font-weight:800; color:var(--pasto-verde); }
+  .pasto-limpo-page .pasto-limpo-kpi .pasto-limpo-label { font-size:11px; color:var(--pasto-cinza); margin-top:2px; }
+  .pasto-limpo-page .pasto-limpo-lotacao { display:flex; align-items:center; justify-content:center; gap:10px; font-weight:800; color:var(--pasto-verde); font-size:18px; margin-top:4px; }
+  .pasto-limpo-page .pasto-limpo-lotacao .pasto-limpo-seta { color:var(--pasto-verde2); }
+  .pasto-limpo-page .pasto-limpo-muted { color:var(--pasto-cinza); font-size:12px; }
+  .pasto-limpo-page .pasto-limpo-btn { width:100%; padding:14px; border-radius:11px; background:#fff; color:var(--pasto-verde); border:1.5px solid var(--pasto-verde2); font-size:15px; font-weight:700; cursor:pointer; margin-top:8px; }
+  .pasto-limpo-page .pasto-limpo-foot { text-align:center; font-size:11px; color:var(--pasto-cinza); padding:10px 0 24px; }
+  .pasto-limpo-page details { margin-top:8px; }
+  .pasto-limpo-page summary { font-size:12px; font-weight:600; color:var(--pasto-cinza); cursor:pointer; }
+  @media (max-width:520px) {
+    .pasto-limpo-page .pasto-limpo-wrap { padding:12px 0; }
+    body.pasto-limpo-public .pasto-limpo-page .pasto-limpo-wrap { padding:12px; }
+    .pasto-limpo-page .pasto-limpo-grid { grid-template-columns:1fr; }
+    .pasto-limpo-page .pasto-limpo-hero .pasto-limpo-big { font-size:26px; }
+    .pasto-limpo-page .pasto-limpo-lotacao { flex-wrap:wrap; font-size:16px; }
+  }
+</style>

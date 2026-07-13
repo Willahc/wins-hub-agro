@@ -16,7 +16,7 @@ import external_apis
 from db import query
 from pdf_html import gerar_proposta_simulador
 from main import (
-    templates, _error, _prenhez_est,
+    templates, _error, _prenhez_est, get_current_user, APP_VERSION,
     PD_ID, PES_ID, IQGG_ID, MONTE_SIAO_CENTRAL_ID,
 )
 
@@ -31,8 +31,19 @@ def simulador_page(request: Request):
 @router.get("/pasto-limpo", response_class=HTMLResponse)
 def pasto_limpo_page(request: Request):
     """Simulador de ROI 'Pasto Limpo' (herbicida -> recuperacao de lotacao). Ferramenta de
-    venda baseada em valor (payback/ROI). Standalone, calculo no cliente, ZERO PII."""
-    return templates.TemplateResponse("pasto_limpo.html", {"request": request})
+    venda baseada em valor (payback/ROI), calculo no cliente e ZERO PII.
+
+    Usuarios autenticados recebem o shell do Hub. Sem sessao, a mesma URL continua
+    publica e independente para preservar links compartilhados com produtores.
+    """
+    user = get_current_user(request)
+    if not user:
+        return templates.TemplateResponse("pasto_limpo_public.html", {"request": request})
+    response = templates.TemplateResponse("pasto_limpo.html", {
+        "request": request, "user": user, "active": "pasto_limpo", "app_version": APP_VERSION,
+    })
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @router.get("/api/simulador/touros")

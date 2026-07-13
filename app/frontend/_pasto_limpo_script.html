@@ -1,0 +1,47 @@
+<script>
+  function pastoLimpo() {
+    return {
+      // defaults realistas (pecuária extensiva BR)
+      area: 1000, infest: 30, lotacaoPot: 1.8, custoHa: 250, arroba: 320,
+      eficacia: 80, arrPorUA: 7,
+      init() {
+        const q = new URLSearchParams(location.search);
+        for (const k of ['area','infest','lotacaoPot','custoHa','arroba','eficacia','arrPorUA'])
+          if (q.get(k)) this[k] = +q.get(k);
+      },
+      // lotação atual = potencial reduzida pela fração infestada
+      get lotacaoAtual() { return this.lotacaoPot * (1 - this.infest/100); },
+      // herbicida recupera 'eficácia'% da capacidade perdida
+      get lotacaoRecup() { return this.lotacaoAtual + (this.lotacaoPot - this.lotacaoAtual) * this.eficacia/100; },
+      get uaAdicionais() { return Math.max(0, (this.lotacaoRecup - this.lotacaoAtual) * (this.area||0)); },
+      get arrobasAno() { return this.uaAdicionais * this.arrPorUA; },
+      get receitaAno() { return this.arrobasAno * (this.arroba||0); },
+      get custoTotal() { return (this.area||0) * (this.custoHa||0); },
+      get roi() { return this.custoTotal > 0 ? this.receitaAno / this.custoTotal : 0; },
+      get payback() {
+        if (this.receitaAno <= 0) return '—';
+        const m = Math.ceil(this.custoTotal / (this.receitaAno/12));
+        return m;
+      },
+      get frase() {
+        if (this.receitaAno <= 0) return 'Ajuste os parâmetros para simular o retorno.';
+        return `Hoje o pasto sujo comporta ${this.lotacaoAtual.toFixed(2)} UA/ha. Controlando a daninha `
+             + `(R$ ${this.fmt(this.custoTotal)} em ${this.fmt(this.area)} ha), a capacidade sobe para `
+             + `${this.lotacaoRecup.toFixed(2)} UA/ha — são +${this.fmt(this.arrobasAno)} @ por ano `
+             + `(R$ ${this.fmt(this.receitaAno)}). O investimento se paga em ${this.payback} meses `
+             + `(ROI de ${this.roi.toFixed(1)}× no primeiro ano). Estimativa para orientar a conversa; calibrar com o agrônomo.`;
+      },
+      fmt(n) { return (Math.round(n || 0)).toLocaleString('pt-BR'); },
+      syncURL() {
+        const q = new URLSearchParams({ area:this.area, infest:this.infest, lotacaoPot:this.lotacaoPot,
+          custoHa:this.custoHa, arroba:this.arroba, eficacia:this.eficacia, arrPorUA:this.arrPorUA });
+        history.replaceState(null, '', '?' + q.toString());
+      },
+      compartilhar() {
+        this.syncURL();
+        navigator.clipboard?.writeText(location.href);
+        alert('Link copiado! Envie ao produtor ou ao vendedor pelo WhatsApp.');
+      },
+    };
+  }
+</script>

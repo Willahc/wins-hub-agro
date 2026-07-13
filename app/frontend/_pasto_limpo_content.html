@@ -1,0 +1,64 @@
+<section class="pasto-limpo-page" x-data="pastoLimpo()" x-init="init()">
+  <div class="pasto-limpo-top">
+    <div class="pasto-limpo-brand">WiNS <span>Hub Agro</span> · Pasto Limpo</div>
+    <div class="pasto-limpo-sub">Quanto a daninha custa — e em quanto tempo o herbicida se paga</div>
+  </div>
+
+  <div class="pasto-limpo-wrap">
+    <!-- HERO -->
+    <div class="pasto-limpo-card pasto-limpo-hero">
+      <div class="pasto-limpo-lbl">A daninha está custando, por ano</div>
+      <div class="pasto-limpo-big">R$ <span x-text="fmt(receitaAno)"></span></div>
+      <div class="pasto-limpo-lbl">em arrobas que o pasto sujo deixa de produzir ·
+        o herbicida se paga em <b x-text="payback"></b> meses</div>
+    </div>
+
+    <!-- INPUTS -->
+    <div class="pasto-limpo-card">
+      <h3>Dados do pasto</h3>
+      <label>Área de pasto a tratar (ha)</label>
+      <input type="number" min="1" max="1000000" x-model.number="area" @input="syncURL()">
+
+      <label>Infestação de daninha: <span class="pasto-limpo-slider-val" x-text="infest + '%'"></span> da área</label>
+      <input type="range" min="5" max="80" x-model.number="infest" @input="syncURL()">
+
+      <label>Lotação potencial do pasto limpo (UA/ha)</label>
+      <input type="number" min="0.3" max="6" step="0.1" x-model.number="lotacaoPot" @input="syncURL()">
+
+      <label>Custo do herbicida + aplicação (R$/ha)</label>
+      <input type="number" min="1" max="5000" x-model.number="custoHa" @input="syncURL()">
+
+      <label>Preço da arroba (@) hoje</label>
+      <input type="number" min="100" max="1000" x-model.number="arroba" @input="syncURL()">
+
+      <details>
+        <summary>Premissas avançadas</summary>
+        <label>Eficácia do controle: <span class="pasto-limpo-slider-val" x-text="eficacia + '%'"></span></label>
+        <input type="range" min="40" max="100" x-model.number="eficacia" @input="syncURL()">
+        <label>Produção por UA por ano (@/UA/ano)</label>
+        <input type="number" min="1" max="20" step="0.5" x-model.number="arrPorUA" @input="syncURL()">
+      </details>
+    </div>
+
+    <!-- OUTPUTS -->
+    <div class="pasto-limpo-card">
+      <h3>Retorno estimado</h3>
+      <div class="pasto-limpo-lotacao">
+        <span><span x-text="lotacaoAtual.toFixed(2)"></span> UA/ha</span>
+        <span class="pasto-limpo-seta">→</span>
+        <span><span x-text="lotacaoRecup.toFixed(2)"></span> UA/ha</span>
+      </div>
+      <div class="pasto-limpo-muted" style="text-align:center;margin-bottom:10px">capacidade do pasto: sujo → limpo</div>
+      <div class="pasto-limpo-grid">
+        <div class="pasto-limpo-kpi"><div class="pasto-limpo-value">+<span x-text="fmt(arrobasAno)"></span> @</div><div class="pasto-limpo-label">arrobas a mais/ano</div></div>
+        <div class="pasto-limpo-kpi"><div class="pasto-limpo-value">+R$ <span x-text="fmt(receitaAno)"></span></div><div class="pasto-limpo-label">receita recuperada/ano</div></div>
+        <div class="pasto-limpo-kpi"><div class="pasto-limpo-value">R$ <span x-text="fmt(custoTotal)"></span></div><div class="pasto-limpo-label">investimento (herbicida)</div></div>
+        <div class="pasto-limpo-kpi"><div class="pasto-limpo-value"><span x-text="roi.toFixed(1)"></span>×</div><div class="pasto-limpo-label">ROI no 1º ano</div></div>
+      </div>
+      <p class="pasto-limpo-muted" style="margin-top:12px" x-text="frase"></p>
+    </div>
+
+    <button class="pasto-limpo-btn" @click="compartilhar()">🔗 Copiar link desta simulação</button>
+    <div class="pasto-limpo-foot">WiNS Hub Agro · Inteligência comercial · simulação para orientar a conversa</div>
+  </div>
+</section>
