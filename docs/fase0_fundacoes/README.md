@@ -27,3 +27,12 @@ migração em massa das rotas legadas, RLS e deploy.
 - `21_EVIDENCIAS_FASE0C.md`: dumps, hashes e logs;
 - `22_DESENHO_PRIMEIRA_OPERACAO_LEGADA.md`: desenho do primeiro endpoint;
 - `23_CRITERIOS_GO_NO_GO_PRODUCAO.md`: matriz de decisão.
+
+## Fase 0D
+
+- `24_FASE0D_VERTICAL_SLICE_FARMS_V2.md`: arquitetura do endpoint farms_v2;
+- `25_CONTRATO_API_FARMS_V2.md`: especificação técnica e parâmetros da rota;
+- `26_RUNBOOK_STAGING_PERSISTENTE.md`: runbook de gerência de staging;
+- `27_EVIDENCIAS_FASE0D.md`: latências, planos de queries e testes HTTP;
+- `28_SEGURANCA_E_IDOR_FARMS_V2.md`: controles contra IDOR e vazamentos;
+- `29_GO_NO_GO_FASE0D.md`: matriz de decisão de go/no-go do staging.

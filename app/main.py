@@ -506,6 +506,12 @@ if os.getenv("ENABLE_MULTI_TENANCY_FOUNDATION", "").lower() in {"1", "true", "ye
     app.include_router(foundation_router)
 
 
+if os.getenv("ENABLE_FARMS_V2", "").lower() in {"1", "true", "yes"}:
+    from routers.farms_v2 import router as farms_v2_router  # noqa: E402
+
+    app.include_router(farms_v2_router)
+
+
 # ---------------------------------------------------------------------------
 # API — data endpoints
 # ---------------------------------------------------------------------------

@@ -42,6 +42,15 @@ mappings sintéticos e primeira vertical legada de baixo risco. Ler os documento
 
 **PRÓXIMO PASSO:** Fase 0D: implantação da fundação em homologação persistente, migração da primeira rota legada somente leitura desenhada (Listagem de Fazendas Permitidas), e validação com os times operacionais.
 
+## Atualização — Fase 0D validada em Staging Persistente
+
+**IMPLEMENTADO:** vertical slice `/api/v2/farms` (listagem de fazendas com isolamento server-side), autenticação real via cookie JWT, e ambiente de staging persistente (`wins_agro_fase0d`). A feature flag `ENABLE_FARMS_V2` e o router foram adicionados ao monólito de forma condicional.
+
+**TESTADO:** validação de autenticação, memberships, IDOR, paginação e latência (mediana 6ms, p95 8ms) com 10.000 fazendas sintéticas. Nenhuma alteração ou conexão ocorreu na produção.
+
+**PRÓXIMO PASSO:** Fase 0E: backfill de dados reais em produção e liberação gradual do endpoint `/api/v2/farms` usando feature flags.
+
+
 
 ## Estado
 
