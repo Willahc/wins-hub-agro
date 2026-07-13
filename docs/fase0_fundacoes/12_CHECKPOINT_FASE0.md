@@ -1,0 +1,34 @@
+# Checkpoint Fase 0A
+
+Base: `master` em `e5b131c5360bb566939f4aa43621c05eec5a70a0`, inicialmente limpo e alinhado a
+`origin/master`.
+
+**IMPLEMENTADO NESTA ETAPA:** `app/core`, `app/domain`, repository, schema HTTP,
+router privado, SQL em `scripts/fase0`, testes `test_fase0*` e esta documentação.
+Única integração no monolito: include condicional do router, desligado por padrão.
+
+**DECISÕES:** fazenda operacional separada de prospecção; UUID externo; FK composta;
+deny-by-default; 404 cross-tenant; Decimal; unidades dimensionais; registry sem eval;
+auditoria transacional; SQL versionado e não aplicado.
+
+**LIMITAÇÕES:** usuários/dados atuais não foram mapeados; resource resolver suporta
+apenas a fazenda nova no repository real; endpoints legados continuam pendentes;
+sem UI, RLS, backfill ou integração PostgreSQL.
+
+Próximo passo: Fase 0B em ambiente isolado — revisão DBA e teste PostgreSQL 16,
+processo de bootstrap idempotente, mapeamento explícito `fazenda.cliente` →
+operational farm e migração de uma operação legada de baixo risco.
+
+## Atualização Fase 0B
+
+**IMPLEMENTADO E TESTADO EM POSTGRESQL DESCARTÁVEL:** revisão DBA, grants mínimos,
+vínculo explícito com `fazenda.cliente`, bootstrap dry-run/apply idempotente,
+rollback conservador e harness sem rede/porta/volume. Nenhum dado real foi lido.
+
+**DECISÃO:** `010_legacy_bootstrap_template.sql` está desabilitado; usar a função
+versionada e o CLI após mapping humano. O próximo passo passa a ser Fase 0C:
+homologação restaurável, definição das roles finais e desenho de uma primeira
+vertical legada, ainda sem ativar produção.
+
+Antes de implementar, ler `README.md`, decisões, autorização, migração e backlog
+deste diretório, além de `docs/pasto_colheita_silos/18_CHECKPOINT...`.

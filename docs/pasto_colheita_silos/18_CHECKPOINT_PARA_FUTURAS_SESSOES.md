@@ -1,8 +1,43 @@
 # Checkpoint para futuras sessões
 
+## Atualização — Fase 0A iniciada sobre `e5b131c`
+
+**IMPLEMENTADO NESTA ETAPA:** foram criadas fundações multiusuário em módulos
+isolados, SQL não aplicado, testes sintéticos e documentação em
+`docs/fase0_fundacoes/`. A fazenda operacional permanece separada da base de
+prospecção de `/fazendas`; rotas legadas não foram migradas. A vertical slice
+privada fica desligada por padrão.
+
+**DECISÃO:** autorização deny-by-default, UUID externo, escopo server-side,
+auditoria transacional, unidades dimensionais, parâmetros/fórmulas versionados e
+registry sem `eval`.
+
+**LIMITAÇÃO:** não houve backfill, integração com PostgreSQL, UI, deploy ou adoção
+pelos endpoints antigos. O working tree desta execução contém a implementação ainda
+sem commit.
+
+**PRÓXIMO PASSO:** ler `docs/fase0_fundacoes/12_CHECKPOINT_FASE0.md` e executar a
+Fase 0B primeiro em PostgreSQL 16 descartável, com revisão DBA e mapeamento
+explícito do legado operacional.
+
+## Atualização — Fase 0B validada fora de produção
+
+**IMPLEMENTADO:** harness PostgreSQL 16 isolado, revisão DBA, vínculo explícito
+somente com `fazenda.cliente`, bootstrap idempotente com dry-run padrão e rollback
+conservador. A prospecção permanece fora do modelo privado.
+
+**TESTADO:** constraints cross-tenant, grants, PUBLIC, triggers, auditoria,
+idempotência, conflitos, carga sintética, EXPLAIN e down sem CASCADE. Nenhuma
+migration foi aplicada em produção.
+
+**PRÓXIMO PASSO:** Fase 0C em homologação restaurável: aprovar roles, backup/restore,
+mappings sintéticos e primeira vertical legada de baixo risco. Ler os documentos
+`13` a `17` em `docs/fase0_fundacoes/` antes de continuar.
+
 ## Estado
 
-- Branch/commit analisado: `master` / `84fcf70e15567ddc6c812d638c816204e5ae9035`.
+- Plano estratégico originalmente analisado em `84fcf70e15567ddc6c812d638c816204e5ae9035`;
+  Fase 0A iniciada em `master` / `e5b131c5360bb566939f4aa43621c05eec5a70a0`.
 - Análise feita só por código, SQL e documentação; banco/dados reais não foram acessados.
 - Nesta sessão só foram criados Markdown em `docs/pasto_colheita_silos/`.
 

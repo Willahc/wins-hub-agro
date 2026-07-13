@@ -498,6 +498,13 @@ from routers.simulador import router as simulador_router  # noqa: E402
 
 app.include_router(simulador_router)
 
+# Fase 0A: vertical slice privada, sem menu e desabilitada por padrão. A flag
+# controla apenas a disponibilidade da rota; quando ativa, autorização é obrigatória.
+if os.getenv("ENABLE_MULTI_TENANCY_FOUNDATION", "").lower() in {"1", "true", "yes"}:
+    from routers.foundation import router as foundation_router  # noqa: E402
+
+    app.include_router(foundation_router)
+
 
 # ---------------------------------------------------------------------------
 # API — data endpoints
