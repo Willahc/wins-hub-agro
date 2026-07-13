@@ -58,6 +58,15 @@ mappings sintéticos e primeira vertical legada de baixo risco. Ler os documento
 
 **PRÓXIMO PASSO:** Fase 0E2: revisão humana de mappings e consolidação do roadmap de backfill.
 
+## Atualização — Fase 0E2 preparada para revisão humana offline de mappings
+
+**IMPLEMENTADO:** Ferramentas offline em `scripts/fase0e2/` para gestão do lote, validação de origem e integridade das decisões preenchidas. Template `human_decisions_template_private.csv` inicializado sem decisões prévias sob o diretório privado e restrito da Fase 0E2 (700/600).
+
+**TESTADO:** Validação de restrições de segurança (path traversal, symlinks, bloqueio de rede/banco), regras de conformidade (rejeição de enums de aprovação como `APPROVE`), e 94 testes unitários validados e executados com OK.
+
+**PRÓXIMO PASSO:** Fase 0E3: simulação em lote de mappings aprovados e testes de dry-run.
+
+
 ## Estado
 
 - Plano estratégico originalmente analisado em `84fcf70e15567ddc6c812d638c816204e5ae9035`;

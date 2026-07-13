@@ -46,3 +46,13 @@ migração em massa das rotas legadas, RLS e deploy.
 - `34_EVIDENCIAS_SANITIZADAS_FASE0E1.md`: relatório público de evidências sanitizadas;
 - `35_RUNBOOK_INVENTARIO_READONLY.md`: manual de execução e validação da ferramenta;
 - `36_GO_NO_GO_FASE0E1.md`: matriz de decisão e parecer técnico.
+
+## Fase 0E2
+
+- `37_FASE0E2_REVISAO_HUMANA_OFFLINE.md`: arquitetura da revisão humana offline;
+- `38_MODELO_DECISAO_MAPPING.md`: modelo e schema das decisões de mapping;
+- `39_RUNBOOK_REVISAO_PRIVADA.md`: manual de procedimentos da revisão privada;
+- `40_SEGURANCA_REVISAO_OFFLINE.md`: diretrizes e controles de segurança cibernética;
+- `41_EVIDENCIAS_SANITIZADAS_FASE0E2.md`: relatório público de evidências sanitizadas da revisão;
+- `42_GO_NO_GO_FASE0E2.md`: matriz de decisão e parecer técnico da Fase 0E2;
+- `43_HANDOFF_FASE0E3.md`: diretrizes de handoff para a simulação da Fase 0E3.

@@ -50,3 +50,9 @@ deste diretório, além de `docs/pasto_colheita_silos/18_CHECKPOINT...`.
 **IMPLEMENTADO E TESTADO EM STAGING E PRODUÇÃO (READ-ONLY):** Ferramenta de inventário `inventory_readonly.py` executada de forma estritamente somente leitura via transação isolada com rollback obrigatório em produção. Geração de mappings e checklist de auditoria privados. Remediação de privacidade com remoção total de dependência de dados de auditoria, WebAuthn e sessões, reclassificando propostas para a Classe F. Relatório público sanitizado de evidências contendo apenas HMACs e contagens agregadas de recursos operacionais.
 
 **DECISÃO:** GO para prosseguir à Fase 0E2 (Revisão Humana de Mappings). A coleta em produção está concluída e validada. A feature flag permanece desligada em produção.
+
+## Atualização Fase 0E2
+
+**IMPLEMENTADO E TESTADO EM AMBIENTE DE REVISÃO OFFLINE:** Criação de ferramentas offline em `scripts/fase0e2/` para validação de origem da Fase 0E1, geração de template de decisão privada e verificação de regras de conformidade. Geração do template `human_decisions_template_private.csv` sob pasta privada restrita (700/600). Todos os 94 testes validados com OK.
+
+**DECISÃO:** GO para iniciar a revisão manual offline pelo operador humano (DECISÃO HUMANA PENDENTE / AWAITING_HUMAN_REVIEW). Nenhuma proposta foi aprovada, e a elegibilidade para a Fase 0E3 permanece zerada.
