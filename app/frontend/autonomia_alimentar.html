@@ -1,0 +1,449 @@
+{% extends "base.html" %}
+{% block title %}Autonomia Alimentar · WiNS Hub Agro{% endblock %}
+{% block topbar %}Autonomia Alimentar{% endblock %}
+{% block content %}
+<div x-data="autonomiaAlimentar()" x-init="init()">
+
+  <div class="page-head">
+    <div>
+      <h1>Autonomia Alimentar</h1>
+      <div class="sub">Estime por quantos dias o alimento disponível sustenta o rebanho.</div>
+    </div>
+  </div>
+
+  <!-- Seletor de fazenda -->
+  <div class="card pad" style="margin-bottom:16px">
+    <label class="small" style="font-weight:600;display:block;margin-bottom:6px">Fazenda</label>
+    <select class="select" style="width:100%;max-width:400px" x-model="selectedFarm" @change="loadScenarios()">
+      <option value="">Selecione uma fazenda…</option>
+      <template x-for="f in farms" :key="f.id">
+        <option :value="f.id" x-text="f.name"></option>
+      </template>
+    </select>
+  </div>
+
+  <template x-if="selectedFarm">
+    <div>
+      <!-- KPI Cards -->
+      <div class="stats">
+        <div class="stat">
+          <div class="k">Consumo diário</div>
+          <div class="v" x-text="fmtD(result.daily_demand_dm_kg)"></div>
+          <div class="d">kg MS/dia</div>
+        </div>
+        <div class="stat">
+          <div class="k">Estoque utilizável</div>
+          <div class="v" x-text="fmtD(result.physical_total_dm_kg)"></div>
+          <div class="d">kg MS</div>
+        </div>
+        <div class="stat">
+          <div class="k">Autonomia estimada</div>
+          <div class="v" :class="statusClass(result.status)" x-text="fmtD(result.autonomy_days) + ' dias'"></div>
+          <div class="d" x-text="'Meta: ' + (result.target_days||0) + ' dias'"></div>
+        </div>
+        <div class="stat">
+          <div class="k">Saldo</div>
+          <div class="v" :class="Number(result.balance_days)>=0?'':''" x-text="fmtD(result.balance_days) + ' dias'"></div>
+          <div class="d" x-text="fmtD(result.balance_dm_kg) + ' kg MS'"></div>
+        </div>
+        <div class="stat">
+          <div class="k">Data estimada de término</div>
+          <div class="v" style="font-size:var(--fz-lg)" x-text="result.estimated_end_date || '—'"></div>
+        </div>
+        <div class="stat">
+          <div class="k">Status</div>
+          <div class="v"><span class="badge" :class="badgeClass(result.status)" x-text="statusLabel(result.status)"></span></div>
+        </div>
+      </div>
+
+      <!-- Avisos -->
+      <template x-if="result.warnings && result.warnings.length > 0">
+        <div class="card pad" style="margin-bottom:16px;border-left:4px solid var(--warn)">
+          <div class="small" style="font-weight:600;color:var(--warn);margin-bottom:6px">Avisos</div>
+          <template x-for="w in result.warnings" :key="w">
+            <div class="small muted" style="margin-bottom:3px" x-text="w"></div>
+          </template>
+        </div>
+      </template>
+
+      <!-- Seção Rebanho -->
+      <div class="card pad" style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <h3 style="margin:0">Rebanho</h3>
+          <button class="btn btn-ghost" @click="addHerd()">+ Adicionar categoria</button>
+        </div>
+        <div class="table-scroll">
+          <table class="data">
+            <thead>
+              <tr>
+                <th>Categoria</th>
+                <th>Cabeças</th>
+                <th>Peso médio (kg)</th>
+                <th>Consumo % PV</th>
+                <th>Demanda (kg MS/dia)</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="(h,i) in form.herd" :key="i">
+                <tr>
+                  <td data-label="Categoria">
+                    <select class="select" x-model="h.category" style="min-width:150px">
+                      <option value="lactating_cows">Vacas em lactação</option>
+                      <option value="dry_cows">Vacas secas</option>
+                      <option value="heifers">Novilhas</option>
+                      <option value="steers">Garrotes</option>
+                      <option value="calves">Bezerros</option>
+                      <option value="bulls">Touros</option>
+                      <option value="other">Outros</option>
+                    </select>
+                  </td>
+                  <td data-label="Cabeças"><input class="input" type="number" min="0" x-model.number="h.head_count" style="width:80px"></td>
+                  <td data-label="Peso médio"><input class="input" type="number" min="1" step="0.1" x-model="h.average_weight_kg" style="width:100px"></td>
+                  <td data-label="Consumo %"><input class="input" type="number" min="0.1" max="10" step="0.1" x-model="h.intake_pct_body_weight" style="width:80px"></td>
+                  <td data-label="Demanda"><span class="mono" x-text="fmtD(herdDemand(i))"></span></td>
+                  <td><button class="btn btn-ghost" style="padding:4px 8px" @click="form.herd.splice(i,1)">✕</button></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Seção Pastagem -->
+      <div class="card pad" style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <h3 style="margin:0">Pastagem Disponível</h3>
+          <button class="btn btn-ghost" @click="addPasture()">+ Adicionar área</button>
+        </div>
+        <div class="table-scroll">
+          <table class="data">
+            <thead>
+              <tr>
+                <th>Identificação</th>
+                <th>Área (ha)</th>
+                <th>kg MS/ha</th>
+                <th>Utilização %</th>
+                <th>MS utilizável (kg)</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="(p,i) in form.pastures" :key="i">
+                <tr>
+                  <td data-label="Identificação"><input class="input" x-model="p.name" style="min-width:150px"></td>
+                  <td data-label="Área"><input class="input" type="number" min="0.01" step="0.01" x-model="p.area_ha" style="width:100px"></td>
+                  <td data-label="kg MS/ha"><input class="input" type="number" min="0" x-model="p.available_dm_kg_ha" style="width:100px"></td>
+                  <td data-label="Utilização"><input class="input" type="number" min="0" max="100" x-model="p.utilization_pct" style="width:80px"></td>
+                  <td data-label="MS utilizável"><span class="mono" x-text="fmtD(pastureUsable(i))"></span></td>
+                  <td><button class="btn btn-ghost" style="padding:4px 8px" @click="form.pastures.splice(i,1)">✕</button></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Seção Estoques -->
+      <div class="card pad" style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <h3 style="margin:0">Alimentos Conservados e Suplementos</h3>
+          <button class="btn btn-ghost" @click="addFeed()">+ Adicionar estoque</button>
+        </div>
+        <div class="table-scroll">
+          <table class="data">
+            <thead>
+              <tr>
+                <th>Tipo</th>
+                <th>Identificação</th>
+                <th>Quantidade (kg)</th>
+                <th>% Matéria Seca</th>
+                <th>% Aproveitamento</th>
+                <th>MS utilizável (kg)</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="(f,i) in form.feeds" :key="i">
+                <tr>
+                  <td data-label="Tipo">
+                    <select class="select" x-model="f.feed_type" style="min-width:140px">
+                      <option value="silage">Silagem</option>
+                      <option value="hay">Feno</option>
+                      <option value="pre_dried">Pré-secado</option>
+                      <option value="concentrate">Concentrado</option>
+                      <option value="protein_supplement">Suplemento proteico</option>
+                      <option value="mineral_supplement">Suplemento mineral</option>
+                      <option value="byproduct">Subproduto</option>
+                      <option value="other">Outro</option>
+                    </select>
+                  </td>
+                  <td data-label="Identificação"><input class="input" x-model="f.name" style="min-width:140px"></td>
+                  <td data-label="Quantidade"><input class="input" type="number" min="0" x-model="f.quantity_natural_kg" style="width:110px"></td>
+                  <td data-label="% MS"><input class="input" type="number" min="0" max="100" x-model="f.dry_matter_pct" style="width:80px"></td>
+                  <td data-label="% Aproveitamento"><input class="input" type="number" min="0" max="100" x-model="f.utilization_pct" style="width:80px"></td>
+                  <td data-label="MS utilizável"><span class="mono" x-text="fmtD(feedUsable(i))"></span></td>
+                  <td><button class="btn btn-ghost" style="padding:4px 8px" @click="form.feeds.splice(i,1)">✕</button></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Planejamento -->
+      <div class="card pad" style="margin-bottom:16px">
+        <h3 style="margin:0 0 12px">Planejamento</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Nome do cenário</label>
+            <input class="input" style="width:100%" x-model="form.name" placeholder="Ex: Seca 2026">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Data de referência</label>
+            <input class="input" type="date" style="width:100%" x-model="form.reference_date">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Meta de autonomia (dias)</label>
+            <input class="input" type="number" min="1" style="width:100%" x-model.number="form.target_days">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Margem de segurança %</label>
+            <input class="input" type="number" min="0" max="100" step="0.1" style="width:100%" x-model="form.safety_margin_pct">
+          </div>
+          <div style="grid-column:1/-1">
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Observações</label>
+            <textarea class="input" style="width:100%;height:60px;resize:vertical" x-model="form.notes"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Botões de ação -->
+      <div style="display:flex;gap:10px;margin-bottom:24px;flex-wrap:wrap">
+        <button class="btn btn-primary" @click="calculate()" :disabled="loading">
+          <template x-if="loading"><span class="spinner" style="width:16px;height:16px;border-width:2px"></span></template>
+          Calcular
+        </button>
+        <button class="btn btn-gold" @click="saveScenario()" :disabled="loading">Salvar cenário</button>
+        <button class="btn btn-ghost" @click="clearForm()">Limpar</button>
+      </div>
+
+      <!-- Composição do estoque -->
+      <template x-if="result.physical_total_dm_kg && Number(result.physical_total_dm_kg) > 0">
+        <div class="card pad" style="margin-bottom:16px">
+          <h3 style="margin:0 0 12px">Composição do Estoque</h3>
+          <div style="display:flex;gap:20px;flex-wrap:wrap">
+            <div>
+              <div class="small muted">Pastagens</div>
+              <div style="font-size:var(--fz-lg);font-weight:700" x-text="pctOf(result.pasture_usable_dm_kg, result.physical_total_dm_kg) + '%'"></div>
+            </div>
+            <div>
+              <div class="small muted">Estoques</div>
+              <div style="font-size:var(--fz-lg);font-weight:700" x-text="pctOf(result.stored_feed_usable_dm_kg, result.physical_total_dm_kg) + '%'"></div>
+            </div>
+            <div>
+              <div class="small muted">Reserva de segurança</div>
+              <div style="font-size:var(--fz-lg);font-weight:700" x-text="pctOf(result.reserve_dm_kg, result.physical_total_dm_kg) + '%'"></div>
+            </div>
+          </div>
+          <!-- Barra de progresso visual -->
+          <div style="margin-top:12px;height:20px;border-radius:var(--r-pill);background:var(--line);overflow:hidden;display:flex">
+            <div style="height:100%;background:var(--brand-500);transition:width .3s"
+                 :style="'width:' + pctOf(result.pasture_usable_dm_kg, result.physical_total_dm_kg) + '%'"></div>
+            <div style="height:100%;background:var(--gold-500);transition:width .3s"
+                 :style="'width:' + pctOf(result.stored_feed_usable_dm_kg, result.physical_total_dm_kg) + '%'"></div>
+          </div>
+          <div style="display:flex;gap:16px;margin-top:6px;font-size:var(--fz-xs)">
+            <span><span class="dot" style="background:var(--brand-500)"></span> Pastagens</span>
+            <span><span class="dot" style="background:var(--gold-500)"></span> Estoques</span>
+          </div>
+        </div>
+      </template>
+
+      <!-- Histórico -->
+      <div class="card pad" style="margin-bottom:16px">
+        <h3 style="margin:0 0 12px">Histórico de Cenários</h3>
+        <template x-if="scenarios.length === 0">
+          <div class="empty" style="padding:20px">Nenhum cenário salvo para esta fazenda.</div>
+        </template>
+        <template x-if="scenarios.length > 0">
+          <div class="table-scroll">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Nome</th>
+                  <th>Autonomia</th>
+                  <th>Meta</th>
+                  <th>Status</th>
+                  <th>Fórmula</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="s in scenarios" :key="s.public_id">
+                  <tr>
+                    <td data-label="Data" x-text="s.reference_date"></td>
+                    <td data-label="Nome" x-text="s.name"></td>
+                    <td data-label="Autonomia" x-text="fmtD(s.autonomy_days) + ' dias'"></td>
+                    <td data-label="Meta" x-text="s.target_days + ' dias'"></td>
+                    <td data-label="Status"><span class="badge" :class="badgeClass(s.status)" x-text="statusLabel(s.status)"></span></td>
+                    <td data-label="Fórmula" class="small muted" x-text="s.formula_version"></td>
+                    <td data-label="Ações">
+                      <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="viewScenario(s.public_id)">Ver</button>
+                      <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="archiveScenario(s.public_id)">Arquivar</button>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </template>
+      </div>
+
+      <!-- Versão da fórmula -->
+      <div class="small muted" style="margin-bottom:20px">
+        <span x-text="'Fórmula: ' + (result.formula_version || 'food_autonomy.v1')"></span>
+        <span> · "MS" = matéria seca · Cálculo é estimativo, não substitui avaliação agronômica.</span>
+      </div>
+    </div>
+  </template>
+
+  <!-- Empty state -->
+  <template x-if="!selectedFarm && farms.length > 0">
+    <div class="card pad" style="text-align:center;padding:60px 20px">
+      <div class="muted">Selecione uma fazenda para começar.</div>
+    </div>
+  </template>
+
+  <div class="loading" x-show="loadingFarms"><div class="spinner"></div></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function autonomiaAlimentar(){
+  return {
+    farms:[], selectedFarm:'', scenarios:[], loadingFarms:false, loading:false,
+    form:{
+      name:'Cenário', reference_date:new Date().toISOString().slice(0,10),
+      target_days:90, safety_margin_pct:'0', notes:'',
+      herd:[{category:'lactating_cows',head_count:20,average_weight_kg:'450',intake_pct_body_weight:'2.5'}],
+      pastures:[], feeds:[]
+    },
+    result:{
+      formula_version:'food_autonomy.v1', daily_demand_dm_kg:'0', pasture_usable_dm_kg:'0',
+      stored_feed_usable_dm_kg:'0', physical_total_dm_kg:'0', reserve_dm_kg:'0',
+      planning_available_dm_kg:'0', autonomy_days:'0', target_days:90,
+      target_required_dm_kg:'0', balance_dm_kg:'0', balance_days:'0',
+      status:'incomplete', estimated_end_date:null, warnings:[]
+    },
+    async init(){
+      this.loadingFarms=true;
+      try{
+        const r=await fetch('/api/v2/farms?limit=100');
+        if(r.ok){const d=await r.json(); this.farms=d.items||[];}
+      }catch(e){}
+      this.loadingFarms=false;
+    },
+    async loadScenarios(){
+      if(!this.selectedFarm) return;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/food-autonomy/scenarios');
+        if(r.ok){const d=await r.json(); this.scenarios=d.items||[];}
+      }catch(e){}
+    },
+    addHerd(){ this.form.herd.push({category:'lactating_cows',head_count:10,average_weight_kg:'350',intake_pct_body_weight:'2.5'}); },
+    addPasture(){ this.form.pastures.push({name:'',area_ha:'10',available_dm_kg_ha:'2000',utilization_pct:'50',notes:''}); },
+    addFeed(){ this.form.feeds.push({feed_type:'silage',name:'',quantity_natural_kg:'10000',dry_matter_pct:'35',utilization_pct:'90',notes:''}); },
+    herdDemand(i){
+      const h=this.form.herd[i]; if(!h) return '0';
+      const hc=Number(h.head_count)||0, pw=Number(h.average_weight_kg)||0, ct=Number(h.intake_pct_body_weight)||0;
+      return this.fmtD(hc*pw*ct/100);
+    },
+    pastureUsable(i){
+      const p=this.form.pastures[i]; if(!p) return '0';
+      const a=Number(p.area_ha)||0, dm=Number(p.available_dm_kg_ha)||0, u=Number(p.utilization_pct)||0;
+      return this.fmtD(a*dm*u/100);
+    },
+    feedUsable(i){
+      const f=this.form.feeds[i]; if(!f) return '0';
+      const q=Number(f.quantity_natural_kg)||0, dm=Number(f.dry_matter_pct)||0, u=Number(f.utilization_pct)||0;
+      return this.fmtD(q*dm*u/10000);
+    },
+    async calculate(){
+      if(!this.selectedFarm){alert('Selecione uma fazenda');return;}
+      this.loading=true;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/food-autonomy/simulate',{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(this.form)
+        });
+        if(r.ok){this.result=await r.json();}
+        else{const e=await r.json(); alert(e.detail?.message||'Erro ao calcular');}
+      }catch(e){alert('Erro de conexão');}
+      this.loading=false;
+    },
+    async saveScenario(){
+      if(!this.selectedFarm){alert('Selecione uma fazenda');return;}
+      this.loading=true;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/food-autonomy/scenarios',{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(this.form)
+        });
+        if(r.ok){
+          const d=await r.json();
+          this.result=d;
+          await this.loadScenarios();
+          alert('Cenário salvo com sucesso!');
+        } else {const e=await r.json(); alert(e.detail?.message||'Erro ao salvar');}
+      }catch(e){alert('Erro de conexão');}
+      this.loading=false;
+    },
+    async viewScenario(pid){
+      if(!this.selectedFarm) return;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/food-autonomy/scenarios/'+pid);
+        if(r.ok){
+          const d=await r.json();
+          this.form.name=d.name;
+          this.form.reference_date=d.reference_date;
+          this.form.target_days=d.target_days;
+          this.form.safety_margin_pct=d.safety_margin_pct;
+          this.form.notes=d.notes||'';
+          this.form.herd=d.herd||[];
+          this.form.pastures=d.pastures||[];
+          this.form.feeds=d.feeds||[];
+          this.result=d;
+        }
+      }catch(e){}
+    },
+    async archiveScenario(pid){
+      if(!confirm('Deseja arquivar este cenário?')) return;
+      if(!this.selectedFarm) return;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/food-autonomy/scenarios/'+pid,{method:'DELETE'});
+        if(r.ok) await this.loadScenarios();
+      }catch(e){}
+    },
+    clearForm(){
+      this.form={name:'Cenário',reference_date:new Date().toISOString().slice(0,10),
+        target_days:90,safety_margin_pct:'0',notes:'',
+        herd:[{category:'lactating_cows',head_count:20,average_weight_kg:'450',intake_pct_body_weight:'2.5'}],
+        pastures:[],feeds:[]};
+      this.result={formula_version:'food_autonomy.v1',daily_demand_dm_kg:'0',pasture_usable_dm_kg:'0',
+        stored_feed_usable_dm_kg:'0',physical_total_dm_kg:'0',reserve_dm_kg:'0',
+        planning_available_dm_kg:'0',autonomy_days:'0',target_days:90,
+        target_required_dm_kg:'0',balance_dm_kg:'0',balance_days:'0',
+        status:'incomplete',estimated_end_date:null,warnings:[]};
+    },
+    fmtD(v){ const n=Number(v); return isNaN(n)?'0':n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); },
+    pctOf(part,total){ const p=Number(part)||0,t=Number(total)||0; return t>0?Math.round(p/t*100):'0'; },
+    statusLabel(s){return{critical:'Crítico',warning:'Atenção',adequate:'Adequado',incomplete:'Incompleto'}[s]||s},
+    statusClass(s){return{critical:'color:var(--danger)',warning:'color:var(--warn)',adequate:'color:var(--ok)'}[s]||''},
+    badgeClass(s){return{critical:'danger',warning:'warn',adequate:'ok',incomplete:'neutral'}[s]||'neutral'},
+  }
+}
+</script>
+{% endblock %}

@@ -50,6 +50,9 @@ services:
       SECRET_KEY: staging_jwt_secret_synthetic_64_characters_long_for_security_reasons
       ENABLE_MULTI_TENANCY_FOUNDATION: "true"
       ENABLE_FARMS_V2: "true"
+      ENABLE_FOOD_AUTONOMY: "true"
+      MARI_EMAIL: "mari@winshubagro.cloud"
+      MARI_PASSWORD_HASH: "$$2b$$12$$vT2i6.VrwPS/.GDuQgKXKeXAIJxXaOgF0hSL36AcbxUe2dyH5AOWC"
       TZ: America/Sao_Paulo
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz',timeout=3).getcode()==200 else 1)\""]

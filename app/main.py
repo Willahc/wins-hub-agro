@@ -76,6 +76,10 @@ def healthz():
     return _JR({"status": "ok"}, headers={"Cache-Control": "no-store"})
 templates = Jinja2Templates(directory="frontend")
 
+# Feature flag para o menu de Autonomia Alimentar (visível apenas quando ativa)
+ENABLE_FOOD_AUTONOMY = os.getenv("ENABLE_FOOD_AUTONOMY", "").lower() in {"1", "true", "yes"}
+templates.env.globals["enable_food_autonomy"] = ENABLE_FOOD_AUTONOMY
+
 
 @app.middleware("http")
 async def request_pipeline(request: Request, call_next):
@@ -510,6 +514,12 @@ if os.getenv("ENABLE_FARMS_V2", "").lower() in {"1", "true", "yes"}:
     from routers.farms_v2 import router as farms_v2_router  # noqa: E402
 
     app.include_router(farms_v2_router)
+
+
+if os.getenv("ENABLE_FOOD_AUTONOMY", "").lower() in {"1", "true", "yes"}:
+    from routers.food_autonomy import router as food_autonomy_router  # noqa: E402
+
+    app.include_router(food_autonomy_router)
 
 
 # ---------------------------------------------------------------------------
@@ -4068,6 +4078,18 @@ def campo_page(request: Request):
     resp = templates.TemplateResponse("campo.html", {"request": request, "user": user, "app_version": APP_VERSION})
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"  # shell nunca cacheado (mata downgrade do app/WebView)
     return resp
+
+
+if os.getenv("ENABLE_FOOD_AUTONOMY", "").lower() in {"1", "true", "yes"}:
+    @app.get("/autonomia-alimentar", response_class=HTMLResponse)
+    def food_autonomy_page(request: Request):
+        user = get_current_user(request)
+        if not user:
+            return RedirectResponse("/login")
+        resp = templates.TemplateResponse("autonomia_alimentar.html",
+            {"request": request, "user": user, "active": "autonomia_alimentar", "app_version": APP_VERSION})
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
 
 
 @app.get("/baixar/onepager.pdf")
