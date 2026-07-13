@@ -18,3 +18,12 @@ migração em massa das rotas legadas, RLS e deploy.
 - `15_RUNBOOK_BOOTSTRAP_LEGADO.md`: dry-run, apply e rollback;
 - `16_REVISAO_DBA.md`: constraints, privilégios e planos;
 - `17_RESULTADOS_TESTES_FASE0B.md`: evidências sintéticas.
+
+## Fase 0C
+
+- `18_FASE0C_HOMOLOGACAO_RESTAURAVEL.md`: arquitetura de homologação;
+- `19_RUNBOOK_BACKUP_RESTORE.md`: procedimentos de backup e restore;
+- `20_ROLES_E_GRANTS_APROVADOS.md`: matriz de privilégios e roles aprovadas;
+- `21_EVIDENCIAS_FASE0C.md`: dumps, hashes e logs;
+- `22_DESENHO_PRIMEIRA_OPERACAO_LEGADA.md`: desenho do primeiro endpoint;
+- `23_CRITERIOS_GO_NO_GO_PRODUCAO.md`: matriz de decisão.

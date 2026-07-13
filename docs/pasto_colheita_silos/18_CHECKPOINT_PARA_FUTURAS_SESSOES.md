@@ -34,6 +34,15 @@ migration foi aplicada em produção.
 mappings sintéticos e primeira vertical legada de baixo risco. Ler os documentos
 `13` a `17` em `docs/fase0_fundacoes/` antes de continuar.
 
+## Atualização — Fase 0C homologada em ambiente restaurável
+
+**IMPLEMENTADO:** harness PostgreSQL 16 exclusivo e restaurável, aprovação definitiva de roles (`wins_agro_migrator`, `wins_agro_app`, `wins_agro_readonly`), validação automática de privilégios e grants, backup lógico com pg_dump e restauração com pg_restore em segunda instância limpa, obtendo MATCH físico e lógico absoluto.
+
+**TESTADO:** DDL e grants idênticos, contagens batendo perfeitamente, idempotência e rollback sob conflitos via CLI real, e rejeição de IDOR e elevação de papel. Nenhuma alteração foi realizada em produção.
+
+**PRÓXIMO PASSO:** Fase 0D: implantação da fundação em homologação persistente, migração da primeira rota legada somente leitura desenhada (Listagem de Fazendas Permitidas), e validação com os times operacionais.
+
+
 ## Estado
 
 - Plano estratégico originalmente analisado em `84fcf70e15567ddc6c812d638c816204e5ae9035`;
