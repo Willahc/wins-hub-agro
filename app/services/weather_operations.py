@@ -10,7 +10,7 @@ from core.permissions import ORGANIZATION_WIDE_FARM_ROLES, Permission, Role
 from domain.foundation import RecordStatus
 from domain.weather_operations import (
     FORMULA_VERSION, NORMALIZATION_VERSION, WindowType, WeatherStatus,
-    SnapshotType, CacheStatus, WINDOW_TYPE_LABELS,
+    SnapshotType, CacheStatus, WINDOW_TYPE_LABELS, WEATHER_STATUS_LABELS,
     normalize_weather_condition, classify_temperature,
     compute_window_score, check_freshness, compute_cache_expires_at,
     build_window_response,
@@ -64,12 +64,77 @@ class WeatherService:
         auth.require_organization_role(ctx, Permission.FARM_OPERATE)
 
     def _require_profile(self, farm_id: int) -> dict:
+        """Exige perfil configurado (operações de escrita / refresh)."""
         profile = self.repository.get_profile(farm_id)
         if not profile:
             raise ForbiddenError("weather_profile_not_configured")
         return profile
 
+    @staticmethod
+    def _not_configured_current() -> dict:
+        """Leitura autorizada sem perfil: estado controlado (nunca 403)."""
+        return {
+            "temperature_c": None,
+            "feels_like_c": None,
+            "humidity_pct": None,
+            "precipitation_mm": None,
+            "wind_kmh": None,
+            "gust_kmh": None,
+            "wind_direction_deg": None,
+            "cloud_cover_pct": None,
+            "condition_code": None,
+            "condition_description": None,
+            "observation_time": None,
+            "fetched_at": None,
+            "expires_at": None,
+            "source": "none",
+            "cache_status": CacheStatus.UNAVAILABLE.value,
+            "stale": True,
+            "age_minutes": 0.0,
+            "provider": "",
+            "normalization_version": NORMALIZATION_VERSION,
+            "status": WeatherStatus.NOT_CONFIGURED.value,
+            "status_label": WEATHER_STATUS_LABELS.get(
+                WeatherStatus.NOT_CONFIGURED, WeatherStatus.NOT_CONFIGURED.value
+            ),
+        }
+
+    @staticmethod
+    def _not_configured_series() -> dict:
+        return {
+            "items": [],
+            "fetched_at": None,
+            "expires_at": None,
+            "source": "none",
+            "cache_status": CacheStatus.UNAVAILABLE.value,
+            "stale": True,
+            "age_minutes": 0.0,
+            "provider": "",
+            "status": WeatherStatus.NOT_CONFIGURED.value,
+            "status_label": WEATHER_STATUS_LABELS.get(
+                WeatherStatus.NOT_CONFIGURED, WeatherStatus.NOT_CONFIGURED.value
+            ),
+        }
+
+    @staticmethod
+    def _not_configured_rainfall() -> dict:
+        return {
+            "items": [],
+            "total_mm": 0,
+            "fetched_at": None,
+            "source": "none",
+            "cache_status": CacheStatus.UNAVAILABLE.value,
+            "stale": True,
+            "age_minutes": 0.0,
+            "provider": "",
+            "status": WeatherStatus.NOT_CONFIGURED.value,
+            "status_label": WEATHER_STATUS_LABELS.get(
+                WeatherStatus.NOT_CONFIGURED, WeatherStatus.NOT_CONFIGURED.value
+            ),
+        }
+
     def _get_or_fetch(self, farm_id: int, snapshot_type: str, fetch_fn, cache_minutes: int):
+        """Retorna (snapshot, cache_status, age, is_fallback) ou (None, 'not_configured', 0, False)."""
         now = datetime.now(timezone.utc)
         cached = self.repository.get_fresh_snapshot(farm_id, snapshot_type)
         if cached:
@@ -79,7 +144,10 @@ class WeatherService:
             if cache_status == CacheStatus.FALLBACK.value and age <= WEATHER_FALLBACK_MAX_AGE_HOURS * 60:
                 return cached, CacheStatus.FALLBACK.value, age, True
 
-        profile = self._require_profile(farm_id)
+        profile = self.repository.get_profile(farm_id)
+        if not profile:
+            # Leitura autorizada sem perfil: não usar ForbiddenError (evita 403 indevido).
+            return None, WeatherStatus.NOT_CONFIGURED.value, 0.0, False
         try:
             raw = fetch_fn(profile["latitude"], profile["longitude"], profile.get("timezone", "auto"))
         except WeatherProviderError as e:
@@ -163,7 +231,8 @@ class WeatherService:
         ctx, farm, auth = self._context(subject, farm_public_id, request_id)
         snapshot, cache_status, age, is_fallback = self._get_or_fetch(
             farm["id"], SnapshotType.CURRENT.value, fetch_current_weather, WEATHER_CACHE_CURRENT_MINUTES)
-        now = datetime.now(timezone.utc)
+        if snapshot is None:
+            return self._not_configured_current()
         payload = snapshot["payload_normalized"]
         if isinstance(payload, dict) and "current" in payload:
             payload = payload["current"]
@@ -184,7 +253,8 @@ class WeatherService:
         ctx, farm, auth = self._context(subject, farm_public_id, request_id)
         snapshot, cache_status, age, is_fallback = self._get_or_fetch(
             farm["id"], SnapshotType.HOURLY_FORECAST.value, fetch_hourly_forecast, WEATHER_CACHE_HOURLY_MINUTES)
-        now = datetime.now(timezone.utc)
+        if snapshot is None:
+            return self._not_configured_series()
         payload = snapshot["payload_normalized"]
         if isinstance(payload, dict) and "hourly" in payload:
             payload = payload["hourly"]
@@ -204,7 +274,8 @@ class WeatherService:
         ctx, farm, auth = self._context(subject, farm_public_id, request_id)
         snapshot, cache_status, age, is_fallback = self._get_or_fetch(
             farm["id"], SnapshotType.DAILY_FORECAST.value, fetch_daily_forecast, WEATHER_CACHE_DAILY_MINUTES)
-        now = datetime.now(timezone.utc)
+        if snapshot is None:
+            return self._not_configured_series()
         payload = snapshot["payload_normalized"]
         if isinstance(payload, dict) and "daily" in payload:
             payload = payload["daily"]
@@ -224,7 +295,8 @@ class WeatherService:
         ctx, farm, auth = self._context(subject, farm_public_id, request_id)
         snapshot, cache_status, age, is_fallback = self._get_or_fetch(
             farm["id"], SnapshotType.RECENT_HISTORY.value, fetch_recent_history, WEATHER_CACHE_DAILY_MINUTES)
-        now = datetime.now(timezone.utc)
+        if snapshot is None:
+            return self._not_configured_rainfall()
         payload = snapshot["payload_normalized"]
         if isinstance(payload, dict) and "daily" in payload:
             payload = payload["daily"]
@@ -244,10 +316,13 @@ class WeatherService:
     def refresh(self, *, subject, farm_public_id, request_id) -> dict:
         ctx, farm, auth = self._context(subject, farm_public_id, request_id)
         self._require_write(ctx, auth)
+        # Perfil ausente: falha de negócio antes do cooldown (não misturar com refresh_cooldown).
+        self._require_profile(farm["id"])
         import time
         now_ts = time.time()
         last = _refresh_cooldown.get(farm["id"], 0)
         if now_ts - last < COOLDOWN_SECONDS:
+            # Código previsto pelo contrato: ForbiddenError refresh_cooldown (≠ role_denied).
             raise ForbiddenError("refresh_cooldown")
         _refresh_cooldown[farm["id"]] = now_ts
         self.repository.invalidate_cache_for_farm(farm["id"])
