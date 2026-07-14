@@ -11,15 +11,17 @@
     </div>
   </div>
 
-  <!-- Seletor de fazenda -->
-  <div class="card pad" style="margin-bottom:16px">
-    <label class="small" style="font-weight:600;display:block;margin-bottom:6px">Fazenda</label>
-    <select class="select" style="width:100%;max-width:400px" x-model="selectedFarm" @change="loadScenarios()">
+  <!-- Seletor de fazenda no padrão .filters -->
+  <div class="filters">
+    <select class="select" style="min-width:280px" x-model="selectedFarm" @change="loadScenarios()">
       <option value="">Selecione uma fazenda…</option>
       <template x-for="f in farms" :key="f.id">
         <option :value="f.id" x-text="f.name"></option>
       </template>
     </select>
+    <div x-show="loading" style="display:inline-flex; align-items:center; margin-left:8px">
+      <div class="spinner" style="width:20px; height:20px"></div>
+    </div>
   </div>
 
   <template x-if="selectedFarm">
@@ -320,10 +322,13 @@
   </template>
 
   <!-- Modal: Importar do Pasto Vivo -->
-  <template x-if="showPastureImportModal">
-    <div class="modal-overlay" @click.self="showPastureImportModal=false">
-      <div class="modal card pad" style="max-width:700px;width:100%">
-        <h3 style="margin:0 0 16px">Importar do Pasto Vivo</h3>
+  <div class="ov" :class="{open: showPastureImportModal}" @click.self="showPastureImportModal=false">
+    <div class="mdl" style="max-width:700px">
+      <div class="mdl-head">
+        <h3>Importar do Pasto Vivo</h3>
+        <button class="x" @click="showPastureImportModal=false">&times;</button>
+      </div>
+      <div class="mdl-body">
         <div class="small muted" style="margin-bottom:12px">Selecione os piquetes para importar dados de pastagem.</div>
         <template x-if="pastureImportLoading">
           <div style="text-align:center;padding:20px"><div class="spinner"></div></div>
@@ -337,53 +342,55 @@
               <button class="btn btn-ghost" style="font-size:var(--fz-sm)" @click="pastureImportSelection=pastureImportSources.map(s=>s.paddock_id)">Selecionar todos</button>
               <button class="btn btn-ghost" style="font-size:var(--fz-sm)" @click="pastureImportSelection=[]">Desmarcar todos</button>
             </div>
-            <div class="table-scroll">
-              <table class="data">
-                <thead>
-                  <tr>
-                    <th style="width:40px"></th>
-                    <th>Piquete</th>
-                    <th>Área (ha)</th>
-                    <th>Forrageira</th>
-                    <th>kg MS/ha</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <template x-for="(s,i) in pastureImportSources" :key="s.paddock_id || i">
+            <div class="table-wrap">
+              <div class="table-scroll">
+                <table class="data">
+                  <thead>
                     <tr>
-                      <td>
-                        <input type="checkbox" :value="s.paddock_id" x-model="pastureImportSelection">
-                      </td>
-                      <td x-text="s.name"></td>
-                      <td x-text="fmtD(s.area_ha)"></td>
-                      <td x-text="s.grass_species || '—'"></td>
-                      <td x-text="s.dm_kg_ha != null ? fmtD(s.dm_kg_ha) : '—'"></td>
-                      <td>
-                        <template x-if="isStaleMeasurement(s.last_measurement_date)">
-                          <span class="badge warn" style="font-size:var(--fz-xs)">⚠ Desatualizada</span>
-                        </template>
-                        <template x-if="!isStaleMeasurement(s.last_measurement_date)">
-                          <span class="badge ok" style="font-size:var(--fz-xs)">OK</span>
-                        </template>
-                      </td>
+                      <th style="width:40px"></th>
+                      <th>Piquete</th>
+                      <th>Área (ha)</th>
+                      <th>Forrageira</th>
+                      <th>kg MS/ha</th>
+                      <th>Status</th>
                     </tr>
-                  </template>
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    <template x-for="(s,i) in pastureImportSources" :key="s.paddock_id || i">
+                      <tr>
+                        <td>
+                          <input type="checkbox" :value="s.paddock_id" x-model="pastureImportSelection">
+                        </td>
+                        <td x-text="s.name"></td>
+                        <td x-text="fmtD(s.area_ha)"></td>
+                        <td x-text="s.grass_species || '—'"></td>
+                        <td x-text="s.dm_kg_ha != null ? fmtD(s.dm_kg_ha) : '—'"></td>
+                        <td>
+                          <template x-if="isStaleMeasurement(s.last_measurement_date)">
+                            <span class="badge warn" style="font-size:var(--fz-xs)">⚠ Desatualizada</span>
+                          </template>
+                          <template x-if="!isStaleMeasurement(s.last_measurement_date)">
+                            <span class="badge ok" style="font-size:var(--fz-xs)">OK</span>
+                          </template>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </template>
         <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
           <button class="btn btn-ghost" @click="showPastureImportModal=false">Cancelar</button>
           <button class="btn btn-primary" @click="confirmPastureImport()" :disabled="pastureImportSelection.length === 0 || importingPasture">
-            <template x-if="importingPasture"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+            <template x-if="importingPasture"><span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;margin-right:6px"></span></template>
             Importar (<span x-text="pastureImportSelection.length"></span>)
           </button>
         </div>
       </div>
     </div>
-  </template>
+  </div>
 
   <div class="loading" x-show="loadingFarms"><div class="spinner"></div></div>
 </div>

@@ -3,132 +3,210 @@
 {% block topbar %}Clima e Operações{% endblock %}
 {% block content %}
 <div x-data="climaOperacoes()" x-init="init()">
-  <section class="card" style="margin-bottom:16px">
-    <div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap">
-      <div style="flex:1;min-width:240px"><label class="small">Fazenda</label>
-        <select class="input" style="width:100%" x-model="farm" @change="load()"><option value="">Selecione</option>
-          <template x-for="f in farms" :key="f.id"><option :value="f.id" x-text="f.name"></option></template>
-        </select></div>
-      <button class="btn btn-ghost" :disabled="!farm" @click="refresh()" x-text="refreshing?'Atualizando…':'Atualizar'"></button>
+
+  <div class="page-head">
+    <div>
+      <h1>Clima e Operações</h1>
+      <div class="sub">Previsão do tempo, janela operacional de máquinas e histórico de chuvas.</div>
     </div>
-  </section>
+  </div>
 
-  <template x-if="error"><div class="card" style="border-color:#dc2626;color:#b91c1c;margin-bottom:16px" x-text="error"></div></template>
+  <!-- Filtros -->
+  <div class="filters">
+    <select class="select" style="min-width:280px" x-model="farm" @change="load()">
+      <option value="">Selecione uma fazenda…</option>
+      <template x-for="f in farms" :key="f.id">
+        <option :value="f.id" x-text="f.name"></option>
+      </template>
+    </select>
+    <button class="btn btn-ghost" :disabled="!farm" @click="refresh()" x-text="refreshing?'Atualizando…':'Atualizar'"></button>
+  </div>
 
-  <section class="grid grid-4" style="margin-bottom:16px">
-    <div class="card"><div class="small muted">Temperatura</div><div class="kpi" x-text="current.temperature_c != null ? current.temperature_c+'°C' : '—'"></div></div>
-    <div class="card"><div class="small muted">Sensação</div><div class="kpi" x-text="current.feels_like_c != null ? current.feels_like_c+'°C' : '—'"></div></div>
-    <div class="card"><div class="small muted">Umidade</div><div class="kpi" x-text="current.humidity_pct != null ? current.humidity_pct+'%' : '—'"></div></div>
-    <div class="card"><div class="small muted">Chuva</div><div class="kpi" x-text="current.precipitation_mm != null ? current.precipitation_mm+' mm' : '0 mm'"></div></div>
-  </section>
-  <section class="grid grid-4" style="margin-bottom:16px">
-    <div class="card"><div class="small muted">Vento</div><div class="kpi" x-text="current.wind_kmh != null ? current.wind_kmh+' km/h' : '—'"></div></div>
-    <div class="card"><div class="small muted">Rajadas</div><div class="kpi" x-text="current.gust_kmh != null ? current.gust_kmh+' km/h' : '—'"></div></div>
-    <div class="card"><div class="small muted">Nuvens</div><div class="kpi" x-text="current.cloud_cover_pct != null ? current.cloud_cover_pct+'%' : '—'"></div></div>
-    <div class="card"><div class="small muted">Atualização</div><div class="kpi small" x-text="current.fetched_at ? timeAgo(current.fetched_at) : '—'"></div></div>
-  </section>
+  <template x-if="error"><div class="card pad" style="border-color:var(--danger);color:var(--danger);margin-bottom:16px;background:var(--danger-bg)" x-text="error"></div></template>
 
-  <template x-if="current.condition_description"><div class="card" style="margin-bottom:16px"><span class="small muted">Condição: </span><span x-text="current.condition_description"></span></div></template>
-
-  <section class="card" style="margin-bottom:16px">
-    <h2 style="margin:0 0 12px">Previsão diária</h2>
-    <div style="overflow:auto"><table class="table"><thead><tr><th>Data</th><th>Mín</th><th>Máx</th><th>Chuva</th><th>Prob.</th><th>Vento</th></tr></thead>
-      <tbody><template x-for="d in forecast" :key="d.date"><tr>
-        <td x-text="fmtDate(d.date)"></td>
-        <td x-text="d.temperature_min_c != null ? d.temperature_min_c+'°C' : '—'"></td>
-        <td x-text="d.temperature_max_c != null ? d.temperature_max_c+'°C' : '—'"></td>
-        <td x-text="d.precipitation_sum_mm != null ? d.precipitation_sum_mm+' mm' : '0'"></td>
-        <td x-text="d.precipitation_probability_max != null ? d.precipitation_probability_max+'%' : '—'"></td>
-        <td x-text="d.wind_speed_max_kmh != null ? d.wind_speed_max_kmh+' km/h' : '—'"></td>
-      </tr></template>
-      <tr x-show="!forecast.length"><td colspan="6" class="muted">Sem previsão disponível.</td></tr></tbody></table></div>
-  </section>
-
-  <section class="card" style="margin-bottom:16px">
-    <h2 style="margin:0 0 12px">Chuva recente</h2>
-    <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
-      <div><span class="small muted">Acumulado 7 dias: </span><strong x-text="rainfall.total_mm+' mm'"></strong></div>
+  <!-- Condição atual e KPIs clima -->
+  <div class="stats" x-show="farm">
+    <div class="stat">
+      <div class="k">Temperatura</div>
+      <div class="v" x-text="current.temperature_c != null ? current.temperature_c+'°C' : '—'"></div>
     </div>
-    <div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap">
+    <div class="stat">
+      <div class="k">Sensação</div>
+      <div class="v" x-text="current.feels_like_c != null ? current.feels_like_c+'°C' : '—'"></div>
+    </div>
+    <div class="stat">
+      <div class="k">Umidade</div>
+      <div class="v" x-text="current.humidity_pct != null ? current.humidity_pct+'%' : '—'"></div>
+    </div>
+    <div class="stat">
+      <div class="k">Chuva</div>
+      <div class="v" x-text="current.precipitation_mm != null ? current.precipitation_mm+' mm' : '0 mm'"></div>
+    </div>
+    <div class="stat">
+      <div class="k">Vento</div>
+      <div class="v" x-text="current.wind_kmh != null ? current.wind_kmh+' km/h' : '—'"></div>
+    </div>
+    <div class="stat">
+      <div class="k">Rajadas</div>
+      <div class="v" x-text="current.gust_kmh != null ? current.gust_kmh+' km/h' : '—'"></div>
+    </div>
+    <div class="stat">
+      <div class="k">Nuvens</div>
+      <div class="v" x-text="current.cloud_cover_pct != null ? current.cloud_cover_pct+'%' : '—'"></div>
+    </div>
+    <div class="stat">
+      <div class="k">Atualização</div>
+      <div class="v" style="font-size:var(--fz-md)" x-text="current.fetched_at ? timeAgo(current.fetched_at) : '—'"></div>
+    </div>
+  </div>
+
+  <template x-if="current.condition_description">
+    <div class="card pad" style="margin-bottom:16px; display: flex; align-items: center; gap: 8px" x-show="farm">
+      <span class="muted">Condição atual:</span>
+      <strong x-text="current.condition_description"></strong>
+    </div>
+  </template>
+
+  <!-- Previsão diária -->
+  <div class="card pad" style="margin-bottom:16px" x-show="farm">
+    <h3 style="margin:0 0 12px">Previsão diária</h3>
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table class="data">
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Mín</th>
+              <th>Máx</th>
+              <th>Chuva</th>
+              <th>Probabilidade</th>
+              <th>Vento Máx</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="d in forecast" :key="d.date">
+              <tr>
+                <td data-label="Data" x-text="fmtDate(d.date)"></td>
+                <td data-label="Mín" x-text="d.temperature_min_c != null ? d.temperature_min_c+'°C' : '—'"></td>
+                <td data-label="Máx" x-text="d.temperature_max_c != null ? d.temperature_max_c+'°C' : '—'"></td>
+                <td data-label="Chuva" x-text="d.precipitation_sum_mm != null ? d.precipitation_sum_mm+' mm' : '0'"></td>
+                <td data-label="Probabilidade" x-text="d.precipitation_probability_max != null ? d.precipitation_probability_max+'%' : '—'"></td>
+                <td data-label="Vento Máx" x-text="d.wind_speed_max_kmh != null ? d.wind_speed_max_kmh+' km/h' : '—'"></td>
+              </tr>
+            </template>
+            <tr x-show="!forecast.length">
+              <td colspan="6" class="muted" style="text-align:center;padding:20px">Sem previsão disponível.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chuva recente -->
+  <div class="card pad" style="margin-bottom:16px" x-show="farm">
+    <h3 style="margin:0 0 12px">Chuva recente</h3>
+    <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
+      <div><span class="muted">Acumulado 7 dias: </span><strong style="font-size:var(--fz-lg)" x-text="rainfall.total_mm+' mm'"></strong></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;background:var(--surface-2);padding:16px;border-radius:var(--r-md)">
       <template x-for="r in rainfall.items" :key="r.date">
-        <div style="text-align:center;min-width:48px">
-          <div style="height:60px;display:flex;align-items:flex-end;justify-content:center">
+        <div style="text-align:center;min-width:64px;flex:1">
+          <div style="height:60px;display:flex;align-items:flex-end;justify-content:center;margin-bottom:8px">
             <div :style="'width:24px;height:'+barHeight(r.precipitation_sum_mm)+'px;background:#3b82f6;border-radius:3px'"></div>
           </div>
-          <div class="small muted" x-text="r.date.slice(5)"></div>
-          <div class="small" x-text="(r.precipitation_sum_mm||0)+'mm'"></div>
+          <div class="small muted" x-text="fmtDate(r.date)"></div>
+          <div class="small" style="font-weight:600" x-text="(r.precipitation_sum_mm||0)+' mm'"></div>
         </div>
       </template>
     </div>
-  </section>
+  </div>
 
-  <section class="card" style="margin-bottom:16px">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-      <h2 style="margin:0">Janelas operacionais</h2>
-      <div style="display:flex;gap:4px;flex-wrap:wrap">
+  <!-- Janelas operacionais -->
+  <div class="card pad" style="margin-bottom:16px" x-show="farm">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:16px">
+      <h3 style="margin:0">Janelas operacionais</h3>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
         <template x-for="t in windowTypes" :key="t.value">
-          <button class="btn btn-ghost btn-sm" :class="{'btn-primary': windowFilter===t.value}" @click="windowFilter=windowFilter===t.value?'':t.value;loadWindows()" x-text="t.label"></button>
+          <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" :class="{'btn-primary': windowFilter===t.value}" @click="windowFilter=windowFilter===t.value?'':t.value;loadWindows()" x-text="t.label"></button>
         </template>
       </div>
     </div>
-    <div style="margin-top:12px;display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;flex-direction:column;gap:12px">
       <template x-for="w in windows" :key="w.window_type+w.period_start">
-        <div class="card" :style="'border-left:4px solid '+classColor(w.classification)">
+        <div class="card pad" :style="'border-left:4px solid '+classColor(w.classification)">
           <div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:8px">
             <div>
-              <strong x-text="w.window_type_label"></strong>
+              <strong style="font-size:var(--fz-md)" x-text="w.window_type_label"></strong>
               <span class="small muted" x-text="' — '+fmtDate(w.period_start.slice(0,10))"></span>
             </div>
-            <div>
-              <span :style="'padding:2px 8px;border-radius:4px;font-weight:600;background:'+classColor(w.classification)+'22;color:'+classColor(w.classification)" x-text="w.classification_label"></span>
-              <span style="margin-left:8px;font-weight:700" x-text="w.score"></span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span :style="'padding:2px 8px;border-radius:4px;font-size:var(--fz-xs);font-weight:600;background:'+classColor(w.classification)+'22;color:'+classColor(w.classification)" x-text="w.classification_label"></span>
+              <span class="badge neutral" x-text="'Score: ' + w.score"></span>
             </div>
           </div>
           <div style="margin-top:8px;display:flex;gap:16px;flex-wrap:wrap">
             <div x-show="w.positive_factors.length"><span class="small muted">Favoráveis:</span>
-              <template x-for="f in w.positive_factors" :key="f.factor"><span class="small" x-text="' '+f.description"></span></template></div>
-            <div x-show="w.risk_factors.length"><span class="small muted" style="color:#dc2626">Riscos:</span>
-              <template x-for="f in w.risk_factors" :key="f.factor"><span class="small" style="color:#dc2626" x-text="' '+f.description"></span></template></div>
+              <template x-for="f in w.positive_factors" :key="f.factor"><span class="badge ok" style="font-size:var(--fz-xs);margin-left:4px" x-text="f.description"></span></template></div>
+            <div x-show="w.risk_factors.length"><span class="small muted" style="color:var(--danger)">Riscos:</span>
+              <template x-for="f in w.risk_factors" :key="f.factor"><span class="badge danger" style="font-size:var(--fz-xs);margin-left:4px" x-text="f.description"></span></template></div>
           </div>
         </div>
       </template>
-      <div x-show="!windows.length" class="muted">Nenhuma janela calculada. Atualize os dados climáticos.</div>
+      <div x-show="!windows.length" class="muted" style="text-align:center;padding:20px">Nenhuma janela calculada. Atualize os dados climáticos.</div>
     </div>
-  </section>
+  </div>
 
+  <!-- Configuração climática quando não configurado -->
   <template x-if="profile.status==='not_configured'">
-  <section class="card" style="margin-bottom:16px;border-color:#f59e0b">
-    <h2 style="margin:0 0 8px">Configuração climática</h2>
-    <p class="small muted">Cadastre as coordenadas da fazenda para habilitar as previsões.</p>
-    <div class="grid grid-2">
-      <label>Latitude<input type="number" step="0.000001" class="input" x-model="profileForm.latitude" placeholder="-12.6400"></label>
-      <label>Longitude<input type="number" step="0.000001" class="input" x-model="profileForm.longitude" placeholder="-55.7200"></label>
-      <label>Timezone<select class="input" x-model="profileForm.timezone"><option value="America/Sao_Paulo">America/Sao_Paulo</option><option value="America/Cuiaba">America/Cuiaba</option><option value="America/Manaus">America/Manaus</option></select></label>
-      <div style="display:flex;align-items:end"><button class="btn btn-primary" @click="saveProfile()">Salvar configuração</button></div>
+    <div class="card pad" style="margin-bottom:16px;border-left:4px solid var(--gold-500)">
+      <h3 style="margin:0 0 8px">Configuração climática</h3>
+      <p class="small muted" style="margin-bottom:16px">Cadastre as coordenadas da fazenda para habilitar as previsões.</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+        <div>
+          <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Latitude</label>
+          <input type="number" step="0.000001" class="input" style="width:100%" x-model="profileForm.latitude" placeholder="-12.6400">
+        </div>
+        <div>
+          <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Longitude</label>
+          <input type="number" step="0.000001" class="input" style="width:100%" x-model="profileForm.longitude" placeholder="-55.7200">
+        </div>
+        <div>
+          <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Timezone</label>
+          <select class="select" style="width:100%" x-model="profileForm.timezone">
+            <option value="America/Sao_Paulo">America/Sao_Paulo</option>
+            <option value="America/Cuiaba">America/Cuiaba</option>
+            <option value="America/Manaus">America/Manaus</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:end">
+          <button class="btn btn-primary" style="width:100%" @click="saveProfile()">Salvar configuração</button>
+        </div>
+      </div>
+      <p class="small muted" style="margin-top:12px">Confirme as coordenadas antes de utilizar as previsões.</p>
     </div>
-    <p class="small muted" style="margin-top:8px">Confirme as coordenadas antes de utilizar as previsões.</p>
-  </section>
   </template>
 
+  <!-- Configuração climática quando ativa -->
   <template x-if="profile.status && profile.status!=='not_configured'">
-  <section class="card" style="margin-bottom:16px">
-    <h2 style="margin:0 0 8px">Configuração</h2>
-    <div class="grid grid-3">
-      <div><span class="small muted">Status: </span><span x-text="profile.status_label || profile.status"></span></div>
-      <div><span class="small muted">Provider: </span><span x-text="profile.provider"></span></div>
-      <div><span class="small muted">Coordenadas: </span><span x-text="profile.latitude+', '+profile.longitude"></span></div>
+    <div class="card pad" style="margin-bottom:16px">
+      <h3 style="margin:0 0 12px">Configuração ativa</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+        <div><span class="small muted">Status: </span><span class="badge ok" x-text="profile.status_label || profile.status"></span></div>
+        <div><span class="small muted">Provedor: </span><span class="badge neutral" x-text="profile.provider"></span></div>
+        <div><span class="small muted">Coordenadas: </span><span class="mono" x-text="profile.latitude+', '+profile.longitude"></span></div>
+      </div>
     </div>
-  </section>
   </template>
 
   <template x-if="noConfig">
-  <div class="card" style="border-color:#f59e0b;margin-bottom:16px">
-    <span class="small">Sem configuração climática. Cadastre as coordenadas para habilitar.</span>
-  </div>
+    <div class="card pad" style="border-left:4px solid var(--gold-500);margin-bottom:16px">
+      <span class="small">Sem configuração climática. Cadastre as coordenadas acima para habilitar previsões e janelas.</span>
+    </div>
   </template>
 </div>
-
 {% endblock %}
+
 {% block scripts %}
 <script>
 function climaOperacoes(){

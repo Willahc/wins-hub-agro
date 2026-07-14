@@ -74,15 +74,17 @@
     </div>
   </template>
 
-  <!-- Seletor de fazenda -->
-  <div class="card pad" style="margin-bottom:16px">
-    <label class="small" style="font-weight:600;display:block;margin-bottom:6px">Fazenda</label>
-    <select class="select" style="width:100%;max-width:400px" x-model="selectedFarm" @change="loadAll()">
+  <!-- Seletor de fazenda no padrão .filters -->
+  <div class="filters">
+    <select class="select" style="min-width:280px" x-model="selectedFarm" @change="loadAll()">
       <option value="">Selecione uma fazenda…</option>
       <template x-for="f in farms" :key="f.id">
         <option :value="f.id" x-text="f.name"></option>
       </template>
     </select>
+    <div x-show="loadingFarms" style="display:inline-flex; align-items:center; margin-left:8px">
+      <div class="spinner" style="width:20px; height:20px"></div>
+    </div>
   </div>
 
   <template x-if="selectedFarm">
@@ -259,38 +261,40 @@
             <template x-if="lots.filter(l => l.status === 'open').length > 0">
               <div class="card pad" style="margin-bottom:16px">
                 <h3 style="margin:0 0 12px">Lotes Abertos — Resumo</h3>
-                <div class="table-scroll">
-                  <table class="data">
-                    <thead>
-                      <tr>
-                        <th>Lote</th>
-                        <th>Estrutura</th>
-                        <th>Saldo (kg MN)</th>
-                        <th>MS utilizável (kg)</th>
-                        <th>Dias restantes</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <template x-for="lot in lots.filter(l => l.status === 'open')" :key="lot.public_id">
-                        <tr @click="activeTab='lots'; openHistoryModal(lot)" style="cursor:pointer">
-                          <td data-label="Lote" class="fz-nome" x-text="lot.name"></td>
-                          <td data-label="Estrutura" x-text="lot.facility_name || '—'"></td>
-                          <td data-label="Saldo" x-text="fmtD(lot.current_quantity_natural_kg)"></td>
-                          <td data-label="MS utilizável" x-text="fmtD(lotUsableDM(lot))"></td>
-                          <td data-label="Dias restantes">
-                            <span x-text="lot.days_of_stock != null ? Math.round(Number(lot.days_of_stock)) + ' dias' : '—'"></span>
-                            <template x-if="Number(lot.days_of_stock) <= 7">
-                              <span class="badge warn" style="margin-left:4px;font-size:var(--fz-xs)">Pouco</span>
-                            </template>
-                          </td>
-                          <td data-label="Status">
-                            <span :class="'badge ' + lotStatusBadge(lot.status)" x-text="lotStatusLabel(lot.status)"></span>
-                          </td>
+                <div class="table-wrap">
+                  <div class="table-scroll">
+                    <table class="data">
+                      <thead>
+                        <tr>
+                          <th>Lote</th>
+                          <th>Estrutura</th>
+                          <th>Saldo (kg MN)</th>
+                          <th>MS utilizável (kg)</th>
+                          <th>Dias restantes</th>
+                          <th>Status</th>
                         </tr>
-                      </template>
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        <template x-for="lot in lots.filter(l => l.status === 'open')" :key="lot.public_id">
+                          <tr @click="activeTab='lots'; openHistoryModal(lot)" style="cursor:pointer">
+                            <td data-label="Lote" class="fz-nome" x-text="lot.name"></td>
+                            <td data-label="Estrutura" x-text="lot.facility_name || '—'"></td>
+                            <td data-label="Saldo" x-text="fmtD(lot.current_quantity_natural_kg)"></td>
+                            <td data-label="MS utilizável" x-text="fmtD(lotUsableDM(lot))"></td>
+                            <td data-label="Dias restantes">
+                              <span x-text="lot.days_of_stock != null ? Math.round(Number(lot.days_of_stock)) + ' dias' : '—'"></span>
+                              <template x-if="Number(lot.days_of_stock) <= 7">
+                                <span class="badge warn" style="margin-left:4px;font-size:var(--fz-xs)">Pouco</span>
+                              </template>
+                            </td>
+                            <td data-label="Status">
+                              <span :class="'badge ' + lotStatusBadge(lot.status)" x-text="lotStatusLabel(lot.status)"></span>
+                            </td>
+                          </tr>
+                        </template>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             </template>
@@ -299,33 +303,35 @@
             <template x-if="recentMovements.length > 0">
               <div class="card pad">
                 <h3 style="margin:0 0 12px">Últimas Movimentações</h3>
-                <div class="table-scroll">
-                  <table class="data">
-                    <thead>
-                      <tr>
-                        <th>Data</th>
-                        <th>Lote</th>
-                        <th>Tipo</th>
-                        <th>Quantidade (kg)</th>
-                        <th>Saldo após</th>
-                        <th>Motivo</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <template x-for="(mv,i) in recentMovements" :key="mv.public_id || i">
+                <div class="table-wrap">
+                  <div class="table-scroll">
+                    <table class="data">
+                      <thead>
                         <tr>
-                          <td data-label="Data" x-text="mv.movement_at || '—'"></td>
-                          <td data-label="Lote" x-text="mv.lot_name || '—'"></td>
-                          <td data-label="Tipo">
-                            <span class="badge" :class="movementBadgeClass(mv.movement_type)" x-text="movementTypeLabel(mv.movement_type)"></span>
-                          </td>
-                          <td data-label="Quantidade" x-text="fmtD(mv.quantity_natural_kg)"></td>
-                          <td data-label="Saldo" x-text="fmtD(mv.balance_after_natural_kg)"></td>
-                          <td data-label="Motivo" class="small muted" x-text="mv.reason || mv.loss_reason || '—'"></td>
+                          <th>Data</th>
+                          <th>Lote</th>
+                          <th>Tipo</th>
+                          <th>Quantidade (kg)</th>
+                          <th>Saldo após</th>
+                          <th>Motivo</th>
                         </tr>
-                      </template>
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        <template x-for="(mv,i) in recentMovements" :key="mv.public_id || i">
+                          <tr>
+                            <td data-label="Data" x-text="mv.movement_at || '—'"></td>
+                            <td data-label="Lote" x-text="mv.lot_name || '—'"></td>
+                            <td data-label="Tipo">
+                              <span class="badge" :class="movementBadgeClass(mv.movement_type)" x-text="movementTypeLabel(mv.movement_type)"></span>
+                            </td>
+                            <td data-label="Quantidade" x-text="fmtD(mv.quantity_natural_kg)"></td>
+                            <td data-label="Saldo" x-text="fmtD(mv.balance_after_natural_kg)"></td>
+                            <td data-label="Motivo" class="small muted" x-text="mv.reason || mv.loss_reason || '—'"></td>
+                          </tr>
+                        </template>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             </template>
@@ -383,58 +389,60 @@
               </div>
             </template>
             <template x-if="facilities.length > 0">
-              <div class="table-scroll">
-                <table class="data">
-                  <thead>
-                    <tr>
-                      <th>Nome</th>
-                      <th>Tipo</th>
-                      <th>Código</th>
-                      <th>Capacidade (kg)</th>
-                      <th>Ocupação (kg)</th>
-                      <th>% Ocupação</th>
-                      <th>Lotes ativos</th>
-                      <th>Localização</th>
-                      <th>Status</th>
-                      <th>Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <template x-for="(fac,i) in facilities" :key="fac.public_id || i">
+              <div class="table-wrap">
+                <div class="table-scroll">
+                  <table class="data">
+                    <thead>
                       <tr>
-                        <td data-label="Nome" class="fz-nome" x-text="fac.name"></td>
-                        <td data-label="Tipo">
-                          <span class="badge neutral" x-text="facilityTypeLabel(fac.facility_type)"></span>
-                        </td>
-                        <td data-label="Código" class="mono" x-text="fac.code || '—'"></td>
-                        <td data-label="Capacidade" x-text="fac.capacity_natural_kg ? fmtD(fac.capacity_natural_kg) : '—'"></td>
-                        <td data-label="Ocupação" x-text="fmtD(fac.occupation_kg || 0)"></td>
-                        <td data-label="% Ocupação">
-                          <template x-if="fac.capacity_natural_kg && Number(fac.capacity_natural_kg) > 0">
-                            <div style="display:flex;align-items:center;gap:6px">
-                              <div style="flex:1;max-width:80px;height:6px;border-radius:3px;background:var(--line);overflow:hidden">
-                                <div style="height:100%;border-radius:3px;transition:width .3s" :style="'width:' + Math.min(100, Math.round((fac.occupation_kg||0) / fac.capacity_natural_kg * 100)) + '%;background:' + (Math.round((fac.occupation_kg||0) / fac.capacity_natural_kg * 100) > 90 ? 'var(--danger)' : Math.round((fac.occupation_kg||0) / fac.capacity_natural_kg * 100) > 70 ? 'var(--warn)' : 'var(--ok)')"></div>
-                              </div>
-                              <span class="small" x-text="Math.round((fac.occupation_kg||0) / fac.capacity_natural_kg * 100) + '%'"></span>
-                            </div>
-                          </template>
-                          <span x-show="!fac.capacity_natural_kg || Number(fac.capacity_natural_kg) === 0" class="small muted">—</span>
-                        </td>
-                        <td data-label="Lotes ativos" x-text="fac.active_lots_count || 0"></td>
-                        <td data-label="Localização" class="small muted" x-text="fac.location_description || '—'"></td>
-                        <td data-label="Status">
-                          <span :class="'badge ' + (fac.active ? 'ok' : 'neutral')" x-text="fac.active ? 'Ativa' : 'Inativa'"></span>
-                        </td>
-                        <td data-label="Ações">
-                          <div style="display:flex;gap:4px;flex-wrap:wrap">
-                            <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openFacilityModal(fac)" title="Editar">Editar</button>
-                            <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="archiveFacility(fac)" title="Arquivar">Arquivar</button>
-                          </div>
-                        </td>
+                        <th>Nome</th>
+                        <th>Tipo</th>
+                        <th>Código</th>
+                        <th>Capacidade (kg)</th>
+                        <th>Ocupação (kg)</th>
+                        <th>% Ocupação</th>
+                        <th>Lotes ativos</th>
+                        <th>Localização</th>
+                        <th>Status</th>
+                        <th>Ações</th>
                       </tr>
-                    </template>
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      <template x-for="(fac,i) in facilities" :key="fac.public_id || i">
+                        <tr>
+                          <td data-label="Nome" class="fz-nome" x-text="fac.name"></td>
+                          <td data-label="Tipo">
+                            <span class="badge neutral" x-text="facilityTypeLabel(fac.facility_type)"></span>
+                          </td>
+                          <td data-label="Código" class="mono" x-text="fac.code || '—'"></td>
+                          <td data-label="Capacidade" x-text="fac.capacity_natural_kg ? fmtD(fac.capacity_natural_kg) : '—'"></td>
+                          <td data-label="Ocupação" x-text="fmtD(fac.occupation_kg || 0)"></td>
+                          <td data-label="% Ocupação">
+                            <template x-if="fac.capacity_natural_kg && Number(fac.capacity_natural_kg) > 0">
+                              <div style="display:flex;align-items:center;gap:6px">
+                                <div style="flex:1;max-width:80px;height:6px;border-radius:3px;background:var(--line);overflow:hidden">
+                                  <div style="height:100%;border-radius:3px;transition:width .3s" :style="'width:' + Math.min(100, Math.round((fac.occupation_kg||0) / fac.capacity_natural_kg * 100)) + '%;background:' + (Math.round((fac.occupation_kg||0) / fac.capacity_natural_kg * 100) > 90 ? 'var(--danger)' : Math.round((fac.occupation_kg||0) / fac.capacity_natural_kg * 100) > 70 ? 'var(--warn)' : 'var(--ok)')"></div>
+                                </div>
+                                <span class="small" x-text="Math.round((fac.occupation_kg||0) / fac.capacity_natural_kg * 100) + '%'"></span>
+                              </div>
+                            </template>
+                            <span x-show="!fac.capacity_natural_kg || Number(fac.capacity_natural_kg) === 0" class="small muted">—</span>
+                          </td>
+                          <td data-label="Lotes ativos" x-text="fac.active_lots_count || 0"></td>
+                          <td data-label="Localização" class="small muted" x-text="fac.location_description || '—'"></td>
+                          <td data-label="Status">
+                            <span :class="'badge ' + (fac.active ? 'ok' : 'neutral')" x-text="fac.active ? 'Ativa' : 'Inativa'"></span>
+                          </td>
+                          <td data-label="Ações">
+                            <div style="display:flex;gap:4px;flex-wrap:wrap">
+                              <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openFacilityModal(fac)" title="Editar">Editar</button>
+                              <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="archiveFacility(fac)" title="Arquivar">Arquivar</button>
+                            </div>
+                          </td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </template>
           </div>
@@ -512,66 +520,68 @@
                   </div>
                   <div class="small muted" x-text="lotSelection.length > 0 ? lotSelection.length + ' selecionado(s) de ' + lots.length : lots.length + ' lote(s)'"></div>
                 </div>
-                <div class="table-scroll">
-                  <table class="data">
-                    <thead>
-                      <tr>
-                        <th style="width:40px"></th>
-                        <th>Nome</th>
-                        <th>Tipo</th>
-                        <th>Estrutura</th>
-                        <th>Data</th>
-                        <th>Saldo natural (kg)</th>
-                        <th>MS %</th>
-                        <th>MS utilizável (kg)</th>
-                        <th>Valor</th>
-                        <th>Custo/kg MS</th>
-                        <th>Previsão fim</th>
-                        <th>Status</th>
-                        <th>Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <template x-for="(lot,i) in lots" :key="lot.public_id || i">
-                        <tr :style="lotSelection.includes(lot.public_id) ? 'background:var(--brand-50)' : ''">
-                          <td>
-                            <input type="checkbox" :value="lot.public_id" x-model="lotSelection">
+                <div class="table-wrap">
+                  <div class="table-scroll">
+                    <table class="data">
+                      <thead>
+                        <tr>
+                          <th style="width:40px"></th>
+                          <th>Nome</th>
+                          <th>Tipo</th>
+                          <th>Estrutura</th>
+                          <th>Data</th>
+                          <th>Saldo natural (kg)</th>
+                          <th>MS %</th>
+                          <th>MS utilizável (kg)</th>
+                          <th>Valor</th>
+                          <th>Custo/kg MS</th>
+                          <th>Previsão fim</th>
+                          <th>Status</th>
+                          <th>Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <template x-for="(lot,i) in lots" :key="lot.public_id || i">
+                          <tr :style="lotSelection.includes(lot.public_id) ? 'background:var(--brand-50)' : ''">
+                            <td>
+                              <input type="checkbox" :value="lot.public_id" x-model="lotSelection">
+                            </td>
+                          <td data-label="Nome" class="fz-nome" x-text="lot.name"></td>
+                          <td data-label="Tipo">
+                            <span class="badge neutral" x-text="feedTypeLabel(lot.feed_type)"></span>
                           </td>
-                        <td data-label="Nome" class="fz-nome" x-text="lot.name"></td>
-                        <td data-label="Tipo">
-                          <span class="badge neutral" x-text="feedTypeLabel(lot.feed_type)"></span>
-                        </td>
-                        <td data-label="Estrutura" x-text="lot.facility_name || '—'"></td>
-                        <td data-label="Data" x-text="lot.production_date || lot.ensiling_date || '—'"></td>
-                        <td data-label="Saldo natural" x-text="fmtD(lot.current_quantity_natural_kg)"></td>
-                        <td data-label="MS %" x-text="lot.dry_matter_pct ? lot.dry_matter_pct + '%' : '—'"></td>
-                        <td data-label="MS utilizável" x-text="fmtD(lotUsableDM(lot))"></td>
-                        <td data-label="Valor" x-text="lot.initial_total_cost ? fmtBRL(lot.initial_total_cost) : '—'"></td>
-                        <td data-label="Custo/kg MS" x-text="lotCostPerDM(lot)"></td>
-                        <td data-label="Previsão fim">
-                          <span x-text="lot.days_of_stock != null ? Math.round(Number(lot.days_of_stock)) + ' dias' : '—'"></span>
-                          <template x-if="Number(lot.days_of_stock) <= 7 && lot.status === 'open'">
-                            <span class="badge warn" style="margin-left:4px;font-size:var(--fz-xs)">Pouco</span>
-                          </template>
-                        </td>
-                        <td data-label="Status">
-                          <span :class="'badge ' + lotStatusBadge(lot.status)" x-text="lotStatusLabel(lot.status)"></span>
-                        </td>
-                        <td data-label="Ações">
-                          <div style="display:flex;gap:4px;flex-wrap:wrap">
-                            <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openMovementModal(lot,'entry')" title="Entrada" x-show="lot.status==='open'">Entrada</button>
-                            <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openWithdrawModal(lot)" title="Retirada" x-show="lot.status==='open'">Retirada</button>
-                            <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openLossModal(lot)" title="Perda" x-show="lot.status==='open'">Perda</button>
-                            <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openAdjustModal(lot)" title="Ajuste" x-show="lot.status==='open'">Ajuste</button>
-                            <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openHistoryModal(lot)" title="Histórico">Histórico</button>
-                            <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openLotModal(lot)" title="Editar">Editar</button>
-                            <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="archiveLot(lot)" title="Arquivar">Arquivar</button>
-                          </div>
-                        </td>
-                      </tr>
-                    </template>
-                  </tbody>
-                </table>
+                          <td data-label="Estrutura" x-text="lot.facility_name || '—'"></td>
+                          <td data-label="Data" x-text="lot.production_date || lot.ensiling_date || '—'"></td>
+                          <td data-label="Saldo natural" x-text="fmtD(lot.current_quantity_natural_kg)"></td>
+                          <td data-label="MS %" x-text="lot.dry_matter_pct ? lot.dry_matter_pct + '%' : '—'"></td>
+                          <td data-label="MS utilizável" x-text="fmtD(lotUsableDM(lot))"></td>
+                          <td data-label="Valor" x-text="lot.initial_total_cost ? fmtBRL(lot.initial_total_cost) : '—'"></td>
+                          <td data-label="Custo/kg MS" x-text="lotCostPerDM(lot)"></td>
+                          <td data-label="Previsão fim">
+                            <span x-text="lot.days_of_stock != null ? Math.round(Number(lot.days_of_stock)) + ' dias' : '—'"></span>
+                            <template x-if="Number(lot.days_of_stock) <= 7 && lot.status === 'open'">
+                              <span class="badge warn" style="margin-left:4px;font-size:var(--fz-xs)">Pouco</span>
+                            </template>
+                          </td>
+                          <td data-label="Status">
+                            <span :class="'badge ' + lotStatusBadge(lot.status)" x-text="lotStatusLabel(lot.status)"></span>
+                          </td>
+                          <td data-label="Ações">
+                            <div style="display:flex;gap:4px;flex-wrap:wrap">
+                              <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openMovementModal(lot,'entry')" title="Entrada" x-show="lot.status==='open'">Entrada</button>
+                              <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openWithdrawModal(lot)" title="Retirada" x-show="lot.status==='open'">Retirada</button>
+                              <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openLossModal(lot)" title="Perda" x-show="lot.status==='open'">Perda</button>
+                              <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openAdjustModal(lot)" title="Ajuste" x-show="lot.status==='open'">Ajuste</button>
+                              <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openHistoryModal(lot)" title="Histórico">Histórico</button>
+                              <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openLotModal(lot)" title="Editar">Editar</button>
+                              <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="archiveLot(lot)" title="Arquivar">Arquivar</button>
+                            </div>
+                          </td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
               </div>
               </div>
             </template>
@@ -624,57 +634,59 @@
                   </div>
                   <div class="small muted" x-text="importSelection.length + ' de ' + autonomySources.length + ' selecionados'"></div>
                 </div>
-                <div class="table-scroll">
-                  <table class="data">
-                    <thead>
-                      <tr>
-                        <th style="width:40px"></th>
-                        <th>Lote</th>
-                        <th>Tipo</th>
-                        <th>Estrutura</th>
-                        <th>Saldo (kg MN)</th>
-                        <th>MS %</th>
-                        <th>MS utilizável (kg)</th>
-                        <th>Quantidade a importar</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <template x-for="(s,i) in autonomySources" :key="s.source_public_id || i">
-                        <tr :style="importSelection.includes(s.source_public_id) ? 'background:var(--brand-50)' : ''">
-                          <td>
-                            <input type="checkbox" :value="s.source_public_id" x-model="importSelection">
-                          </td>
-                          <td data-label="Lote" x-text="s.name"></td>
-                          <td data-label="Tipo">
-                            <span class="badge neutral" x-text="feedTypeLabel(s.feed_type)"></span>
-                          </td>
-                          <td data-label="Estrutura" x-text="s.facility_name || '—'"></td>
-                          <td data-label="Saldo" x-text="fmtD(s.quantity_natural_kg)"></td>
-                          <td data-label="MS %" x-text="s.dry_matter_pct ? s.dry_matter_pct + '%' : '—'"></td>
-                          <td data-label="MS utilizável" x-text="fmtD(s.usable_dm_kg)"></td>
-                          <td data-label="Quantidade">
-                            <select class="select" style="min-width:120px" x-model="importQuantities[s.source_public_id]"
-                              :disabled="!importSelection.includes(s.source_public_id)">
-                              <option value="full">Saldo completo</option>
-                              <option value="75">75%</option>
-                              <option value="50">50%</option>
-                              <option value="25">25%</option>
-                              <option value="custom">Personalizado…</option>
-                            </select>
-                            <template x-if="importQuantities[s.source_public_id]==='custom'">
-                              <input class="input" type="number" min="0" style="width:100px;margin-left:6px" x-model="importCustomQty[s.source_public_id]" placeholder="kg MN">
-                            </template>
-                          </td>
-                          <td data-label="Status">
-                            <span class="badge ok" style="font-size:var(--fz-xs)" x-show="s.status==='open'">Aberto</span>
-                            <span class="badge warn" style="font-size:var(--fz-xs)" x-show="s.status==='quarantine'">Quarentena</span>
-                            <span class="badge neutral" style="font-size:var(--fz-xs)" x-show="s.status==='closed'">Encerrado</span>
-                          </td>
+                <div class="table-wrap">
+                  <div class="table-scroll">
+                    <table class="data">
+                      <thead>
+                        <tr>
+                          <th style="width:40px"></th>
+                          <th>Lote</th>
+                          <th>Tipo</th>
+                          <th>Estrutura</th>
+                          <th>Saldo (kg MN)</th>
+                          <th>MS %</th>
+                          <th>MS utilizável (kg)</th>
+                          <th>Quantidade a importar</th>
+                          <th>Status</th>
                         </tr>
-                      </template>
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        <template x-for="(s,i) in autonomySources" :key="s.source_public_id || i">
+                          <tr :style="importSelection.includes(s.source_public_id) ? 'background:var(--brand-50)' : ''">
+                            <td>
+                              <input type="checkbox" :value="s.source_public_id" x-model="importSelection">
+                            </td>
+                            <td data-label="Lote" x-text="s.name"></td>
+                            <td data-label="Tipo">
+                              <span class="badge neutral" x-text="feedTypeLabel(s.feed_type)"></span>
+                            </td>
+                            <td data-label="Estrutura" x-text="s.facility_name || '—'"></td>
+                            <td data-label="Saldo" x-text="fmtD(s.quantity_natural_kg)"></td>
+                            <td data-label="MS %" x-text="s.dry_matter_pct ? s.dry_matter_pct + '%' : '—'"></td>
+                            <td data-label="MS utilizável" x-text="fmtD(s.usable_dm_kg)"></td>
+                            <td data-label="Quantidade">
+                              <select class="select" style="min-width:120px" x-model="importQuantities[s.source_public_id]"
+                                :disabled="!importSelection.includes(s.source_public_id)">
+                                <option value="full">Saldo completo</option>
+                                <option value="75">75%</option>
+                                <option value="50">50%</option>
+                                <option value="25">25%</option>
+                                <option value="custom">Personalizado…</option>
+                              </select>
+                              <template x-if="importQuantities[s.source_public_id]==='custom'">
+                                <input class="input" type="number" min="0" style="width:100px;margin-left:6px" x-model="importCustomQty[s.source_public_id]" placeholder="kg MN">
+                              </template>
+                            </td>
+                            <td data-label="Status">
+                              <span class="badge ok" style="font-size:var(--fz-xs)" x-show="s.status==='open'">Aberto</span>
+                              <span class="badge warn" style="font-size:var(--fz-xs)" x-show="s.status==='quarantine'">Quarentena</span>
+                              <span class="badge neutral" style="font-size:var(--fz-xs)" x-show="s.status==='closed'">Encerrado</span>
+                            </td>
+                          </tr>
+                        </template>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
 
                 <!-- Resumo da importação -->
@@ -736,10 +748,13 @@
   <div class="loading" x-show="loadingFarms"><div class="spinner"></div></div>
 
   <!-- ===================== MODAL: CRIAR/EDITAR FACILITY ===================== -->
-  <template x-if="showFacilityForm">
-    <div class="modal-overlay" @click.self="showFacilityForm=false">
-      <div class="modal card pad" style="max-width:650px;width:100%">
-        <h3 style="margin:0 0 16px" x-text="editingFacility ? 'Editar Estrutura' : 'Nova Estrutura'"></h3>
+  <div class="ov" :class="{open: showFacilityForm}" @click.self="showFacilityForm=false">
+    <div class="mdl" style="max-width:650px">
+      <div class="mdl-head">
+        <h3 x-text="editingFacility ? 'Editar Estrutura' : 'Nova Estrutura'"></h3>
+        <button class="x" @click="showFacilityForm=false">&times;</button>
+      </div>
+      <div class="mdl-body">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
           <div>
             <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Nome *</label>
@@ -813,19 +828,22 @@
         <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
           <button class="btn btn-ghost" @click="showFacilityForm=false">Cancelar</button>
           <button class="btn btn-primary" @click="saveFacility()" :disabled="savingFacility">
-            <template x-if="savingFacility"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+            <template x-if="savingFacility"><span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;margin-right:6px"></span></template>
             Salvar
           </button>
         </div>
       </div>
     </div>
-  </template>
+  </div>
 
   <!-- ===================== MODAL: CRIAR/EDITAR LOT ===================== -->
-  <template x-if="showLotForm">
-    <div class="modal-overlay" @click.self="showLotForm=false">
-      <div class="modal card pad" style="max-width:700px;width:100%">
-        <h3 style="margin:0 0 16px" x-text="editingLot ? 'Editar Lote' : 'Novo Lote'"></h3>
+  <div class="ov" :class="{open: showLotForm}" @click.self="showLotForm=false">
+    <div class="mdl" style="max-width:700px">
+      <div class="mdl-head">
+        <h3 x-text="editingLot ? 'Editar Lote' : 'Novo Lote'"></h3>
+        <button class="x" @click="showLotForm=false">&times;</button>
+      </div>
+      <div class="mdl-body">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
           <div>
             <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Nome *</label>
@@ -948,19 +966,22 @@
         <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
           <button class="btn btn-ghost" @click="showLotForm=false">Cancelar</button>
           <button class="btn btn-primary" @click="saveLot()" :disabled="savingLot">
-            <template x-if="savingLot"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+            <template x-if="savingLot"><span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;margin-right:6px"></span></template>
             Salvar
           </button>
         </div>
       </div>
     </div>
-  </template>
+  </div>
 
   <!-- ===================== MODAL: ENTRADA / MOVIMENTO ===================== -->
-  <template x-if="showMovementForm">
-    <div class="modal-overlay" @click.self="showMovementForm=false">
-      <div class="modal card pad" style="max-width:550px;width:100%">
-        <h3 style="margin:0 0 16px" x-text="'Nova Entrada — ' + (movementLot?.name || '')"></h3>
+  <div class="ov" :class="{open: showMovementForm}" @click.self="showMovementForm=false">
+    <div class="mdl" style="max-width:550px">
+      <div class="mdl-head">
+        <h3 x-text="'Nova Entrada — ' + (movementLot?.name || '')"></h3>
+        <button class="x" @click="showMovementForm=false">&times;</button>
+      </div>
+      <div class="mdl-body">
         <div style="display:grid;gap:12px">
           <div style="padding:10px;background:var(--surface-2);border-radius:var(--r-sm);font-size:var(--fz-sm)">
             <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
@@ -990,19 +1011,22 @@
         <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
           <button class="btn btn-ghost" @click="showMovementForm=false">Cancelar</button>
           <button class="btn btn-primary" @click="saveMovement('entry')" :disabled="savingMovement || !movementForm.quantity_natural_kg">
-            <template x-if="savingMovement"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+            <template x-if="savingMovement"><span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;margin-right:6px"></span></template>
             Registrar entrada
           </button>
         </div>
       </div>
     </div>
-  </template>
+  </div>
 
   <!-- ===================== MODAL: RETIRADA ===================== -->
-  <template x-if="showWithdrawForm">
-    <div class="modal-overlay" @click.self="showWithdrawForm=false">
-      <div class="modal card pad" style="max-width:550px;width:100%">
-        <h3 style="margin:0 0 16px" x-text="'Retirada — ' + (withdrawLot?.name || '')"></h3>
+  <div class="ov" :class="{open: showWithdrawForm}" @click.self="showWithdrawForm=false">
+    <div class="mdl" style="max-width:550px">
+      <div class="mdl-head">
+        <h3 x-text="'Retirada — ' + (withdrawLot?.name || '')"></h3>
+        <button class="x" @click="showWithdrawForm=false">&times;</button>
+      </div>
+      <div class="mdl-body">
         <div style="display:grid;gap:12px">
           <div style="padding:10px;background:var(--surface-2);border-radius:var(--r-sm);font-size:var(--fz-sm)">
             <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
@@ -1030,19 +1054,22 @@
         <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
           <button class="btn btn-ghost" @click="showWithdrawForm=false">Cancelar</button>
           <button class="btn btn-primary" style="background:var(--gold-500)" @click="saveWithdraw()" :disabled="savingWithdraw || !withdrawForm.quantity_natural_kg || Number(withdrawForm.quantity_natural_kg) > Number(withdrawLot?.current_quantity_natural_kg)">
-            <template x-if="savingWithdraw"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+            <template x-if="savingWithdraw"><span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;margin-right:6px"></span></template>
             Registrar retirada
           </button>
         </div>
       </div>
     </div>
-  </template>
+  </div>
 
   <!-- ===================== MODAL: REGISTRAR PERDA ===================== -->
-  <template x-if="showLossForm">
-    <div class="modal-overlay" @click.self="showLossForm=false">
-      <div class="modal card pad" style="max-width:550px;width:100%">
-        <h3 style="margin:0 0 16px" x-text="'Registrar Perda — ' + (lossLot?.name || '')"></h3>
+  <div class="ov" :class="{open: showLossForm}" @click.self="showLossForm=false">
+    <div class="mdl" style="max-width:550px">
+      <div class="mdl-head">
+        <h3 x-text="'Registrar Perda — ' + (lossLot?.name || '')"></h3>
+        <button class="x" @click="showLossForm=false">&times;</button>
+      </div>
+      <div class="mdl-body">
         <div style="display:grid;gap:12px">
           <div style="padding:10px;background:var(--danger-bg);border-radius:var(--r-sm);font-size:var(--fz-sm);border-left:3px solid var(--danger)">
             <span style="font-weight:600;color:var(--danger)">Atenção:</span>
@@ -1089,19 +1116,22 @@
         <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
           <button class="btn btn-ghost" @click="showLossForm=false">Cancelar</button>
           <button class="btn btn-primary" style="background:var(--danger)" @click="saveLoss()" :disabled="savingLoss || !lossForm.quantity_natural_kg || !lossForm.loss_reason || Number(lossForm.quantity_natural_kg) > Number(lossLot?.current_quantity_natural_kg)">
-            <template x-if="savingLoss"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+            <template x-if="savingLoss"><span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;margin-right:6px"></span></template>
             Registrar perda
           </button>
         </div>
       </div>
     </div>
-  </template>
+  </div>
 
   <!-- ===================== MODAL: AJUSTE ===================== -->
-  <template x-if="showAdjustForm">
-    <div class="modal-overlay" @click.self="showAdjustForm=false">
-      <div class="modal card pad" style="max-width:550px;width:100%">
-        <h3 style="margin:0 0 16px" x-text="'Ajuste de Estoque — ' + (adjustLot?.name || '')"></h3>
+  <div class="ov" :class="{open: showAdjustForm}" @click.self="showAdjustForm=false">
+    <div class="mdl" style="max-width:550px">
+      <div class="mdl-head">
+        <h3 x-text="'Ajuste de Estoque — ' + (adjustLot?.name || '')"></h3>
+        <button class="x" @click="showAdjustForm=false">&times;</button>
+      </div>
+      <div class="mdl-body">
         <div style="display:grid;gap:12px">
           <div style="padding:10px;background:var(--info-bg);border-radius:var(--r-sm);font-size:var(--fz-sm);border-left:3px solid var(--info)">
             <span style="font-weight:600;color:var(--info)">Nota:</span>
@@ -1133,29 +1163,29 @@
         <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
           <button class="btn btn-ghost" @click="showAdjustForm=false">Cancelar</button>
           <button class="btn btn-primary" @click="saveAdjust()" :disabled="savingAdjust || !adjustForm.quantity_natural_kg || !adjustForm.reason || (Number(adjustForm.quantity_natural_kg) < 0 && Math.abs(Number(adjustForm.quantity_natural_kg)) > Number(adjustLot?.current_quantity_natural_kg))">
-            <template x-if="savingAdjust"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+            <template x-if="savingAdjust"><span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;margin-right:6px"></span></template>
             Aplicar ajuste
           </button>
         </div>
       </div>
     </div>
-  </template>
+  </div>
 
   <!-- ===================== MODAL: HISTÓRICO DE MOVIMENTOS ===================== -->
-  <template x-if="showHistory">
-    <div class="modal-overlay" @click.self="showHistory=false">
-      <div class="modal card pad" style="max-width:900px;width:100%">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-          <div>
-            <h3 style="margin:0" x-text="'Histórico — ' + (historyLot?.name || '')"></h3>
-            <div style="display:flex;gap:12px;margin-top:4px;flex-wrap:wrap">
-              <div class="small muted" x-text="'Saldo: ' + fmtD(historyLot?.current_quantity_natural_kg) + ' kg MN'"></div>
-              <div class="small muted" x-text="'MS: ' + fmtD(historyLot?.current_total_dm_kg) + ' kg'"></div>
-              <div class="small muted" x-text="'Status: ' + lotStatusLabel(historyLot?.status)"></div>
-            </div>
+  <div class="ov" :class="{open: showHistory}" @click.self="showHistory=false">
+    <div class="mdl" style="max-width:900px">
+      <div class="mdl-head">
+        <div>
+          <h3 style="margin:0" x-text="'Histórico — ' + (historyLot?.name || '')"></h3>
+          <div style="display:flex;gap:12px;margin-top:4px;flex-wrap:wrap;font-weight:normal">
+            <span class="small muted" x-text="'Saldo: ' + fmtD(historyLot?.current_quantity_natural_kg) + ' kg MN'"></span>
+            <span class="small muted" x-text="'MS: ' + fmtD(historyLot?.current_total_dm_kg) + ' kg'"></span>
+            <span class="small muted" x-text="'Status: ' + lotStatusLabel(historyLot?.status)"></span>
           </div>
-          <button class="btn btn-ghost" style="padding:6px 10px" @click="showHistory=false">✕</button>
         </div>
+        <button class="x" @click="showHistory=false">&times;</button>
+      </div>
+      <div class="mdl-body">
 
         <!-- Filtros do histórico -->
         <div class="filters" style="margin-bottom:12px">
@@ -1205,43 +1235,45 @@
               </div>
             </div>
 
-            <div class="table-scroll">
-              <table class="data">
-                <thead>
-                  <tr>
-                    <th>Data</th>
-                    <th>Tipo</th>
-                    <th>Quantidade (kg MN)</th>
-                    <th>MS (kg)</th>
-                    <th>Saldo antes</th>
-                    <th>Saldo depois</th>
-                    <th>Variação</th>
-                    <th>Motivo</th>
-                    <th>Observações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <template x-for="(mv,i) in filteredMovements" :key="mv.public_id || i">
+            <div class="table-wrap">
+              <div class="table-scroll">
+                <table class="data">
+                  <thead>
                     <tr>
-                      <td data-label="Data" x-text="mv.movement_at || '—'"></td>
-                      <td data-label="Tipo">
-                        <span class="badge" :class="movementBadgeClass(mv.movement_type)" x-text="movementTypeLabel(mv.movement_type)"></span>
-                      </td>
-                      <td data-label="Quantidade">
-                        <span :style="mv.movement_type==='entry' ? 'color:var(--ok)' : mv.movement_type==='loss' ? 'color:var(--danger)' : 'color:var(--warn)'" x-text="(mv.movement_type==='entry' ? '+' : '-') + fmtD(mv.quantity_natural_kg)"></span>
-                      </td>
-                      <td data-label="MS" x-text="fmtD(mv.quantity_dm_kg)"></td>
-                      <td data-label="Saldo antes" class="mono" x-text="fmtD(mv.balance_before_natural_kg)"></td>
-                      <td data-label="Saldo depois" class="mono" x-text="fmtD(mv.balance_after_natural_kg)"></td>
-                      <td data-label="Variação">
-                        <span :style="Number(mv.balance_after_natural_kg) >= Number(mv.balance_before_natural_kg) ? 'color:var(--ok)' : 'color:var(--danger)'" x-text="(Number(mv.balance_after_natural_kg) >= Number(mv.balance_before_natural_kg) ? '+' : '') + fmtD(Number(mv.balance_after_natural_kg) - Number(mv.balance_before_natural_kg))"></span>
-                      </td>
-                      <td data-label="Motivo" class="small muted" x-text="mv.reason || mv.loss_reason || '—'"></td>
-                      <td data-label="Obs" class="small muted" x-text="mv.notes || '—'"></td>
+                      <th>Data</th>
+                      <th>Tipo</th>
+                      <th>Quantidade (kg MN)</th>
+                      <th>MS (kg)</th>
+                      <th>Saldo antes</th>
+                      <th>Saldo depois</th>
+                      <th>Variação</th>
+                      <th>Motivo</th>
+                      <th>Observações</th>
                     </tr>
-                  </template>
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    <template x-for="(mv,i) in filteredMovements" :key="mv.public_id || i">
+                      <tr>
+                        <td data-label="Data" x-text="mv.movement_at || '—'"></td>
+                        <td data-label="Tipo">
+                          <span class="badge" :class="movementBadgeClass(mv.movement_type)" x-text="movementTypeLabel(mv.movement_type)"></span>
+                        </td>
+                        <td data-label="Quantidade">
+                          <span :style="mv.movement_type==='entry' ? 'color:var(--ok)' : mv.movement_type==='loss' ? 'color:var(--danger)' : 'color:var(--warn)'" x-text="(mv.movement_type==='entry' ? '+' : '-') + fmtD(mv.quantity_natural_kg)"></span>
+                        </td>
+                        <td data-label="MS" x-text="fmtD(mv.quantity_dm_kg)"></td>
+                        <td data-label="Saldo antes" class="mono" x-text="fmtD(mv.balance_before_natural_kg)"></td>
+                        <td data-label="Saldo depois" class="mono" x-text="fmtD(mv.balance_after_natural_kg)"></td>
+                        <td data-label="Variação">
+                          <span :style="Number(mv.balance_after_natural_kg) >= Number(mv.balance_before_natural_kg) ? 'color:var(--ok)' : 'color:var(--danger)'" x-text="(Number(mv.balance_after_natural_kg) >= Number(mv.balance_before_natural_kg) ? '+' : '') + fmtD(Number(mv.balance_after_natural_kg) - Number(mv.balance_before_natural_kg))"></span>
+                        </td>
+                        <td data-label="Motivo" class="small muted" x-text="mv.reason || mv.loss_reason || '—'"></td>
+                        <td data-label="Obs" class="small muted" x-text="mv.notes || '—'"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             <!-- Botão de conciliação -->
@@ -1290,7 +1322,7 @@
         </template>
       </div>
     </div>
-  </template>
+  </div>
 </div>
 {% endblock %}
 

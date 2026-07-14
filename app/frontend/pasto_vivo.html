@@ -11,15 +11,17 @@
     </div>
   </div>
 
-  <!-- Seletor de fazenda -->
-  <div class="card pad" style="margin-bottom:16px">
-    <label class="small" style="font-weight:600;display:block;margin-bottom:6px">Fazenda</label>
-    <select class="select" style="width:100%;max-width:400px" x-model="selectedFarm" @change="loadPaddocks()">
+  <!-- Seletor de fazenda no padrão .filters -->
+  <div class="filters">
+    <select class="select" style="min-width:280px" x-model="selectedFarm" @change="loadPaddocks()">
       <option value="">Selecione uma fazenda…</option>
       <template x-for="f in farms" :key="f.id">
         <option :value="f.id" x-text="f.name"></option>
       </template>
     </select>
+    <div x-show="loadingFarms" style="display:inline-flex; align-items:center; margin-left:8px">
+      <div class="spinner" style="width:20px; height:20px"></div>
+    </div>
   </div>
 
   <template x-if="selectedFarm">
@@ -76,58 +78,60 @@
           <div class="empty" style="padding:20px">Nenhum piquete cadastrado para esta fazenda.</div>
         </template>
         <template x-if="paddocks.length > 0">
-          <div class="table-scroll">
-            <table class="data">
-              <thead>
-                <tr>
-                  <th>Nome</th>
-                  <th>Código</th>
-                  <th>Área (ha)</th>
-                  <th>Forrageira</th>
-                  <th>Última altura (cm)</th>
-                  <th>kg MS/ha</th>
-                  <th>MS utilizável (kg)</th>
-                  <th>Última medição</th>
-                  <th>Próxima liberação</th>
-                  <th>Estado</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                <template x-for="(p,i) in paddocks" :key="p.public_id || i">
+          <div class="table-wrap">
+            <div class="table-scroll">
+              <table class="data">
+                <thead>
                   <tr>
-                    <td data-label="Nome" x-text="p.name"></td>
-                    <td data-label="Código" class="mono" x-text="p.code || '—'"></td>
-                    <td data-label="Área" x-text="fmtD(p.area_ha)"></td>
-                    <td data-label="Forrageira" x-text="p.grass_species || '—'"></td>
-                    <td data-label="Última altura" x-text="p.last_height_cm != null ? fmtD(p.last_height_cm) + ' cm' : '—'"></td>
-                    <td data-label="kg MS/ha" x-text="p.dm_kg_ha != null ? fmtD(p.dm_kg_ha) : '—'"></td>
-                    <td data-label="MS utilizável" x-text="p.usable_dm_kg != null ? fmtD(p.usable_dm_kg) : '—'"></td>
-                    <td data-label="Última medição">
-                      <span x-text="p.last_measurement_date || '—'"></span>
-                      <template x-if="isStale(p.last_measurement_date)">
-                        <span class="badge danger" style="margin-left:4px;font-size:var(--fz-xs)">Desatualizada</span>
-                      </template>
-                    </td>
-                    <td data-label="Próxima liberação" x-text="p.next_release_date || '—'"></td>
-                    <td data-label="Estado">
-                      <span :class="'badge ' + stateBadgeClass(p.state)" x-text="stateLabel(p.state)"></span>
-                      <span class="small muted" style="margin-left:4px" x-text="stateIcon(p.state)"></span>
-                    </td>
-                    <td data-label="Ações">
-                      <div style="display:flex;gap:4px;flex-wrap:wrap">
-                        <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="viewPaddock(p)" title="Visualizar">Ver</button>
-                        <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openMeasurementModal(p)" title="Medir">Medir</button>
-                        <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="startGrazing(p)" title="Iniciar pastejo" x-show="p.state !== 'grazing'">Pastejar</button>
-                        <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="stopGrazing(p)" title="Encerrar pastejo" x-show="p.state === 'grazing'">Encerrar</button>
-                        <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openPaddockModal(p)" title="Editar">Editar</button>
-                        <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="archivePaddock(p)" title="Arquivar">Arquivar</button>
-                      </div>
-                    </td>
+                    <th>Nome</th>
+                    <th>Código</th>
+                    <th>Área (ha)</th>
+                    <th>Forrageira</th>
+                    <th>Última altura (cm)</th>
+                    <th>kg MS/ha</th>
+                    <th>MS utilizável (kg)</th>
+                    <th>Última medição</th>
+                    <th>Próxima liberação</th>
+                    <th>Estado</th>
+                    <th>Ações</th>
                   </tr>
-                </template>
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  <template x-for="(p,i) in paddocks" :key="p.public_id || i">
+                    <tr>
+                      <td data-label="Nome" x-text="p.name"></td>
+                      <td data-label="Código" class="mono" x-text="p.code || '—'"></td>
+                      <td data-label="Área" x-text="fmtD(p.area_ha)"></td>
+                      <td data-label="Forrageira" x-text="p.grass_species || '—'"></td>
+                      <td data-label="Última altura" x-text="p.last_height_cm != null ? fmtD(p.last_height_cm) + ' cm' : '—'"></td>
+                      <td data-label="kg MS/ha" x-text="p.dm_kg_ha != null ? fmtD(p.dm_kg_ha) : '—'"></td>
+                      <td data-label="MS utilizável" x-text="p.usable_dm_kg != null ? fmtD(p.usable_dm_kg) : '—'"></td>
+                      <td data-label="Última medição">
+                        <span x-text="p.last_measurement_date || '—'"></span>
+                        <template x-if="isStale(p.last_measurement_date)">
+                          <span class="badge danger" style="margin-left:4px;font-size:var(--fz-xs)">Desatualizada</span>
+                        </template>
+                      </td>
+                      <td data-label="Próxima liberação" x-text="p.next_release_date || '—'"></td>
+                      <td data-label="Estado">
+                        <span :class="'badge ' + stateBadgeClass(p.state)" x-text="stateLabel(p.state)"></span>
+                        <span class="small muted" style="margin-left:4px" x-text="stateIcon(p.state)"></span>
+                      </td>
+                      <td data-label="Ações">
+                        <div style="display:flex;gap:4px;flex-wrap:wrap">
+                          <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="viewPaddock(p)" title="Visualizar">Ver</button>
+                          <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openMeasurementModal(p)" title="Medir">Medir</button>
+                          <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="startGrazing(p)" title="Iniciar pastejo" x-show="p.state !== 'grazing'">Pastejar</button>
+                          <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="stopGrazing(p)" title="Encerrar pastejo" x-show="p.state === 'grazing'">Encerrar</button>
+                          <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openPaddockModal(p)" title="Editar">Editar</button>
+                          <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="archivePaddock(p)" title="Arquivar">Arquivar</button>
+                        </div>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
           </div>
         </template>
       </div>
@@ -168,10 +172,13 @@
   <div class="loading" x-show="loadingFarms"><div class="spinner"></div></div>
 
   <!-- Modal: Criar/Editar Piquete -->
-  <template x-if="showPaddockModal">
-    <div class="modal-overlay" @click.self="showPaddockModal=false">
-      <div class="modal card pad" style="max-width:600px;width:100%">
-        <h3 style="margin:0 0 16px" x-text="editingPaddock ? 'Editar Piquete' : 'Novo Piquete'"></h3>
+  <div class="ov" :class="{open: showPaddockModal}" @click.self="showPaddockModal=false">
+    <div class="mdl" style="max-width:600px">
+      <div class="mdl-head">
+        <h3 x-text="editingPaddock ? 'Editar Piquete' : 'Novo Piquete'"></h3>
+        <button class="x" @click="showPaddockModal=false">&times;</button>
+      </div>
+      <div class="mdl-body">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
           <div>
             <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Nome *</label>
@@ -213,19 +220,22 @@
         <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
           <button class="btn btn-ghost" @click="showPaddockModal=false">Cancelar</button>
           <button class="btn btn-primary" @click="savePaddock()" :disabled="savingPaddock">
-            <template x-if="savingPaddock"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+            <template x-if="savingPaddock"><span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;margin-right:6px"></span></template>
             Salvar
           </button>
         </div>
       </div>
     </div>
-  </template>
+  </div>
 
   <!-- Modal: Criar Medição -->
-  <template x-if="showMeasurementModal">
-    <div class="modal-overlay" @click.self="showMeasurementModal=false">
-      <div class="modal card pad" style="max-width:500px;width:100%">
-        <h3 style="margin:0 0 16px">Nova Medição</h3>
+  <div class="ov" :class="{open: showMeasurementModal}" @click.self="showMeasurementModal=false">
+    <div class="mdl" style="max-width:500px">
+      <div class="mdl-head">
+        <h3>Nova Medição</h3>
+        <button class="x" @click="showMeasurementModal=false">&times;</button>
+      </div>
+      <div class="mdl-body">
         <div style="display:grid;gap:12px">
           <div>
             <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Piquete</label>
@@ -251,19 +261,22 @@
         <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
           <button class="btn btn-ghost" @click="showMeasurementModal=false">Cancelar</button>
           <button class="btn btn-primary" @click="saveMeasurement()" :disabled="savingMeasurement">
-            <template x-if="savingMeasurement"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+            <template x-if="savingMeasurement"><span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;margin-right:6px"></span></template>
             Salvar medição
           </button>
         </div>
       </div>
     </div>
-  </template>
+  </div>
 
   <!-- Modal: Detalhes do Piquete -->
-  <template x-if="showDetailModal">
-    <div class="modal-overlay" @click.self="showDetailModal=false">
-      <div class="modal card pad" style="max-width:700px;width:100%">
-        <h3 style="margin:0 0 16px" x-text="detailPaddock?.name || 'Detalhes do Piquete'"></h3>
+  <div class="ov" :class="{open: showDetailModal}" @click.self="showDetailModal=false">
+    <div class="mdl" style="max-width:700px">
+      <div class="mdl-head">
+        <h3 x-text="detailPaddock?.name || 'Detalhes do Piquete'"></h3>
+        <button class="x" @click="showDetailModal=false">&times;</button>
+      </div>
+      <div class="mdl-body">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">
           <div>
             <div class="small muted">Código</div>
@@ -316,13 +329,16 @@
         </div>
       </div>
     </div>
-  </template>
+  </div>
 
   <!-- Modal: Importar do Pasto Vivo -->
-  <template x-if="showImportModal">
-    <div class="modal-overlay" @click.self="showImportModal=false">
-      <div class="modal card pad" style="max-width:700px;width:100%">
-        <h3 style="margin:0 0 16px">Importar do Pasto Vivo</h3>
+  <div class="ov" :class="{open: showImportModal}" @click.self="showImportModal=false">
+    <div class="mdl" style="max-width:700px">
+      <div class="mdl-head">
+        <h3>Importar do Pasto Vivo</h3>
+        <button class="x" @click="showImportModal=false">&times;</button>
+      </div>
+      <div class="mdl-body">
         <div class="small muted" style="margin-bottom:12px">Selecione os piquetes para importar dados de medição e pastejo.</div>
         <template x-if="importLoading">
           <div style="text-align:center;padding:20px"><div class="spinner"></div></div>
@@ -336,55 +352,57 @@
               <button class="btn btn-ghost" style="font-size:var(--fz-sm)" @click="selectAllImport()">Selecionar todos</button>
               <button class="btn btn-ghost" style="font-size:var(--fz-sm)" @click="importSelection=[]">Desmarcar todos</button>
             </div>
-            <div class="table-scroll">
-              <table class="data">
-                <thead>
-                  <tr>
-                    <th style="width:40px"></th>
-                    <th>Piquete</th>
-                    <th>Área (ha)</th>
-                    <th>Forrageira</th>
-                    <th>Última altura</th>
-                    <th>kg MS/ha</th>
-                    <th>Status medição</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <template x-for="(s,i) in importSources" :key="s.paddock_id || i">
+            <div class="table-wrap">
+              <div class="table-scroll">
+                <table class="data">
+                  <thead>
                     <tr>
-                      <td>
-                        <input type="checkbox" :value="s.paddock_id" x-model="importSelection">
-                      </td>
-                      <td x-text="s.name"></td>
-                      <td x-text="fmtD(s.area_ha)"></td>
-                      <td x-text="s.grass_species || '—'"></td>
-                      <td x-text="s.last_height_cm != null ? fmtD(s.last_height_cm) + ' cm' : '—'"></td>
-                      <td x-text="s.dm_kg_ha != null ? fmtD(s.dm_kg_ha) : '—'"></td>
-                      <td>
-                        <template x-if="isStale(s.last_measurement_date)">
-                          <span class="badge warn" style="font-size:var(--fz-xs)">⚠ Medição desatualizada</span>
-                        </template>
-                        <template x-if="!isStale(s.last_measurement_date)">
-                          <span class="badge ok" style="font-size:var(--fz-xs)">Atualizada</span>
-                        </template>
-                      </td>
+                      <th style="width:40px"></th>
+                      <th>Piquete</th>
+                      <th>Área (ha)</th>
+                      <th>Forrageira</th>
+                      <th>Última altura</th>
+                      <th>kg MS/ha</th>
+                      <th>Status medição</th>
                     </tr>
-                  </template>
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    <template x-for="(s,i) in importSources" :key="s.paddock_id || i">
+                      <tr>
+                        <td>
+                          <input type="checkbox" :value="s.paddock_id" x-model="importSelection">
+                        </td>
+                        <td x-text="s.name"></td>
+                        <td x-text="fmtD(s.area_ha)"></td>
+                        <td x-text="s.grass_species || '—'"></td>
+                        <td x-text="s.last_height_cm != null ? fmtD(s.last_height_cm) + ' cm' : '—'"></td>
+                        <td x-text="s.dm_kg_ha != null ? fmtD(s.dm_kg_ha) : '—'"></td>
+                        <td>
+                          <template x-if="isStale(s.last_measurement_date)">
+                            <span class="badge warn" style="font-size:var(--fz-xs)">⚠ Medição desatualizada</span>
+                          </template>
+                          <template x-if="!isStale(s.last_measurement_date)">
+                            <span class="badge ok" style="font-size:var(--fz-xs)">Atualizada</span>
+                          </template>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </template>
         <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
           <button class="btn btn-ghost" @click="showImportModal=false">Cancelar</button>
           <button class="btn btn-primary" @click="importSelectedPaddocks()" :disabled="importSelection.length === 0 || importingPaddocks">
-            <template x-if="importingPaddocks"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+            <template x-if="importingPaddocks"><span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;margin-right:6px"></span></template>
             Importar (<span x-text="importSelection.length"></span>)
           </button>
         </div>
       </div>
     </div>
-  </template>
+  </div>
 </div>
 {% endblock %}
 
@@ -421,10 +439,10 @@ function pastoVivo(){
           this.kpis=d.kpis||this.kpis;
         }
       }catch(e){}
-      try{
-        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/pasture-live/timeline');
-        if(r.ok){const d=await r.json(); this.timeline=d.items||d.events||[];}
-      }catch(e){}
+      // A API atual não expõe uma timeline agregada por fazenda.
+      // Mantém o estado vazio até que esse contrato exista, evitando uma
+      // requisição 404 a cada troca de fazenda.
+      this.timeline=[];
     },
 
     openPaddockModal(p){
