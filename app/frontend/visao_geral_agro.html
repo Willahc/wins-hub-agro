@@ -27,6 +27,32 @@
   <template x-if="selectedFarm && !loading">
     <div>
 
+      <!-- Onboarding / configure sua fazenda -->
+      <template x-if="setup && setup.needs_onboarding">
+        <div class="card pad" style="margin-bottom:24px; border-color:var(--brand-300)">
+          <div class="page-head" style="margin-bottom:12px">
+            <div>
+              <h2 style="margin:0">Configure sua fazenda</h2>
+              <div class="sub" x-text="(farm && farm.name ? farm.name+' · ' : '') + setup.completed+' de '+setup.total+' passos concluídos'"></div>
+            </div>
+          </div>
+          <p class="muted" style="margin:0 0 12px">
+            Esta fazenda ainda não possui dados operacionais suficientes. Os indicadores abaixo
+            mostram <strong>sem dados</strong> quando não há cadastro — não confunda com valor zero.
+          </p>
+          <ol style="margin:0; padding-left:1.25rem; display:grid; gap:8px">
+            <template x-for="step in setup.steps" :key="step.id">
+              <li style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+                <span class="badge" :class="step.done ? 'ok' : 'neutral'" x-text="step.done ? 'Feito' : 'Pendente'"></span>
+                <span x-text="step.label"></span>
+                <a class="btn btn-ghost" style="padding:4px 10px; font-size:var(--fz-sm)"
+                   :href="step.href" x-show="!step.done">Abrir</a>
+              </li>
+            </template>
+          </ol>
+        </div>
+      </template>
+
       <!-- Autonomia Alimentar -->
       <template x-if="mods.autonomia_alimentar">
         <div style="margin-bottom:28px">
@@ -34,11 +60,22 @@
             <h2>Autonomia Alimentar</h2>
             <a class="btn btn-ghost" href="/autonomia-alimentar">Abrir módulo</a>
           </div>
-          <div class="stats">
+          <div x-html="moduleBanner(mods.autonomia_alimentar, '/autonomia-alimentar')"></div>
+          <div class="stats" x-show="mods.autonomia_alimentar.status==='ok' || mods.autonomia_alimentar.status==='no_data'">
             <div class="stat">
               <div class="k">Cenários ativos</div>
-              <div class="v" x-text="mods.autonomia_alimentar.scenarios_count"></div>
-              <div class="d">simulações salvas</div>
+              <div class="v" x-text="fmtInd(ind(mods.autonomia_alimentar,'scenarios_count'))"></div>
+              <div class="d" x-text="hintInd(ind(mods.autonomia_alimentar,'scenarios_count'), 'simulações salvas')"></div>
+            </div>
+            <div class="stat">
+              <div class="k">Demanda diária (MS)</div>
+              <div class="v" x-text="fmtInd(ind(mods.autonomia_alimentar,'daily_demand_dm_kg'), 'kg')"></div>
+              <div class="d" x-text="hintInd(ind(mods.autonomia_alimentar,'daily_demand_dm_kg'), 'matéria seca')"></div>
+            </div>
+            <div class="stat">
+              <div class="k">MS disponível</div>
+              <div class="v" x-text="fmtInd(ind(mods.autonomia_alimentar,'available_dm_kg'), 'kg')"></div>
+              <div class="d" x-text="hintInd(ind(mods.autonomia_alimentar,'available_dm_kg'), 'estoque + pasto')"></div>
             </div>
           </div>
         </div>
@@ -51,23 +88,24 @@
             <h2>Pasto Vivo</h2>
             <a class="btn btn-ghost" href="/pasto-vivo">Abrir módulo</a>
           </div>
-          <div class="stats" x-show="mods.pasto_vivo.dashboard">
+          <div x-html="moduleBanner(mods.pasto_vivo, '/pasto-vivo')"></div>
+          <div class="stats">
             <div class="stat">
               <div class="k">Piquetes ativos</div>
-              <div class="v" x-text="mods.pasto_vivo.dashboard.active_paddocks"></div>
-              <div class="d">piquetes cadastrados</div>
+              <div class="v" x-text="fmtInd(ind(mods.pasto_vivo,'active_paddocks'))"></div>
+              <div class="d" x-text="hintInd(ind(mods.pasto_vivo,'active_paddocks'), 'piquetes cadastrados')"></div>
             </div>
             <div class="stat">
               <div class="k">Área total</div>
-              <div class="v" x-text="fmt(mods.pasto_vivo.dashboard.total_area_ha)+' ha'"></div>
+              <div class="v" x-text="fmtInd(ind(mods.pasto_vivo,'total_area_ha'), 'ha')"></div>
             </div>
             <div class="stat">
               <div class="k">Área pronta</div>
-              <div class="v" style="color:var(--ok)" x-text="fmt(mods.pasto_vivo.dashboard.ready_area_ha)+' ha'"></div>
+              <div class="v" x-text="fmtInd(ind(mods.pasto_vivo,'ready_area_ha'), 'ha')"></div>
             </div>
             <div class="stat">
               <div class="k">Área em pastejo</div>
-              <div class="v" style="color:var(--brand-500)" x-text="fmt(mods.pasto_vivo.dashboard.grazing_area_ha)+' ha'"></div>
+              <div class="v" x-text="fmtInd(ind(mods.pasto_vivo,'grazing_area_ha'), 'ha')"></div>
             </div>
           </div>
         </div>
@@ -80,26 +118,31 @@
             <h2>Silagem e Estoques</h2>
             <a class="btn btn-ghost" href="/silagem-estoques">Abrir módulo</a>
           </div>
-          <div class="stats" x-show="mods.silagem_estoques.dashboard">
+          <div x-html="moduleBanner(mods.silagem_estoques, '/silagem-estoques')"></div>
+          <div class="stats">
             <div class="stat">
               <div class="k">Saldo total</div>
-              <div class="v" x-text="fmtKg(mods.silagem_estoques.dashboard.total_natural_kg)"></div>
-              <div class="d">massa natural</div>
+              <div class="v" x-text="fmtInd(ind(mods.silagem_estoques,'total_natural_kg'), 'kg')"></div>
+              <div class="d" x-text="hintInd(ind(mods.silagem_estoques,'total_natural_kg'), 'massa natural')"></div>
             </div>
             <div class="stat">
               <div class="k">MS total</div>
-              <div class="v" x-text="fmtKg(mods.silagem_estoques.dashboard.total_physical_dm_kg)"></div>
-              <div class="d">matéria seca</div>
+              <div class="v" x-text="fmtInd(ind(mods.silagem_estoques,'total_physical_dm_kg'), 'kg')"></div>
+              <div class="d" x-text="hintInd(ind(mods.silagem_estoques,'total_physical_dm_kg'), 'matéria seca')"></div>
             </div>
             <div class="stat">
               <div class="k">MS utilizável</div>
-              <div class="v" x-text="fmtKg(mods.silagem_estoques.dashboard.total_usable_dm_kg)"></div>
-              <div class="d">descontando perdas</div>
+              <div class="v" x-text="fmtInd(ind(mods.silagem_estoques,'total_usable_dm_kg'), 'kg')"></div>
+              <div class="d" x-text="hintInd(ind(mods.silagem_estoques,'total_usable_dm_kg'), 'descontando perdas')"></div>
+            </div>
+            <div class="stat">
+              <div class="k">Valor de estoque</div>
+              <div class="v" x-text="fmtInd(ind(mods.silagem_estoques,'total_value'))"></div>
             </div>
             <div class="stat">
               <div class="k">Estruturas</div>
-              <div class="v" x-text="mods.silagem_estoques.dashboard.total_facilities"></div>
-              <div class="d">silos e depósitos</div>
+              <div class="v" x-text="fmtInd(ind(mods.silagem_estoques,'total_facilities'))"></div>
+              <div class="d" x-text="hintInd(ind(mods.silagem_estoques,'total_facilities'), 'silos e depósitos')"></div>
             </div>
           </div>
         </div>
@@ -112,22 +155,23 @@
             <h2>Colheita e Silos</h2>
             <a class="btn btn-ghost" href="/colheita-silos">Abrir módulo</a>
           </div>
-          <div class="stats" x-show="mods.colheita_silos.dashboard">
+          <div x-html="moduleBanner(mods.colheita_silos, '/colheita-silos')"></div>
+          <div class="stats">
             <div class="stat">
               <div class="k">Área planejada</div>
-              <div class="v" x-text="fmt(mods.colheita_silos.dashboard.planned_area_ha)+' ha'"></div>
+              <div class="v" x-text="fmtInd(ind(mods.colheita_silos,'planned_area_ha'), 'ha')"></div>
             </div>
             <div class="stat">
               <div class="k">Produção bruta</div>
-              <div class="v" x-text="fmtKg(mods.colheita_silos.dashboard.expected_gross_natural_kg)"></div>
+              <div class="v" x-text="fmtInd(ind(mods.colheita_silos,'expected_gross_natural_kg'), 'kg')"></div>
             </div>
             <div class="stat">
               <div class="k">Produção líquida</div>
-              <div class="v" x-text="fmtKg(mods.colheita_silos.dashboard.expected_net_natural_kg)"></div>
+              <div class="v" x-text="fmtInd(ind(mods.colheita_silos,'expected_net_natural_kg'), 'kg')"></div>
             </div>
             <div class="stat">
               <div class="k">Capacidade restante</div>
-              <div class="v" x-text="fmtKg(mods.colheita_silos.dashboard.capacity_available_kg)"></div>
+              <div class="v" x-text="fmtInd(ind(mods.colheita_silos,'capacity_available_kg'), 'kg')"></div>
             </div>
           </div>
         </div>
@@ -140,29 +184,30 @@
             <h2>Clima e Operações</h2>
             <a class="btn btn-ghost" href="/clima-operacoes">Abrir módulo</a>
           </div>
-          <div class="stats" x-show="mods.clima_operacoes.dashboard">
+          <div x-html="moduleBanner(mods.clima_operacoes, '/clima-operacoes')"></div>
+          <div class="stats">
             <div class="stat">
               <div class="k">Temperatura</div>
-              <div class="v" x-text="mods.clima_operacoes.dashboard.current_temp != null ? mods.clima_operacoes.dashboard.current_temp+'°C' : '—'"></div>
+              <div class="v" x-text="fmtInd(ind(mods.clima_operacoes,'current_temp'), '°C')"></div>
             </div>
             <div class="stat">
               <div class="k">Chuva recente</div>
-              <div class="v" x-text="mods.clima_operacoes.dashboard.recent_rainfall_mm != null ? mods.clima_operacoes.dashboard.recent_rainfall_mm+' mm' : '—'"></div>
+              <div class="v" x-text="fmtInd(ind(mods.clima_operacoes,'recent_rainfall_mm'), 'mm')"></div>
             </div>
             <div class="stat">
               <div class="k">Janelas favoráveis</div>
-              <div class="v" x-text="mods.clima_operacoes.dashboard.favorable_windows"></div>
+              <div class="v" x-text="fmtInd(ind(mods.clima_operacoes,'favorable_windows'))"></div>
             </div>
             <div class="stat">
               <div class="k">Riscos</div>
-              <div class="v" x-text="mods.clima_operacoes.dashboard.risks"></div>
+              <div class="v" x-text="fmtInd(ind(mods.clima_operacoes,'risks'))"></div>
             </div>
           </div>
         </div>
       </template>
 
       <!-- Nenhum módulo ativo -->
-      <div class="empty" x-show="!mods.autonomia_alimentar && !mods.pasto_vivo && !mods.silagem_estoques && !mods.colheita_silos && !mods.clima_operacoes">
+      <div class="empty" x-show="!Object.keys(mods).length">
         Nenhum módulo de gestão agro está disponível para esta fazenda.
       </div>
 
@@ -182,30 +227,85 @@ function visaoGeralAgro(){
   return {
     farms: [],
     selectedFarm: '',
+    farm: null,
     mods: {},
+    setup: null,
     loading: false,
     async init(){
       const r = await fetch('/api/agro/overview');
       const d = await r.json();
       this.farms = d.farms || [];
+      if(this.farms.length === 1){
+        this.selectedFarm = this.farms[0].public_id;
+        await this.loadOverview();
+      }
     },
     async loadOverview(){
       if(!this.selectedFarm) return;
       this.loading = true;
       try{
-        const r = await fetch('/api/agro/overview?farm_uuid='+this.selectedFarm);
+        const r = await fetch('/api/agro/overview?farm_uuid='+encodeURIComponent(this.selectedFarm));
         const d = await r.json();
         this.mods = d.modules || {};
+        this.farm = d.farm || null;
+        this.setup = d.setup || null;
       }catch(e){
         this.mods = {};
+        this.farm = null;
+        this.setup = null;
       }
       this.loading = false;
     },
-    fmt(n){ return n ? Number(n).toLocaleString('pt-BR') : '0' },
-    fmtKg(s){
-      if(!s) return '0 kg';
-      const n = typeof s === 'string' ? parseFloat(s) : Number(s);
-      return n.toLocaleString('pt-BR', {maximumFractionDigits:0}) + ' kg';
+    ind(mod, key){
+      if(!mod || !mod.indicators) return {value:null, display:'no_data'};
+      return mod.indicators[key] || {value:null, display:'no_data'};
+    },
+    /** Nunca converter null/no_data em 0. Zero real só quando display==='number' e value===0. */
+    fmtInd(ind, unit){
+      if(!ind) return 'Não informado';
+      if(ind.display === 'no_data') return 'Sem dados';
+      if(ind.display === 'unknown' || ind.value === null || ind.value === undefined) return 'Não informado';
+      const n = typeof ind.value === 'string' ? parseFloat(ind.value) : Number(ind.value);
+      if(Number.isNaN(n)) return 'Não informado';
+      const u = unit || ind.unit || '';
+      const formatted = n.toLocaleString('pt-BR', {maximumFractionDigits: (u==='ha' ? 2 : 0)});
+      if(u === 'kg') return formatted + ' kg';
+      if(u === 'ha') return formatted + ' ha';
+      if(u === 'mm') return formatted + ' mm';
+      if(u === '°C') return formatted + '°C';
+      return formatted;
+    },
+    hintInd(ind, whenOk){
+      if(!ind) return 'Não informado';
+      if(ind.display === 'no_data') return 'Sem dados cadastrados';
+      if(ind.display === 'unknown' || ind.value === null || ind.value === undefined) return 'Não informado';
+      return whenOk || '';
+    },
+    moduleBanner(mod, href){
+      if(!mod) return '';
+      const st = mod.status;
+      if(st === 'no_data'){
+        return '<div class="card pad" style="margin-bottom:12px;background:var(--surface-2)">'
+          + '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">'
+          + '<span>Sem dados cadastrados neste módulo.</span>'
+          + '<a class="btn btn-primary" href="'+href+'">Começar cadastro</a>'
+          + '</div></div>';
+      }
+      if(st === 'not_configured'){
+        return '<div class="card pad" style="margin-bottom:12px;background:var(--surface-2)">'
+          + '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">'
+          + '<span>Não configurado.</span>'
+          + '<a class="btn btn-primary" href="'+href+'">Configurar</a>'
+          + '</div></div>';
+      }
+      if(st === 'unavailable'){
+        return '<div class="card pad" style="margin-bottom:12px;border-color:var(--danger);color:var(--danger)">'
+          + (mod.message || 'Indisponível no momento.') + '</div>';
+      }
+      if(st === 'disabled'){
+        return '<div class="card pad muted" style="margin-bottom:12px">Módulo desligado.</div>';
+      }
+      return '';
     },
   }
 }

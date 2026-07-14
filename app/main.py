@@ -578,11 +578,38 @@ def visao_geral_agro_page(request: Request):
     return resp
 
 
+def _agro_ind(value, *, unit=None, has_records=True):
+    """Indicador tipado: null = desconhecido/sem base; 0 só quando há base e o valor é zero."""
+    if not has_records:
+        return {"value": None, "display": "no_data", "unit": unit}
+    if value is None:
+        return {"value": None, "display": "unknown", "unit": unit}
+    return {"value": value, "display": "number", "unit": unit}
+
+
+def _agro_module(*, status, message=None, indicators=None, counts=None, available=True):
+    """status: ok | no_data | not_configured | disabled | unavailable."""
+    return {
+        "available": available,
+        "status": status,
+        "message": message,
+        "counts": counts or {},
+        "indicators": indicators or {},
+    }
+
+
 @app.get("/api/agro/overview")
 def api_agro_overview(request: Request, farm_uuid: str | None = None):
     """Agrega KPIs de todos os módulos Gestão Agro ativos para a fazenda selecionada.
-    Cada módulo que está com feature flag ligada contribui com seus indicadores.
-    Se farm_uuid for omitido, retorna a lista de fazendas autorizadas do usuário."""
+
+    Semântica de indicadores (não converter ausência em zero):
+    - no_data: módulo sem registros cadastrados
+    - number com value 0: cálculo real igual a zero
+    - unknown/null: dado desconhecido
+    - not_configured: módulo exige configuração (ex.: clima)
+    - disabled: feature flag desligada
+    - unavailable: falha controlada ao consultar o módulo
+    """
     user = get_current_user(request)
     subject = (user or {}).get("sub")
     try:
@@ -590,9 +617,9 @@ def api_agro_overview(request: Request, farm_uuid: str | None = None):
             "modules": {},
             "farm": None,
             "farms": [],
+            "setup": None,
         }
 
-        # If no farm selected, return the list of authorized farms (via farms_v2)
         if not farm_uuid:
             from repositories.farms_v2 import FarmsV2Repository  # noqa: E402
             from services.farms_v2 import FarmsV2Service  # noqa: E402
@@ -607,7 +634,6 @@ def api_agro_overview(request: Request, farm_uuid: str | None = None):
             overview["farms"] = [{"public_id": str(f["id"]), "name": f["name"]} for f in items]
             return overview
 
-        # Validate farm access before iterating modules
         from repositories.foundation import PostgresFoundationRepository as _PFR  # noqa: E402
         from core.authorization import AuthorizationService as _AS, HiddenResourceError as _HRE  # noqa: E402
         from core.permissions import ORGANIZATION_WIDE_FARM_ROLES as _OWFR  # noqa: E402
@@ -632,107 +658,308 @@ def api_agro_overview(request: Request, farm_uuid: str | None = None):
         except _HRE:
             return JSONResponse({"error": "Fazenda não encontrada"}, status_code=404)
 
-        overview["farm"] = {"public_id": str(_farm.public_id), "name": _farm.name}
+        # Metadados cadastrais (sem inventar valores)
+        _farm_row = query(
+            """
+            SELECT legal_name, document, municipality_code, state, area_ha,
+                   CASE WHEN latitude IS NULL THEN false ELSE true END AS has_coords
+              FROM foundation.operational_farms WHERE id=%(id)s
+            """,
+            {"id": _farm.id},
+        )
+        _meta = _farm_row[0] if _farm_row else {}
+        overview["farm"] = {
+            "public_id": str(_farm.public_id),
+            "name": _farm.name,
+            "legal_name": _meta.get("legal_name"),
+            "document": _meta.get("document"),
+            "municipality_code": _meta.get("municipality_code"),
+            "state": _meta.get("state"),
+            "area_ha": str(_meta["area_ha"]) if _meta.get("area_ha") is not None else None,
+            "has_coordinates": bool(_meta.get("has_coords")),
+            "cadastral_complete": bool(
+                _meta.get("state") and (_meta.get("municipality_code") or _meta.get("legal_name") or _meta.get("document"))
+            ),
+        }
 
         # --- Food Autonomy ---
-        if ENABLE_FOOD_AUTONOMY:
+        if not ENABLE_FOOD_AUTONOMY:
+            overview["modules"]["autonomia_alimentar"] = _agro_module(
+                status="disabled", available=False, message="Módulo desligado")
+        else:
             try:
                 from services.food_autonomy import FoodAutonomyService  # noqa: E402
                 from repositories.food_autonomy import FoodAutonomyRepository  # noqa: E402
                 fa = FoodAutonomyService(FoodAutonomyRepository(), auth_repository=_auth_repo)
-                scenarios = fa.list_scenarios(subject=subject, farm_public_id=farm_uuid,
-                                              limit=1, offset=0, status_filter=None, request_id="agro-overview")
-                overview["modules"]["autonomia_alimentar"] = {"available": True, "scenarios_count": scenarios.get("pagination", {}).get("total", 0)}
+                scenarios = fa.list_scenarios(
+                    subject=subject, farm_public_id=farm_uuid,
+                    limit=1, offset=0, status_filter=None, request_id="agro-overview")
+                total = int((scenarios.get("pagination") or {}).get("total") or 0)
+                if total == 0:
+                    overview["modules"]["autonomia_alimentar"] = _agro_module(
+                        status="no_data",
+                        message="Sem cenários de autonomia cadastrados",
+                        counts={"scenarios": 0},
+                        indicators={
+                            "scenarios_count": _agro_ind(None, has_records=False),
+                            "daily_demand_dm_kg": _agro_ind(None, unit="kg", has_records=False),
+                            "available_dm_kg": _agro_ind(None, unit="kg", has_records=False),
+                        },
+                    )
+                else:
+                    overview["modules"]["autonomia_alimentar"] = _agro_module(
+                        status="ok",
+                        counts={"scenarios": total},
+                        indicators={
+                            "scenarios_count": _agro_ind(total, has_records=True),
+                            # Demanda/MS exigem cenário selecionado — desconhecido no agregado
+                            "daily_demand_dm_kg": _agro_ind(None, unit="kg", has_records=True),
+                            "available_dm_kg": _agro_ind(None, unit="kg", has_records=True),
+                        },
+                    )
             except Exception:
-                pass
+                logger.exception("agro_overview autonomia_alimentar falhou farm=%s", farm_uuid)
+                overview["modules"]["autonomia_alimentar"] = _agro_module(
+                    status="unavailable", message="Falha ao consultar Autonomia Alimentar")
 
         # --- Pasture Live ---
-        if ENABLE_PASTURE_LIVE:
+        if not ENABLE_PASTURE_LIVE:
+            overview["modules"]["pasto_vivo"] = _agro_module(
+                status="disabled", available=False, message="Módulo desligado")
+        else:
             try:
                 from services.pasture_live import PastureLiveService  # noqa: E402
                 from repositories.pasture_live import PastureLiveRepository  # noqa: E402
                 pl = PastureLiveService(PastureLiveRepository(), auth_repository=_auth_repo)
-                paddocks = pl.list_paddocks(subject=subject, farm_public_id=farm_uuid,
-                                            limit=1, offset=0, request_id="agro-overview")
-                overview["modules"]["pasto_vivo"] = {"available": True, "paddocks_count": paddocks.get("pagination", {}).get("total", 0)}
-                try:
-                    dashboard = pl.get_dashboard(subject=subject, farm_public_id=farm_uuid, request_id="agro-overview")
-                    overview["modules"]["pasto_vivo"]["dashboard"] = {
-                        "active_paddocks": dashboard.get("active_paddocks", 0),
-                        "total_area_ha": str(dashboard.get("total_area_ha", 0)),
-                        "ready_area_ha": str(dashboard.get("ready_area_ha", 0)),
-                        "grazing_area_ha": str(dashboard.get("grazing_area_ha", 0)),
-                    }
-                except Exception:
-                    pass
+                paddocks = pl.list_paddocks(
+                    subject=subject, farm_public_id=farm_uuid,
+                    limit=1, offset=0, request_id="agro-overview")
+                p_total = int((paddocks.get("pagination") or {}).get("total") or 0)
+                if p_total == 0:
+                    overview["modules"]["pasto_vivo"] = _agro_module(
+                        status="no_data",
+                        message="Sem piquetes cadastrados",
+                        counts={"paddocks": 0},
+                        indicators={
+                            "active_paddocks": _agro_ind(None, has_records=False),
+                            "total_area_ha": _agro_ind(None, unit="ha", has_records=False),
+                            "ready_area_ha": _agro_ind(None, unit="ha", has_records=False),
+                            "grazing_area_ha": _agro_ind(None, unit="ha", has_records=False),
+                        },
+                    )
+                else:
+                    dashboard = pl.get_dashboard(
+                        subject=subject, farm_public_id=farm_uuid, request_id="agro-overview")
+                    overview["modules"]["pasto_vivo"] = _agro_module(
+                        status="ok",
+                        counts={"paddocks": p_total},
+                        indicators={
+                            "active_paddocks": _agro_ind(dashboard.get("active_paddocks"), has_records=True),
+                            "total_area_ha": _agro_ind(dashboard.get("total_area_ha"), unit="ha", has_records=True),
+                            "ready_area_ha": _agro_ind(dashboard.get("ready_area_ha"), unit="ha", has_records=True),
+                            "grazing_area_ha": _agro_ind(dashboard.get("grazing_area_ha"), unit="ha", has_records=True),
+                        },
+                    )
             except Exception:
-                pass
+                logger.exception("agro_overview pasto_vivo falhou farm=%s", farm_uuid)
+                overview["modules"]["pasto_vivo"] = _agro_module(
+                    status="unavailable", message="Falha ao consultar Pasto Vivo")
 
         # --- Feed Inventory ---
-        if ENABLE_FEED_INVENTORY:
+        if not ENABLE_FEED_INVENTORY:
+            overview["modules"]["silagem_estoques"] = _agro_module(
+                status="disabled", available=False, message="Módulo desligado")
+        else:
             try:
                 from services.feed_inventory import FeedInventoryService  # noqa: E402
                 from repositories.feed_inventory import FeedInventoryRepository  # noqa: E402
                 fi = FeedInventoryService(FeedInventoryRepository(), auth_repository=_auth_repo)
-                overview["modules"]["silagem_estoques"] = {"available": True}
-                try:
-                    fb = fi.get_dashboard(subject=subject, farm_public_id=farm_uuid, request_id="agro-overview")
-                    overview["modules"]["silagem_estoques"]["dashboard"] = {
-                        "total_natural_kg": fb.get("total_natural_kg", "0"),
-                        "total_physical_dm_kg": fb.get("total_physical_dm_kg", "0"),
-                        "total_usable_dm_kg": fb.get("total_usable_dm_kg", "0"),
-                        "total_value": fb.get("total_value", "0"),
-                        "total_active_lots": fb.get("total_active_lots", 0),
-                        "total_facilities": fb.get("total_facilities", 0),
-                    }
-                except Exception:
-                    pass
+                fb = fi.get_dashboard(
+                    subject=subject, farm_public_id=farm_uuid, request_id="agro-overview")
+                facilities = int(fb.get("total_facilities") or 0)
+                lots = int(fb.get("total_active_lots") or 0)
+                has_stock = facilities > 0 or lots > 0
+                if not has_stock:
+                    overview["modules"]["silagem_estoques"] = _agro_module(
+                        status="no_data",
+                        message="Sem estruturas ou lotes de estoque cadastrados",
+                        counts={"facilities": 0, "active_lots": 0},
+                        indicators={
+                            "total_natural_kg": _agro_ind(None, unit="kg", has_records=False),
+                            "total_physical_dm_kg": _agro_ind(None, unit="kg", has_records=False),
+                            "total_usable_dm_kg": _agro_ind(None, unit="kg", has_records=False),
+                            "total_value": _agro_ind(None, has_records=False),
+                            "total_facilities": _agro_ind(None, has_records=False),
+                            "total_active_lots": _agro_ind(None, has_records=False),
+                        },
+                    )
+                else:
+                    overview["modules"]["silagem_estoques"] = _agro_module(
+                        status="ok",
+                        counts={"facilities": facilities, "active_lots": lots},
+                        indicators={
+                            "total_natural_kg": _agro_ind(fb.get("total_natural_kg"), unit="kg", has_records=True),
+                            "total_physical_dm_kg": _agro_ind(fb.get("total_physical_dm_kg"), unit="kg", has_records=True),
+                            "total_usable_dm_kg": _agro_ind(fb.get("total_usable_dm_kg"), unit="kg", has_records=True),
+                            "total_value": _agro_ind(fb.get("total_value"), has_records=True),
+                            "total_facilities": _agro_ind(facilities, has_records=True),
+                            "total_active_lots": _agro_ind(lots, has_records=True),
+                        },
+                    )
             except Exception:
-                pass
+                logger.exception("agro_overview silagem_estoques falhou farm=%s", farm_uuid)
+                overview["modules"]["silagem_estoques"] = _agro_module(
+                    status="unavailable", message="Falha ao consultar Silagem e Estoques")
 
         # --- Harvest Silos ---
-        if ENABLE_HARVEST_SILOS:
+        if not ENABLE_HARVEST_SILOS:
+            overview["modules"]["colheita_silos"] = _agro_module(
+                status="disabled", available=False, message="Módulo desligado")
+        else:
             try:
                 from services.harvest_silos import HarvestSilosService  # noqa: E402
                 from repositories.harvest_silos import HarvestSilosRepository  # noqa: E402
                 hs = HarvestSilosService(HarvestSilosRepository(), auth_repository=_auth_repo)
-                overview["modules"]["colheita_silos"] = {"available": True}
-                try:
-                    hd = hs.get_dashboard(subject=subject, farm_public_id=farm_uuid, request_id="agro-overview")
-                    overview["modules"]["colheita_silos"]["dashboard"] = {
-                        "planned_area_ha": hd.get("planned_area_ha", "0"),
-                        "expected_gross_natural_kg": hd.get("expected_gross_natural_kg", "0"),
-                        "expected_net_natural_kg": hd.get("expected_net_natural_kg", "0"),
-                        "expected_dm_kg": hd.get("expected_dm_kg", "0"),
-                        "capacity_needed_kg": hd.get("capacity_needed_kg", "0"),
-                        "capacity_available_kg": hd.get("capacity_available_kg", "0"),
-                    }
-                except Exception:
-                    pass
+                plans = hs.list_plans(
+                    subject=subject, farm_public_id=farm_uuid,
+                    limit=1, offset=0, request_id="agro-overview")
+                plan_total = int((plans or {}).get("total") or 0)
+                if plan_total == 0:
+                    overview["modules"]["colheita_silos"] = _agro_module(
+                        status="no_data",
+                        message="Sem planos de colheita cadastrados",
+                        counts={"plans": 0},
+                        indicators={
+                            "planned_area_ha": _agro_ind(None, unit="ha", has_records=False),
+                            "expected_gross_natural_kg": _agro_ind(None, unit="kg", has_records=False),
+                            "expected_net_natural_kg": _agro_ind(None, unit="kg", has_records=False),
+                            "expected_dm_kg": _agro_ind(None, unit="kg", has_records=False),
+                            "capacity_needed_kg": _agro_ind(None, unit="kg", has_records=False),
+                            "capacity_available_kg": _agro_ind(None, unit="kg", has_records=False),
+                        },
+                    )
+                else:
+                    hd = hs.get_dashboard(
+                        subject=subject, farm_public_id=farm_uuid, request_id="agro-overview")
+                    overview["modules"]["colheita_silos"] = _agro_module(
+                        status="ok",
+                        counts={"plans": plan_total},
+                        indicators={
+                            "planned_area_ha": _agro_ind(hd.get("planned_area_ha"), unit="ha", has_records=True),
+                            "expected_gross_natural_kg": _agro_ind(hd.get("expected_gross_natural_kg"), unit="kg", has_records=True),
+                            "expected_net_natural_kg": _agro_ind(hd.get("expected_net_natural_kg"), unit="kg", has_records=True),
+                            "expected_dm_kg": _agro_ind(hd.get("expected_dm_kg"), unit="kg", has_records=True),
+                            "capacity_needed_kg": _agro_ind(hd.get("capacity_needed_kg"), unit="kg", has_records=True),
+                            "capacity_available_kg": _agro_ind(hd.get("capacity_available_kg"), unit="kg", has_records=True),
+                        },
+                    )
             except Exception:
-                pass
+                logger.exception("agro_overview colheita_silos falhou farm=%s", farm_uuid)
+                overview["modules"]["colheita_silos"] = _agro_module(
+                    status="unavailable", message="Falha ao consultar Colheita e Silos")
 
         # --- Weather Operations ---
-        if ENABLE_WEATHER_OPERATIONS:
-            overview["modules"]["clima_operacoes"] = {"available": True}
+        if not ENABLE_WEATHER_OPERATIONS:
+            overview["modules"]["clima_operacoes"] = _agro_module(
+                status="disabled", available=False, message="Módulo desligado")
+        else:
             try:
                 from services.weather_operations import WeatherService  # noqa: E402
                 from repositories.weather_operations import WeatherOperationsRepository  # noqa: E402
                 wo = WeatherService(WeatherOperationsRepository(), auth_repository=_auth_repo)
-                try:
-                    wd = wo.get_dashboard(subject=subject, farm_public_id=farm_uuid, request_id="agro-overview")
-                    overview["modules"]["clima_operacoes"]["dashboard"] = {
-                        "integration_status": wd.get("integration_status", "not_configured"),
-                        "current_temp": wd.get("current", {}).get("temperature_c"),
-                        "recent_rainfall_mm": wd.get("recent_rainfall_mm", 0),
-                        "favorable_windows": len(wd.get("upcoming_favorable_windows", [])),
-                        "risks": len(wd.get("risks", [])),
-                    }
-                except Exception:
-                    pass
+                wd = wo.get_dashboard(
+                    subject=subject, farm_public_id=farm_uuid, request_id="agro-overview")
+                integ = wd.get("integration_status") or "not_configured"
+                current = wd.get("current") if isinstance(wd.get("current"), dict) else None
+                if integ == "not_configured" or not current:
+                    overview["modules"]["clima_operacoes"] = _agro_module(
+                        status="not_configured",
+                        message="Perfil climático não configurado",
+                        indicators={
+                            "current_temp": _agro_ind(None, unit="°C", has_records=False),
+                            "recent_rainfall_mm": _agro_ind(None, unit="mm", has_records=False),
+                            "favorable_windows": _agro_ind(None, has_records=False),
+                            "risks": _agro_ind(None, has_records=False),
+                        },
+                    )
+                else:
+                    windows = wd.get("upcoming_favorable_windows") or []
+                    risks = wd.get("risks") or []
+                    overview["modules"]["clima_operacoes"] = _agro_module(
+                        status="ok",
+                        indicators={
+                            "current_temp": _agro_ind(current.get("temperature_c"), unit="°C", has_records=True),
+                            "recent_rainfall_mm": _agro_ind(wd.get("recent_rainfall_mm"), unit="mm", has_records=True),
+                            "favorable_windows": _agro_ind(len(windows), has_records=True),
+                            "risks": _agro_ind(len(risks), has_records=True),
+                        },
+                    )
             except Exception:
-                pass
+                logger.exception("agro_overview clima_operacoes falhou farm=%s", farm_uuid)
+                overview["modules"]["clima_operacoes"] = _agro_module(
+                    status="unavailable", message="Falha ao consultar Clima e Operações")
 
+        # Setup / onboarding checklist (sem inventar dados)
+        mods = overview["modules"]
+        def _st(key):
+            return (mods.get(key) or {}).get("status")
+        steps = [
+            {
+                "id": "farm_cadastro",
+                "label": "Cadastrar ou confirmar dados da fazenda",
+                "href": "/fazendas",
+                "done": bool(overview["farm"].get("cadastral_complete")),
+            },
+            {
+                "id": "paddocks",
+                "label": "Cadastrar piquetes",
+                "href": "/pasto-vivo",
+                "done": _st("pasto_vivo") == "ok",
+            },
+            {
+                "id": "measurement",
+                "label": "Registrar primeira medição de pastagem",
+                "href": "/pasto-vivo",
+                "done": _st("pasto_vivo") == "ok",
+            },
+            {
+                "id": "storage",
+                "label": "Cadastrar estruturas de armazenamento",
+                "href": "/silagem-estoques",
+                "done": _st("silagem_estoques") == "ok",
+            },
+            {
+                "id": "lots",
+                "label": "Registrar lotes ou estoques",
+                "href": "/silagem-estoques",
+                "done": _st("silagem_estoques") == "ok",
+            },
+            {
+                "id": "weather",
+                "label": "Configurar clima",
+                "href": "/clima-operacoes",
+                "done": _st("clima_operacoes") == "ok",
+            },
+            {
+                "id": "harvest",
+                "label": "Criar primeiro plano de colheita",
+                "href": "/colheita-silos",
+                "done": _st("colheita_silos") == "ok",
+            },
+            {
+                "id": "autonomy",
+                "label": "Calcular autonomia alimentar",
+                "href": "/autonomia-alimentar",
+                "done": _st("autonomia_alimentar") == "ok",
+            },
+        ]
+        pending = [s for s in steps if not s["done"]]
+        overview["setup"] = {
+            "needs_onboarding": len(pending) > 0,
+            "completed": len(steps) - len(pending),
+            "total": len(steps),
+            "steps": steps,
+        }
         return overview
     except Exception as e:
         return _error(e)
