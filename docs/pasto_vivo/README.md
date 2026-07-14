@@ -41,3 +41,7 @@ cd app && python3 -m unittest discover -s tests -p 'test_pasto_vivo_*.py' -v
 
 - **Autonomia Alimentar**: Importação de dados de pastagem para cálculos nutricionais
 - **Gestão de Animais**: Dados de lotação e pastejo
+
+## Módulos Irmãos
+
+O módulo **Silagem e Estoques** (`docs/silagem_estoques/`) é um módulo irmão que gerencia insumos armazenados (silagem, feno, concentrados). Enquanto Pasto Vivo foca em pastagens vivas (biomassa, lotação, descanso), Silagem e Estoques foca em estoques de insumos armazenados. Ambos alimentam a Autonomia Alimentar com fontes complementares de dados.

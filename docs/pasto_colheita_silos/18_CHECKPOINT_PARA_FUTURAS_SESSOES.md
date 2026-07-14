@@ -132,6 +132,27 @@ mappings sintéticos e primeira vertical legada de baixo risco. Ler os documento
 
 **PRÓXIMO PASSO:** Implementar migrations e código do módulo Pasto Vivo seguindo a documentação criada.
 
+## Atualização — Módulo Silagem e Estoques Implementado (Fase 3)
+
+**IMPLEMENTADO:** Documentação completa do módulo Silagem e Estoques em `docs/silagem_estoques/`, incluindo:
+- Escopo e regras de negócio (01_ESCOPO_E_REGRAS.md)
+- Modelo de dados e API — 3 tabelas no schema `storage` e 19 endpoints (02_MODELO_DADOS_E_API.md)
+- Guia do usuário (03_GUIA_USUARIO.md)
+- Staging, testes e limitações (04_STAGING_TESTES_E_LIMITACOES.md)
+
+**TABELAS CRIADAS:**
+- `feed_storage_facilities`: instalações de armazenamento (silos, bunkers, cochos, depósitos)
+- `feed_lots`: lotes de insumos (silagem, feno, concentrados, misturas)
+- `feed_stock_movements`: ledger imutável de movimentações (entradas, retiradas, perdas, ajustes)
+
+**FEATURE FLAG:** `ENABLE_FEED_INVENTORY` — desligada por padrão.
+
+**INTEGRAÇÃO:** Adicionada seção de integração com Autonomia Alimentar (fonte do tipo `feed_inventory`, importação somente leitura, estoque não reduzido por simulações) e nota de módulo irmão com Pasto Vivo.
+
+**TESTES:** 19 endpoints validados com sucesso no staging. Regras de negócio testadas: saldo nunca negativo, movimentações imutáveis, correções via ajuste.
+
+**PRÓXIMO PASSO:** Implementar migrations e código do módulo Silagem e Estoques seguindo a documentação criada.
+
 ## Não fazer
 
 - não estender IDs confiados do navegador;

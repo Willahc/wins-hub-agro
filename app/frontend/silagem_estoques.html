@@ -1,0 +1,1888 @@
+{% extends "base.html" %}
+{% block title %}Silagem e Estoques · WiNS Hub Agro{% endblock %}
+{% block topbar %}Silagem e Estoques{% endblock %}
+{% block content %}
+<div x-data="silagemEstoques()" x-init="init()">
+
+  <div class="page-head">
+    <div>
+      <h1>Silagem e Estoques</h1>
+      <div class="sub">Gerencie estruturas de armazenamento, lotes de ração e movimentações.</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-ghost" style="font-size:var(--fz-sm)" @click="showHelp=!showHelp">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px">
+          <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        Ajuda
+      </button>
+    </div>
+  </div>
+
+  <!-- Painel de ajuda / Glossário -->
+  <template x-if="showHelp">
+    <div class="card pad" style="margin-bottom:16px;border-left:4px solid var(--info)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <h3 style="margin:0;color:var(--info)">Guia Rápido — Silagem e Estoques</h3>
+        <button class="btn btn-ghost" style="padding:4px 8px" @click="showHelp=false">✕</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;font-size:var(--fz-sm)">
+        <div>
+          <div style="font-weight:600;margin-bottom:4px">Conceitos-chave</div>
+          <div class="muted" style="line-height:1.5">
+            <strong>MN (Matéria Natural):</strong> Peso total do alimento no estado em que está, incluindo água.<br>
+            <strong>MS (Matéria Seca):</strong> Parte sólida do alimento, sem água. É a base para cálculos nutricionais.<br>
+            <strong>% MS:</strong> Porcentagem de matéria seca no alimento. Ex: 35% significa que 100 kg de MN contém 35 kg de MS.<br>
+            <strong>% Aproveitamento:</strong> Quanto da MS é efetivamente consumível (descontando perdas de manuseio).<br>
+            <strong>MS Utilizável:</strong> MS × Aproveitamento. É a quantidade que o animal efetivamente consome.
+          </div>
+        </div>
+        <div>
+          <div style="font-weight:600;margin-bottom:4px">Estruturas</div>
+          <div class="muted" style="line-height:1.5">
+            Estruturas são os locais de armazenamento (silos, bunkers, galpões). Cada lote de ração deve estar vinculado a uma estrutura. A ocupação é calculada automaticamente com base nos lotes ativos.
+          </div>
+        </div>
+        <div>
+          <div style="font-weight:600;margin-bottom:4px">Lotes</div>
+          <div class="muted" style="line-height:1.5">
+            Um lote representa uma produção ou compra de ração. Pode ser aberto (ativo), em quarentena (análise) ou encerrado. O saldo é atualizado a cada movimentação (entrada, retirada, perda ou ajuste).
+          </div>
+        </div>
+        <div>
+          <div style="font-weight:600;margin-bottom:4px">Movimentações</div>
+          <div class="muted" style="line-height:1.5">
+            <strong>Entrada:</strong> Adiciona saldo ao lote (compra, produção, transferência).<br>
+            <strong>Retirada:</strong> Reduz saldo para uso (ração do rebanho).<br>
+            <strong>Perda:</strong> Registra perdas (mofagem, aquecimento, etc).<br>
+            <strong>Ajuste:</strong> Corrige divergências de inventário.
+          </div>
+        </div>
+        <div>
+          <div style="font-weight:600;margin-bottom:4px">Conciliação</div>
+          <div class="muted" style="line-height:1.5">
+            Verifica se o saldo calculado (ledger) bate com o saldo persistido no banco de dados. Diferenças podem indicar movimentações não registradas ou erros de sistema.
+          </div>
+        </div>
+        <div>
+          <div style="font-weight:600;margin-bottom:4px">Importação para Autonomia</div>
+          <div class="muted" style="line-height:1.5">
+            Permite copiar lotes abertos como fontes de estoque no módulo de Autonomia Alimentar, facilitando o planejamento de suprimento para o rebanho.
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- Seletor de fazenda -->
+  <div class="card pad" style="margin-bottom:16px">
+    <label class="small" style="font-weight:600;display:block;margin-bottom:6px">Fazenda</label>
+    <select class="select" style="width:100%;max-width:400px" x-model="selectedFarm" @change="loadAll()">
+      <option value="">Selecione uma fazenda…</option>
+      <template x-for="f in farms" :key="f.id">
+        <option :value="f.id" x-text="f.name"></option>
+      </template>
+    </select>
+  </div>
+
+  <template x-if="selectedFarm">
+    <div>
+
+      <!-- KPI Cards -->
+      <div class="stats">
+        <div class="stat">
+          <div class="k">Estoque em Matéria Natural</div>
+          <div class="v" x-text="fmtD(dashboard.total_quantity_natural_kg)"></div>
+          <div class="d">kg MN</div>
+        </div>
+        <div class="stat">
+          <div class="k">Matéria Seca Física</div>
+          <div class="v" x-text="fmtD(dashboard.total_quantity_dm_kg)"></div>
+          <div class="d">kg MS</div>
+        </div>
+        <div class="stat">
+          <div class="k">Matéria Seca Utilizável</div>
+          <div class="v" x-text="fmtD(totalUsableDM)"></div>
+          <div class="d">kg MS</div>
+        </div>
+        <div class="stat">
+          <div class="k">Valor Estimado</div>
+          <div class="v" style="color:var(--gold-500)" x-text="fmtBRL(dashboard.total_cost)"></div>
+          <div class="d" x-text="'Custo médio: ' + fmtBRL(dashboard.avg_cost_per_dm_kg) + '/kg MS'"></div>
+        </div>
+        <div class="stat">
+          <div class="k">Perdas no Período</div>
+          <div class="v" style="color:var(--danger)" x-text="fmtD(periodLosses)"></div>
+          <div class="d">kg MN</div>
+        </div>
+        <div class="stat">
+          <div class="k">Lotes Abertos</div>
+          <div class="v" style="color:var(--ok)" x-text="dashboard.open_lots || 0"></div>
+          <div class="d" x-text="'de ' + (dashboard.total_lots || 0) + ' total'"></div>
+        </div>
+        <div class="stat">
+          <div class="k">Lotes Próximos do Fim</div>
+          <div class="v" :style="lotsNearEnd > 0 ? 'color:var(--warn)' : ''" x-text="lotsNearEnd"></div>
+          <div class="d">previsão ≤ 7 dias</div>
+        </div>
+        <div class="stat">
+          <div class="k">Lotes em Quarentena</div>
+          <div class="v" style="color:var(--brand-500)" x-text="quarantinedLots"></div>
+          <div class="d">em análise</div>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;border-bottom:1px solid var(--line);flex-wrap:wrap">
+          <button class="btn btn-ghost" style="border-radius:var(--r-sm) var(--r-sm) 0 0;border-bottom:2px solid transparent;padding:10px 18px;font-size:var(--fz-sm);font-weight:600"
+            :style="activeTab==='dashboard' ? 'border-bottom-color:var(--brand-500);color:var(--brand-700)' : ''"
+            @click="activeTab='dashboard'">Dashboard</button>
+          <button class="btn btn-ghost" style="border-radius:var(--r-sm) var(--r-sm) 0 0;border-bottom:2px solid transparent;padding:10px 18px;font-size:var(--fz-sm);font-weight:600"
+            :style="activeTab==='facilities' ? 'border-bottom-color:var(--brand-500);color:var(--brand-700)' : ''"
+            @click="activeTab='facilities'; loadFacilities()">Estruturas</button>
+          <button class="btn btn-ghost" style="border-radius:var(--r-sm) var(--r-sm) 0 0;border-bottom:2px solid transparent;padding:10px 18px;font-size:var(--fz-sm);font-weight:600"
+            :style="activeTab==='lots' ? 'border-bottom-color:var(--brand-500);color:var(--brand-700)' : ''"
+            @click="activeTab='lots'; loadLots()">Lotes</button>
+          <button class="btn btn-ghost" style="border-radius:var(--r-sm) var(--r-sm) 0 0;border-bottom:2px solid transparent;padding:10px 18px;font-size:var(--fz-sm);font-weight:600"
+            :style="activeTab==='import' ? 'border-bottom-color:var(--brand-500);color:var(--brand-700)' : ''"
+            @click="activeTab='import'; loadAutonomySources()">Importar para Autonomia</button>
+        </div>
+        <div class="pad">
+
+          <!-- ===================== TAB: DASHBOARD ===================== -->
+          <div x-show="activeTab==='dashboard'">
+
+            <!-- Avisos de lotes próximos do fim -->
+            <template x-if="lotsNearEnd > 0">
+              <div class="card pad" style="margin-bottom:16px;border-left:4px solid var(--warn)">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2" style="width:22px;height:22px;flex:none">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                  <div>
+                    <div class="small" style="font-weight:600;color:var(--warn)">Atenção: <span x-text="lotsNearEnd"></span> lote(s) com estoque baixo (≤ 7 dias de uso previsto)</div>
+                    <div class="small muted">Considere fazer nova produção ou compra de ração para evitar desabastecimento.</div>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <!-- Aviso de lotes em quarentena -->
+            <template x-if="quarantinedLots > 0">
+              <div class="card pad" style="margin-bottom:16px;border-left:4px solid var(--brand-500)">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="var(--brand-500)" stroke-width="2" style="width:22px;height:22px;flex:none">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                  </svg>
+                  <div>
+                    <div class="small" style="font-weight:600;color:var(--brand-700)">Informação: <span x-text="quarantinedLots"></span> lote(s) em quarentena</div>
+                    <div class="small muted">Lotes em quarentena estão sob análise. Verifique a qualidade antes de utilizá-los.</div>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <!-- Resumo geral -->
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px">
+              <div>
+                <div class="small muted">Estruturas ativas</div>
+                <div style="font-size:var(--fz-lg);font-weight:700" x-text="dashboard.active_facilities || 0"></div>
+                <div class="small muted" x-text="'de ' + (dashboard.total_facilities || 0) + ' cadastradas'"></div>
+              </div>
+              <div>
+                <div class="small muted">Movimentações hoje</div>
+                <div style="font-size:var(--fz-lg);font-weight:700" x-text="dashboard.movements_today || 0"></div>
+                <div class="small muted" x-text="dashboard.movements_today > 0 ? 'neste dia' : 'nenhuma'"></div>
+              </div>
+              <div>
+                <div class="small muted">Movimentações no mês</div>
+                <div style="font-size:var(--fz-lg);font-weight:700" x-text="dashboard.movements_this_month || 0"></div>
+                <div class="small muted">registradas</div>
+              </div>
+              <div>
+                <div class="small muted">Lotes encerrados</div>
+                <div style="font-size:var(--fz-lg);font-weight:700" x-text="dashboard.closed_lots || 0"></div>
+                <div class="small muted">arquivados</div>
+              </div>
+            </div>
+
+            <!-- Uso diário estimado -->
+            <template x-if="dailyUseEstimate > 0">
+              <div class="card pad" style="margin-bottom:16px">
+                <h3 style="margin:0 0 8px">Uso Diário Estimado</h3>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+                  <div>
+                    <div class="small muted">Consumo diário planejado</div>
+                    <div style="font-size:var(--fz-lg);font-weight:700" x-text="fmtD(dailyUseEstimate) + ' kg MS/dia'"></div>
+                  </div>
+                  <div>
+                    <div class="small muted">Dias de autonomia estimados</div>
+                    <div style="font-size:var(--fz-lg);font-weight:700" :style="estimatedDaysAutonomy < 15 ? 'color:var(--danger)' : estimatedDaysAutonomy < 30 ? 'color:var(--warn)' : 'color:var(--ok)'" x-text="Math.round(estimatedDaysAutonomy) + ' dias'"></div>
+                  </div>
+                  <div>
+                    <div class="small muted">Data estimada de término</div>
+                    <div style="font-size:var(--fz-lg);font-weight:700" x-text="estimatedEndDate || '—'"></div>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <!-- Composição por tipo de ração -->
+            <template x-if="lots.length > 0">
+              <div class="card pad" style="margin-bottom:16px">
+                <h3 style="margin:0 0 12px">Composição do Estoque por Tipo</h3>
+                <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:12px">
+                  <template x-for="(item,i) in feedTypeBreakdown" :key="i">
+                    <div>
+                      <div class="small muted" x-text="feedTypeLabel(item.type)"></div>
+                      <div style="font-size:var(--fz-lg);font-weight:700" x-text="fmtD(item.total_kg) + ' kg'"></div>
+                      <div class="small" x-text="pctOf(item.total_kg, dashboard.total_quantity_natural_kg) + '%'"></div>
+                    </div>
+                  </template>
+                </div>
+                <div style="height:20px;border-radius:var(--r-pill);background:var(--line);overflow:hidden;display:flex">
+                  <template x-for="(item,i) in feedTypeBreakdown" :key="'bar-'+i">
+                    <div style="height:100%;transition:width .3s" :style="'width:' + pctOf(item.total_kg, dashboard.total_quantity_natural_kg) + '%;background:' + feedTypeColor(item.type)"></div>
+                  </template>
+                </div>
+                <div style="display:flex;gap:16px;margin-top:6px;font-size:var(--fz-xs);flex-wrap:wrap">
+                  <template x-for="(item,i) in feedTypeBreakdown" :key="'legend-'+i">
+                    <span><span class="dot" :style="'background:' + feedTypeColor(item.type)"></span> <span x-text="feedTypeLabel(item.type)"></span></span>
+                  </template>
+                </div>
+              </div>
+            </template>
+
+            <!-- Lotes abertos resumo -->
+            <template x-if="lots.filter(l => l.status === 'open').length > 0">
+              <div class="card pad" style="margin-bottom:16px">
+                <h3 style="margin:0 0 12px">Lotes Abertos — Resumo</h3>
+                <div class="table-scroll">
+                  <table class="data">
+                    <thead>
+                      <tr>
+                        <th>Lote</th>
+                        <th>Estrutura</th>
+                        <th>Saldo (kg MN)</th>
+                        <th>MS utilizável (kg)</th>
+                        <th>Dias restantes</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <template x-for="lot in lots.filter(l => l.status === 'open')" :key="lot.public_id">
+                        <tr @click="activeTab='lots'; openHistoryModal(lot)" style="cursor:pointer">
+                          <td data-label="Lote" class="fz-nome" x-text="lot.name"></td>
+                          <td data-label="Estrutura" x-text="lot.facility_name || '—'"></td>
+                          <td data-label="Saldo" x-text="fmtD(lot.current_quantity_natural_kg)"></td>
+                          <td data-label="MS utilizável" x-text="fmtD(lotUsableDM(lot))"></td>
+                          <td data-label="Dias restantes">
+                            <span x-text="lot.days_of_stock != null ? Math.round(Number(lot.days_of_stock)) + ' dias' : '—'"></span>
+                            <template x-if="Number(lot.days_of_stock) <= 7">
+                              <span class="badge warn" style="margin-left:4px;font-size:var(--fz-xs)">Pouco</span>
+                            </template>
+                          </td>
+                          <td data-label="Status">
+                            <span :class="'badge ' + lotStatusBadge(lot.status)" x-text="lotStatusLabel(lot.status)"></span>
+                          </td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </template>
+
+            <!-- Últimas movimentações -->
+            <template x-if="recentMovements.length > 0">
+              <div class="card pad">
+                <h3 style="margin:0 0 12px">Últimas Movimentações</h3>
+                <div class="table-scroll">
+                  <table class="data">
+                    <thead>
+                      <tr>
+                        <th>Data</th>
+                        <th>Lote</th>
+                        <th>Tipo</th>
+                        <th>Quantidade (kg)</th>
+                        <th>Saldo após</th>
+                        <th>Motivo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <template x-for="(mv,i) in recentMovements" :key="mv.public_id || i">
+                        <tr>
+                          <td data-label="Data" x-text="mv.movement_at || '—'"></td>
+                          <td data-label="Lote" x-text="mv.lot_name || '—'"></td>
+                          <td data-label="Tipo">
+                            <span class="badge" :class="movementBadgeClass(mv.movement_type)" x-text="movementTypeLabel(mv.movement_type)"></span>
+                          </td>
+                          <td data-label="Quantidade" x-text="fmtD(mv.quantity_natural_kg)"></td>
+                          <td data-label="Saldo" x-text="fmtD(mv.balance_after_natural_kg)"></td>
+                          <td data-label="Motivo" class="small muted" x-text="mv.reason || mv.loss_reason || '—'"></td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </template>
+
+            <!-- Empty state do dashboard -->
+            <template x-if="lots.length === 0 && facilities.length === 0">
+              <div class="card pad" style="text-align:center;padding:40px 20px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="var(--ink-300)" stroke-width="1.5" style="width:48px;height:48px;margin-bottom:12px">
+                  <path d="M2 20h20M5 20V8l7-5 7 5v12M9 20v-6h6v6"/>
+                </svg>
+                <div class="muted" style="margin-bottom:8px">Nenhuma estrutura ou lote cadastrado ainda.</div>
+                <div class="small muted">Comece criando uma estrutura de armazenamento na aba "Estruturas".</div>
+                <button class="btn btn-primary" style="margin-top:16px" @click="activeTab='facilities'">Criar primeira estrutura</button>
+              </div>
+            </template>
+          </div>
+
+          <!-- ===================== TAB: FACILITIES ===================== -->
+          <div x-show="activeTab==='facilities'">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+              <h3 style="margin:0">Estruturas de Armazenamento</h3>
+              <button class="btn btn-primary" @click="openFacilityModal()">+ Nova estrutura</button>
+            </div>
+
+            <!-- Resumo rápido -->
+            <template x-if="facilities.length > 0">
+              <div style="display:flex;gap:16px;margin-bottom:12px;flex-wrap:wrap;font-size:var(--fz-sm)">
+                <div>
+                  <span class="muted">Total: </span>
+                  <span style="font-weight:600" x-text="facilities.length"></span>
+                </div>
+                <div>
+                  <span class="muted">Ativas: </span>
+                  <span style="font-weight:600;color:var(--ok)" x-text="facilities.filter(f=>f.active).length"></span>
+                </div>
+                <div>
+                  <span class="muted">Inativas: </span>
+                  <span style="font-weight:600;color:var(--ink-400)" x-text="facilities.filter(f=>!f.active).length"></span>
+                </div>
+                <div>
+                  <span class="muted">Capacidade total: </span>
+                  <span style="font-weight:600" x-text="fmtD(facilities.reduce((s,f)=>s+Number(f.capacity_natural_kg||0),0)) + ' kg'"></span>
+                </div>
+              </div>
+            </template>
+
+            <template x-if="facilities.length === 0">
+              <div class="empty" style="padding:20px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="var(--ink-300)" stroke-width="1.5" style="width:36px;height:36px;margin-bottom:8px">
+                  <path d="M2 20h20M5 20V8l7-5 7 5v12"/>
+                </svg>
+                <div>Nenhuma estrutura cadastrada para esta fazenda.</div>
+                <div class="small muted">Crie uma estrutura para começar a gerenciar estoques.</div>
+                <button class="btn btn-primary" style="margin-top:12px" @click="openFacilityModal()">+ Criar estrutura</button>
+              </div>
+            </template>
+            <template x-if="facilities.length > 0">
+              <div class="table-scroll">
+                <table class="data">
+                  <thead>
+                    <tr>
+                      <th>Nome</th>
+                      <th>Tipo</th>
+                      <th>Código</th>
+                      <th>Capacidade (kg)</th>
+                      <th>Ocupação (kg)</th>
+                      <th>% Ocupação</th>
+                      <th>Lotes ativos</th>
+                      <th>Localização</th>
+                      <th>Status</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="(fac,i) in facilities" :key="fac.public_id || i">
+                      <tr>
+                        <td data-label="Nome" class="fz-nome" x-text="fac.name"></td>
+                        <td data-label="Tipo">
+                          <span class="badge neutral" x-text="facilityTypeLabel(fac.facility_type)"></span>
+                        </td>
+                        <td data-label="Código" class="mono" x-text="fac.code || '—'"></td>
+                        <td data-label="Capacidade" x-text="fac.capacity_natural_kg ? fmtD(fac.capacity_natural_kg) : '—'"></td>
+                        <td data-label="Ocupação" x-text="fmtD(fac.occupation_kg || 0)"></td>
+                        <td data-label="% Ocupação">
+                          <template x-if="fac.capacity_natural_kg && Number(fac.capacity_natural_kg) > 0">
+                            <div style="display:flex;align-items:center;gap:6px">
+                              <div style="flex:1;max-width:80px;height:6px;border-radius:3px;background:var(--line);overflow:hidden">
+                                <div style="height:100%;border-radius:3px;transition:width .3s" :style="'width:' + Math.min(100, Math.round((fac.occupation_kg||0) / fac.capacity_natural_kg * 100)) + '%;background:' + (Math.round((fac.occupation_kg||0) / fac.capacity_natural_kg * 100) > 90 ? 'var(--danger)' : Math.round((fac.occupation_kg||0) / fac.capacity_natural_kg * 100) > 70 ? 'var(--warn)' : 'var(--ok)')"></div>
+                              </div>
+                              <span class="small" x-text="Math.round((fac.occupation_kg||0) / fac.capacity_natural_kg * 100) + '%'"></span>
+                            </div>
+                          </template>
+                          <span x-show="!fac.capacity_natural_kg || Number(fac.capacity_natural_kg) === 0" class="small muted">—</span>
+                        </td>
+                        <td data-label="Lotes ativos" x-text="fac.active_lots_count || 0"></td>
+                        <td data-label="Localização" class="small muted" x-text="fac.location_description || '—'"></td>
+                        <td data-label="Status">
+                          <span :class="'badge ' + (fac.active ? 'ok' : 'neutral')" x-text="fac.active ? 'Ativa' : 'Inativa'"></span>
+                        </td>
+                        <td data-label="Ações">
+                          <div style="display:flex;gap:4px;flex-wrap:wrap">
+                            <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openFacilityModal(fac)" title="Editar">Editar</button>
+                            <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="archiveFacility(fac)" title="Arquivar">Arquivar</button>
+                          </div>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+          </div>
+
+          <!-- ===================== TAB: LOTS ===================== -->
+          <div x-show="activeTab==='lots'">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+              <h3 style="margin:0">Lotes de Ração</h3>
+              <button class="btn btn-primary" @click="openLotModal()">+ Novo lote</button>
+            </div>
+
+            <!-- Resumo rápido dos lotes -->
+            <template x-if="lots.length > 0">
+              <div style="display:flex;gap:16px;margin-bottom:12px;flex-wrap:wrap;font-size:var(--fz-sm)">
+                <div>
+                  <span class="muted">Total: </span>
+                  <span style="font-weight:600" x-text="lots.length"></span>
+                </div>
+                <div>
+                  <span class="muted">Abertos: </span>
+                  <span style="font-weight:600;color:var(--ok)" x-text="lots.filter(l=>l.status==='open').length"></span>
+                </div>
+                <div>
+                  <span class="muted">Quarentena: </span>
+                  <span style="font-weight:600;color:var(--warn)" x-text="lots.filter(l=>l.status==='quarantine').length"></span>
+                </div>
+                <div>
+                  <span class="muted">Encerrados: </span>
+                  <span style="font-weight:600;color:var(--ink-400)" x-text="lots.filter(l=>l.status==='closed').length"></span>
+                </div>
+              </div>
+            </template>
+
+            <!-- Filtros -->
+            <div class="filters" style="margin-bottom:12px">
+              <select class="select" x-model="lotFilter.status" @change="loadLots()" style="min-width:140px">
+                <option value="">Todos os status</option>
+                <option value="open">Aberto</option>
+                <option value="quarantine">Quarentena</option>
+                <option value="closed">Encerrado</option>
+              </select>
+              <select class="select" x-model="lotFilter.feed_type" @change="loadLots()" style="min-width:140px">
+                <option value="">Todos os tipos</option>
+                <option value="silage">Silagem</option>
+                <option value="hay">Feno</option>
+                <option value="pre_dried">Pré-secado</option>
+                <option value="concentrate">Concentrado</option>
+                <option value="protein_supplement">Suplemento proteico</option>
+                <option value="mineral_supplement">Suplemento mineral</option>
+                <option value="byproduct">Subproduto</option>
+                <option value="custom">Outro</option>
+              </select>
+            </div>
+
+            <template x-if="lots.length === 0">
+              <div class="empty" style="padding:20px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="var(--ink-300)" stroke-width="1.5" style="width:36px;height:36px;margin-bottom:8px">
+                  <path d="M2 20h20M5 20V8l7-5 7 5v12M9 20v-6h6v6"/>
+                </svg>
+                <div x-text="lotFilter.status || lotFilter.feed_type ? 'Nenhum lote encontrado com os filtros selecionados.' : 'Nenhum lote cadastrado para esta fazenda.'"></div>
+                <template x-if="!lotFilter.status && !lotFilter.feed_type">
+                  <div class="small muted">Crie um lote para começar a registrar movimentações.</div>
+                </template>
+                <template x-if="lotFilter.status || lotFilter.feed_type">
+                  <button class="btn btn-ghost" style="margin-top:8px" @click="lotFilter={status:'',feed_type:''}; loadLots()">Limpar filtros</button>
+                </template>
+              </div>
+            </template>
+            <template x-if="lots.length > 0">
+              <div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+                  <div style="display:flex;gap:8px">
+                    <button class="btn btn-ghost" style="font-size:var(--fz-sm)" @click="selectAllLots()">Selecionar todos</button>
+                    <button class="btn btn-ghost" style="font-size:var(--fz-sm)" @click="lotSelection=[]">Desmarcar</button>
+                  </div>
+                  <div class="small muted" x-text="lotSelection.length > 0 ? lotSelection.length + ' selecionado(s) de ' + lots.length : lots.length + ' lote(s)'"></div>
+                </div>
+                <div class="table-scroll">
+                  <table class="data">
+                    <thead>
+                      <tr>
+                        <th style="width:40px"></th>
+                        <th>Nome</th>
+                        <th>Tipo</th>
+                        <th>Estrutura</th>
+                        <th>Data</th>
+                        <th>Saldo natural (kg)</th>
+                        <th>MS %</th>
+                        <th>MS utilizável (kg)</th>
+                        <th>Valor</th>
+                        <th>Custo/kg MS</th>
+                        <th>Previsão fim</th>
+                        <th>Status</th>
+                        <th>Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <template x-for="(lot,i) in lots" :key="lot.public_id || i">
+                        <tr :style="lotSelection.includes(lot.public_id) ? 'background:var(--brand-50)' : ''">
+                          <td>
+                            <input type="checkbox" :value="lot.public_id" x-model="lotSelection">
+                          </td>
+                        <td data-label="Nome" class="fz-nome" x-text="lot.name"></td>
+                        <td data-label="Tipo">
+                          <span class="badge neutral" x-text="feedTypeLabel(lot.feed_type)"></span>
+                        </td>
+                        <td data-label="Estrutura" x-text="lot.facility_name || '—'"></td>
+                        <td data-label="Data" x-text="lot.production_date || lot.ensiling_date || '—'"></td>
+                        <td data-label="Saldo natural" x-text="fmtD(lot.current_quantity_natural_kg)"></td>
+                        <td data-label="MS %" x-text="lot.dry_matter_pct ? lot.dry_matter_pct + '%' : '—'"></td>
+                        <td data-label="MS utilizável" x-text="fmtD(lotUsableDM(lot))"></td>
+                        <td data-label="Valor" x-text="lot.initial_total_cost ? fmtBRL(lot.initial_total_cost) : '—'"></td>
+                        <td data-label="Custo/kg MS" x-text="lotCostPerDM(lot)"></td>
+                        <td data-label="Previsão fim">
+                          <span x-text="lot.days_of_stock != null ? Math.round(Number(lot.days_of_stock)) + ' dias' : '—'"></span>
+                          <template x-if="Number(lot.days_of_stock) <= 7 && lot.status === 'open'">
+                            <span class="badge warn" style="margin-left:4px;font-size:var(--fz-xs)">Pouco</span>
+                          </template>
+                        </td>
+                        <td data-label="Status">
+                          <span :class="'badge ' + lotStatusBadge(lot.status)" x-text="lotStatusLabel(lot.status)"></span>
+                        </td>
+                        <td data-label="Ações">
+                          <div style="display:flex;gap:4px;flex-wrap:wrap">
+                            <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openMovementModal(lot,'entry')" title="Entrada" x-show="lot.status==='open'">Entrada</button>
+                            <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openWithdrawModal(lot)" title="Retirada" x-show="lot.status==='open'">Retirada</button>
+                            <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openLossModal(lot)" title="Perda" x-show="lot.status==='open'">Perda</button>
+                            <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openAdjustModal(lot)" title="Ajuste" x-show="lot.status==='open'">Ajuste</button>
+                            <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openHistoryModal(lot)" title="Histórico">Histórico</button>
+                            <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="openLotModal(lot)" title="Editar">Editar</button>
+                            <button class="btn btn-ghost" style="padding:4px 8px;font-size:var(--fz-xs)" @click="archiveLot(lot)" title="Arquivar">Arquivar</button>
+                          </div>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- ===================== TAB: IMPORT TO AUTONOMY ===================== -->
+          <div x-show="activeTab==='import'">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+              <div>
+                <h3 style="margin:0">Importar Lotes para Autonomia Alimentar</h3>
+                <div class="small muted" style="margin-top:4px">Selecione os lotes disponíveis para importar como fontes de estoque no módulo de Autonomia.</div>
+              </div>
+              <button class="btn btn-primary" @click="importToAutonomy()" :disabled="importSelection.length === 0 || importingLots">
+                <template x-if="importingLots"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+                Importar (<span x-text="importSelection.length"></span>)
+              </button>
+            </div>
+
+            <!-- Info sobre importação -->
+            <div class="card pad" style="margin-bottom:12px;background:var(--surface-2)">
+              <div class="small" style="display:flex;align-items:flex-start;gap:8px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2" style="width:16px;height:16px;flex:none;margin-top:2px">
+                  <circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>
+                </svg>
+                <div>
+                  <span style="font-weight:600">Como funciona a importação:</span>
+                  <span class="muted"> Os lotes selecionados serão copiados como itens de estoque alimentar para o módulo de Autonomia Alimentar. Você pode escolher importar o saldo completo ou uma fração. Após a importação, os dados podem ser ajustados diretamente no módulo de Autonomia.</span>
+                </div>
+              </div>
+            </div>
+
+            <template x-if="autonomyLoading">
+              <div style="text-align:center;padding:20px"><div class="spinner"></div></div>
+            </template>
+            <template x-if="!autonomyLoading && autonomySources.length === 0">
+              <div class="empty" style="padding:20px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="var(--ink-300)" stroke-width="1.5" style="width:36px;height:36px;margin-bottom:8px">
+                  <path d="M2 20h20M5 20V8l7-5 7 5v12"/>
+                </svg>
+                <div>Nenhum lote disponível para importação nesta fazenda.</div>
+                <div class="small muted">Crie lotes na aba "Lotes" e depois volte aqui para importá-los.</div>
+              </div>
+            </template>
+            <template x-if="!autonomyLoading && autonomySources.length > 0">
+              <div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+                  <div style="display:flex;gap:8px">
+                    <button class="btn btn-ghost" style="font-size:var(--fz-sm)" @click="selectAllImport()">Selecionar todos</button>
+                    <button class="btn btn-ghost" style="font-size:var(--fz-sm)" @click="importSelection=[]">Desmarcar todos</button>
+                  </div>
+                  <div class="small muted" x-text="importSelection.length + ' de ' + autonomySources.length + ' selecionados'"></div>
+                </div>
+                <div class="table-scroll">
+                  <table class="data">
+                    <thead>
+                      <tr>
+                        <th style="width:40px"></th>
+                        <th>Lote</th>
+                        <th>Tipo</th>
+                        <th>Estrutura</th>
+                        <th>Saldo (kg MN)</th>
+                        <th>MS %</th>
+                        <th>MS utilizável (kg)</th>
+                        <th>Quantidade a importar</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <template x-for="(s,i) in autonomySources" :key="s.source_public_id || i">
+                        <tr :style="importSelection.includes(s.source_public_id) ? 'background:var(--brand-50)' : ''">
+                          <td>
+                            <input type="checkbox" :value="s.source_public_id" x-model="importSelection">
+                          </td>
+                          <td data-label="Lote" x-text="s.name"></td>
+                          <td data-label="Tipo">
+                            <span class="badge neutral" x-text="feedTypeLabel(s.feed_type)"></span>
+                          </td>
+                          <td data-label="Estrutura" x-text="s.facility_name || '—'"></td>
+                          <td data-label="Saldo" x-text="fmtD(s.quantity_natural_kg)"></td>
+                          <td data-label="MS %" x-text="s.dry_matter_pct ? s.dry_matter_pct + '%' : '—'"></td>
+                          <td data-label="MS utilizável" x-text="fmtD(s.usable_dm_kg)"></td>
+                          <td data-label="Quantidade">
+                            <select class="select" style="min-width:120px" x-model="importQuantities[s.source_public_id]"
+                              :disabled="!importSelection.includes(s.source_public_id)">
+                              <option value="full">Saldo completo</option>
+                              <option value="75">75%</option>
+                              <option value="50">50%</option>
+                              <option value="25">25%</option>
+                              <option value="custom">Personalizado…</option>
+                            </select>
+                            <template x-if="importQuantities[s.source_public_id]==='custom'">
+                              <input class="input" type="number" min="0" style="width:100px;margin-left:6px" x-model="importCustomQty[s.source_public_id]" placeholder="kg MN">
+                            </template>
+                          </td>
+                          <td data-label="Status">
+                            <span class="badge ok" style="font-size:var(--fz-xs)" x-show="s.status==='open'">Aberto</span>
+                            <span class="badge warn" style="font-size:var(--fz-xs)" x-show="s.status==='quarantine'">Quarentena</span>
+                            <span class="badge neutral" style="font-size:var(--fz-xs)" x-show="s.status==='closed'">Encerrado</span>
+                          </td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- Resumo da importação -->
+                <template x-if="importSelection.length > 0">
+                  <div class="card pad" style="margin-top:12px;background:var(--surface-2)">
+                    <div class="small" style="font-weight:600;margin-bottom:6px">Resumo da importação</div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;font-size:var(--fz-sm)">
+                      <div>
+                        <span class="muted">Lotes selecionados: </span>
+                        <span class="mono" style="font-weight:600" x-text="importSelection.length"></span>
+                      </div>
+                      <div>
+                        <span class="muted">Total MN a importar: </span>
+                        <span class="mono" style="font-weight:600" x-text="fmtD(importTotalMN()) + ' kg'"></span>
+                      </div>
+                      <div>
+                        <span class="muted">Total MS a importar: </span>
+                        <span class="mono" style="font-weight:600" x-text="fmtD(importTotalDM()) + ' kg'"></span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- Empty state -->
+  <template x-if="!selectedFarm && farms.length > 0">
+    <div class="card pad" style="text-align:center;padding:60px 20px">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--ink-300)" stroke-width="1.5" style="width:48px;height:48px;margin-bottom:12px">
+        <path d="M2 20h20M5 20V8l7-5 7 5v12M9 20v-6h6v6"/>
+      </svg>
+      <div class="muted" style="margin-bottom:8px">Selecione uma fazenda para começar.</div>
+      <div class="small muted">Gerencie silagem, feno, concentrados e outros suplementos em estoque.</div>
+    </div>
+  </template>
+
+  <!-- Rodapé de informações -->
+  <template x-if="selectedFarm">
+    <div style="margin-top:16px;padding:12px 0;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div class="small muted">
+        <span>Dados atualizados em tempo real. "MS" = Matéria Seca. "MN" = Matéria Natural.</span>
+      </div>
+      <button class="btn btn-ghost" style="font-size:var(--fz-xs);padding:4px 10px" @click="loadAll()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px">
+          <path d="M23 4v6h-6M1 20v-6h6"/>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+        Atualizar dados
+      </button>
+    </div>
+  </template>
+
+  <div class="loading" x-show="loadingFarms"><div class="spinner"></div></div>
+
+  <!-- ===================== MODAL: CRIAR/EDITAR FACILITY ===================== -->
+  <template x-if="showFacilityForm">
+    <div class="modal-overlay" @click.self="showFacilityForm=false">
+      <div class="modal card pad" style="max-width:650px;width:100%">
+        <h3 style="margin:0 0 16px" x-text="editingFacility ? 'Editar Estrutura' : 'Nova Estrutura'"></h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Nome *</label>
+            <input class="input" style="width:100%" x-model="facilityForm.name" placeholder="Ex: Silo Norte">
+            <div class="small muted" style="margin-top:2px">Nome que identifica a estrutura.</div>
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Código</label>
+            <input class="input" style="width:100%" x-model="facilityForm.code" placeholder="Ex: SI-01">
+            <div class="small muted" style="margin-top:2px">Código interno para referência rápida.</div>
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Tipo</label>
+            <select class="select" style="width:100%" x-model="facilityForm.facility_type">
+              <option value="silo">Silo (tubular)</option>
+              <option value="bunker">Bunker</option>
+              <option value="tombamento">Tombamento</option>
+              <option value="pile">Pile / Leque</option>
+              <option value="warehouse">Galpão</option>
+              <option value="bunk">Bunk (ração)</option>
+              <option value="bag">Saco / Bag</option>
+              <option value="other">Outro</option>
+            </select>
+            <div class="small muted" style="margin-top:2px">Tipo define como o sistema calcula volumes.</div>
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Capacidade (kg MN)</label>
+            <input class="input" type="number" min="0" step="1" style="width:100%" x-model="facilityForm.capacity_natural_kg" placeholder="Ex: 500000">
+            <div class="small muted" style="margin-top:2px">Capacidade máxima em kg de matéria natural.</div>
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Unidade preferida</label>
+            <select class="select" style="width:100%" x-model="facilityForm.preferred_display_unit">
+              <option value="kg">Quilogramas (kg)</option>
+              <option value="t">Toneladas (t)</option>
+            </select>
+            <div class="small muted" style="margin-top:2px">Unidade exibida nas telas de resumo.</div>
+          </div>
+          <div style="grid-column:1/-1">
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Localização</label>
+            <input class="input" style="width:100%" x-model="facilityForm.location_description" placeholder="Ex: Próximo ao curral norte, área 3">
+            <div class="small muted" style="margin-top:2px">Descrição livre para ajudar na localização física.</div>
+          </div>
+          <div style="grid-column:1/-1">
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Observações</label>
+            <textarea class="input" style="width:100%;height:60px;resize:vertical" x-model="facilityForm.notes" placeholder="Informações adicionais sobre a estrutura…"></textarea>
+          </div>
+        </div>
+
+        <!-- Info sobre capacidade -->
+        <template x-if="editingFacility">
+          <div style="margin-top:12px;padding:10px;background:var(--surface-2);border-radius:var(--r-sm)">
+            <div class="small" style="font-weight:600;margin-bottom:4px">Informações da estrutura</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;font-size:var(--fz-sm)">
+              <div>
+                <span class="muted">Criada em: </span>
+                <span x-text="editingFacility.created_at ? new Date(editingFacility.created_at).toLocaleDateString('pt-BR') : '—'"></span>
+              </div>
+              <div>
+                <span class="muted">Atualizada em: </span>
+                <span x-text="editingFacility.updated_at ? new Date(editingFacility.updated_at).toLocaleDateString('pt-BR') : '—'"></span>
+              </div>
+              <div>
+                <span class="muted">Status: </span>
+                <span :class="'badge ' + (editingFacility.active ? 'ok' : 'neutral')" x-text="editingFacility.active ? 'Ativa' : 'Inativa'"></span>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
+          <button class="btn btn-ghost" @click="showFacilityForm=false">Cancelar</button>
+          <button class="btn btn-primary" @click="saveFacility()" :disabled="savingFacility">
+            <template x-if="savingFacility"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+            Salvar
+          </button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- ===================== MODAL: CRIAR/EDITAR LOT ===================== -->
+  <template x-if="showLotForm">
+    <div class="modal-overlay" @click.self="showLotForm=false">
+      <div class="modal card pad" style="max-width:700px;width:100%">
+        <h3 style="margin:0 0 16px" x-text="editingLot ? 'Editar Lote' : 'Novo Lote'"></h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Nome *</label>
+            <input class="input" style="width:100%" x-model="lotForm.name" placeholder="Ex: Silagem Milho 2026-A">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Estrutura *</label>
+            <select class="select" style="width:100%" x-model="lotForm.facility_uuid">
+              <option value="">Selecione…</option>
+              <template x-for="fac in facilities" :key="fac.public_id">
+                <option :value="fac.public_id" x-text="fac.name"></option>
+              </template>
+            </select>
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Tipo de ração</label>
+            <select class="select" style="width:100%" x-model="lotForm.feed_type">
+              <option value="silage">Silagem</option>
+              <option value="hay">Feno</option>
+              <option value="pre_dried">Pré-secado</option>
+              <option value="concentrate">Concentrado</option>
+              <option value="protein_supplement">Suplemento proteico</option>
+              <option value="mineral_supplement">Suplemento mineral</option>
+              <option value="byproduct">Subproduto</option>
+              <option value="custom">Outro</option>
+            </select>
+          </div>
+          <div x-show="lotForm.feed_type==='custom'">
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Tipo personalizado</label>
+            <input class="input" style="width:100%" x-model="lotForm.custom_feed_type" placeholder="Ex: Resíduo de cervejaria">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Data de produção</label>
+            <input class="input" type="date" style="width:100%" x-model="lotForm.production_date">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Data de ensilagem</label>
+            <input class="input" type="date" style="width:100%" x-model="lotForm.ensiling_date">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Quantidade inicial (kg MN) *</label>
+            <input class="input" type="number" min="0" step="1" style="width:100%" x-model="lotForm.initial_quantity_natural_kg">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">% Matéria Seca *</label>
+            <input class="input" type="number" min="0" max="100" step="0.1" style="width:100%" x-model="lotForm.dry_matter_pct">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">% Aproveitamento</label>
+            <input class="input" type="number" min="0" max="100" step="1" style="width:100%" x-model="lotForm.utilization_pct">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Custo total (R$)</label>
+            <input class="input" type="number" min="0" step="0.01" style="width:100%" x-model="lotForm.initial_total_cost">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Uso diário previsto (kg MS/dia)</label>
+            <input class="input" type="number" min="0" step="1" style="width:100%" x-model="lotForm.planned_daily_use_dm_kg">
+          </div>
+          <div style="grid-column:1/-1">
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Fonte / Origem</label>
+            <input class="input" style="width:100%" x-model="lotForm.source_description" placeholder="Ex: Fazenda X - talhão 3">
+          </div>
+          <div style="grid-column:1/-1">
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Observações</label>
+            <textarea class="input" style="width:100%;height:60px;resize:vertical" x-model="lotForm.notes"></textarea>
+          </div>
+        </div>
+
+        <!-- Preview de cálculos -->
+        <template x-if="lotForm.initial_quantity_natural_kg && lotForm.dry_matter_pct">
+          <div class="card pad" style="margin-top:12px;background:var(--surface-2)">
+            <div class="small" style="font-weight:600;margin-bottom:6px">Prévia dos cálculos</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;font-size:var(--fz-sm)">
+              <div>
+                <span class="muted">MS física: </span>
+                <span class="mono" x-text="fmtD(lotForm.initial_quantity_natural_kg * lotForm.dry_matter_pct / 100) + ' kg'"></span>
+              </div>
+              <div>
+                <span class="muted">MS utilizável: </span>
+                <span class="mono" x-text="fmtD(lotForm.initial_quantity_natural_kg * lotForm.dry_matter_pct * (lotForm.utilization_pct||100) / 10000) + ' kg'"></span>
+              </div>
+              <div>
+                <span class="muted">Custo/kg MS: </span>
+                <span class="mono" x-text="lotForm.initial_total_cost && lotForm.initial_quantity_natural_kg && lotForm.dry_matter_pct ? fmtBRL(lotForm.initial_total_cost / (lotForm.initial_quantity_natural_kg * lotForm.dry_matter_pct / 100)) : '—'"></span>
+              </div>
+              <div>
+                <span class="muted">Dias de estoque: </span>
+                <span class="mono" x-text="lotForm.planned_daily_use_dm_kg && lotForm.dry_matter_pct ? Math.round(lotForm.initial_quantity_natural_kg * lotForm.dry_matter_pct * (lotForm.utilization_pct||100) / 10000 / lotForm.planned_daily_use_dm_kg) + ' dias' : '—'"></span>
+              </div>
+            </div>
+            <!-- Barra de uso previsto -->
+            <template x-if="lotForm.planned_daily_use_dm_kg && Number(lotForm.planned_daily_use_dm_kg) > 0">
+              <div style="margin-top:8px">
+                <div class="small muted" style="margin-bottom:4px">Uso diário vs estoque disponível</div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <div style="flex:1;height:8px;border-radius:4px;background:var(--line);overflow:hidden">
+                    <div style="height:100%;border-radius:4px;background:var(--ok);transition:width .3s" :style="'width:' + Math.min(100, (Number(lotForm.planned_daily_use_dm_kg) / (Number(lotForm.initial_quantity_natural_kg) * Number(lotForm.dry_matter_pct) * (lotForm.utilization_pct||100) / 10000) * 100)) + '%'"></div>
+                  </div>
+                  <span class="small" x-text="fmtD(Number(lotForm.planned_daily_use_dm_kg)) + ' kg MS/dia'"></span>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <!-- Validações e dicas -->
+        <template x-if="!editingLot">
+          <div style="margin-top:12px;padding:10px;background:var(--surface-2);border-radius:var(--r-sm)">
+            <div class="small" style="font-weight:600;margin-bottom:4px">Dicas</div>
+            <ul style="margin:0;padding-left:16px;font-size:var(--fz-sm);color:var(--ink-500);list-style:disc">
+              <li>Preencha a % de Matéria Seca para calcular automaticamente o estoque em MS.</li>
+              <li>O % de Aproveitamento representa o quanto da massa é efetivamente consumível (descontando perdas de manuseio).</li>
+              <li>O custo total ajuda a calcular o custo por kg de MS, importante para comparações entre lotes.</li>
+              <li>O uso diário previsto permite estimar a duração do estoque em dias.</li>
+            </ul>
+          </div>
+        </template>
+
+        <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
+          <button class="btn btn-ghost" @click="showLotForm=false">Cancelar</button>
+          <button class="btn btn-primary" @click="saveLot()" :disabled="savingLot">
+            <template x-if="savingLot"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+            Salvar
+          </button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- ===================== MODAL: ENTRADA / MOVIMENTO ===================== -->
+  <template x-if="showMovementForm">
+    <div class="modal-overlay" @click.self="showMovementForm=false">
+      <div class="modal card pad" style="max-width:550px;width:100%">
+        <h3 style="margin:0 0 16px" x-text="'Nova Entrada — ' + (movementLot?.name || '')"></h3>
+        <div style="display:grid;gap:12px">
+          <div style="padding:10px;background:var(--surface-2);border-radius:var(--r-sm);font-size:var(--fz-sm)">
+            <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+              <div><span class="muted">Estrutura: </span><span x-text="movementLot?.facility_name || '—'"></span></div>
+              <div><span class="muted">Saldo atual: </span><span class="mono" style="font-weight:600" x-text="fmtD(movementLot?.current_quantity_natural_kg) + ' kg MN'"></span></div>
+              <div><span class="muted">MS: </span><span class="mono" x-text="fmtD(movementLot?.current_total_dm_kg) + ' kg'"></span></div>
+            </div>
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Quantidade (kg MN) *</label>
+            <input class="input" type="number" min="0.01" step="0.01" style="width:100%" x-model="movementForm.quantity_natural_kg" placeholder="Ex: 5000">
+            <div class="small muted" style="margin-top:2px" x-text="movementForm.quantity_natural_kg ? 'Novo saldo: ' + fmtD((Number(movementLot?.current_quantity_natural_kg)||0) + Number(movementForm.quantity_natural_kg)) + ' kg MN' : 'Digite a quantidade a ser adicionada.'"></div>
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Data da entrada</label>
+            <input class="input" type="date" style="width:100%" x-model="movementForm.movement_at">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Motivo</label>
+            <input class="input" style="width:100%" x-model="movementForm.reason" placeholder="Ex: Compra de silagem, produção própria, transferência…">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Observações</label>
+            <textarea class="input" style="width:100%;height:60px;resize:vertical" x-model="movementForm.notes" placeholder="Detalhes adicionais…"></textarea>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
+          <button class="btn btn-ghost" @click="showMovementForm=false">Cancelar</button>
+          <button class="btn btn-primary" @click="saveMovement('entry')" :disabled="savingMovement || !movementForm.quantity_natural_kg">
+            <template x-if="savingMovement"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+            Registrar entrada
+          </button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- ===================== MODAL: RETIRADA ===================== -->
+  <template x-if="showWithdrawForm">
+    <div class="modal-overlay" @click.self="showWithdrawForm=false">
+      <div class="modal card pad" style="max-width:550px;width:100%">
+        <h3 style="margin:0 0 16px" x-text="'Retirada — ' + (withdrawLot?.name || '')"></h3>
+        <div style="display:grid;gap:12px">
+          <div style="padding:10px;background:var(--surface-2);border-radius:var(--r-sm);font-size:var(--fz-sm)">
+            <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+              <div><span class="muted">Estrutura: </span><span x-text="withdrawLot?.facility_name || '—'"></span></div>
+              <div><span class="muted">Saldo atual: </span><span class="mono" style="font-weight:600" x-text="fmtD(withdrawLot?.current_quantity_natural_kg) + ' kg MN'"></span></div>
+            </div>
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Quantidade (kg MN) *</label>
+            <input class="input" type="number" min="0.01" step="0.01" style="width:100%" x-model="withdrawForm.quantity_natural_kg" placeholder="Ex: 2000">
+            <div class="small muted" style="margin-top:2px" x-text="withdrawForm.quantity_natural_kg ? 'Novo saldo: ' + fmtD(Math.max(0, (Number(withdrawLot?.current_quantity_natural_kg)||0) - Number(withdrawForm.quantity_natural_kg))) + ' kg MN' : 'Digite a quantidade a ser retirada.'"></div>
+            <template x-if="Number(withdrawForm.quantity_natural_kg) > Number(withdrawLot?.current_quantity_natural_kg)">
+              <div class="small" style="color:var(--danger);margin-top:4px">A retirada não pode ser maior que o saldo disponível.</div>
+            </template>
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Motivo da retirada</label>
+            <input class="input" style="width:100%" x-model="withdrawForm.reason" placeholder="Ex: Cozinha do curral 3, ração do rebanho leiteiro…">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Observações</label>
+            <textarea class="input" style="width:100%;height:60px;resize:vertical" x-model="withdrawForm.notes" placeholder="Detalhes da retirada…"></textarea>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
+          <button class="btn btn-ghost" @click="showWithdrawForm=false">Cancelar</button>
+          <button class="btn btn-primary" style="background:var(--gold-500)" @click="saveWithdraw()" :disabled="savingWithdraw || !withdrawForm.quantity_natural_kg || Number(withdrawForm.quantity_natural_kg) > Number(withdrawLot?.current_quantity_natural_kg)">
+            <template x-if="savingWithdraw"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+            Registrar retirada
+          </button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- ===================== MODAL: REGISTRAR PERDA ===================== -->
+  <template x-if="showLossForm">
+    <div class="modal-overlay" @click.self="showLossForm=false">
+      <div class="modal card pad" style="max-width:550px;width:100%">
+        <h3 style="margin:0 0 16px" x-text="'Registrar Perda — ' + (lossLot?.name || '')"></h3>
+        <div style="display:grid;gap:12px">
+          <div style="padding:10px;background:var(--danger-bg);border-radius:var(--r-sm);font-size:var(--fz-sm);border-left:3px solid var(--danger)">
+            <span style="font-weight:600;color:var(--danger)">Atenção:</span>
+            <span class="muted"> A perda será registrada e o saldo do lote será reduzido. Esta ação não pode ser desfeita.</span>
+          </div>
+          <div style="padding:10px;background:var(--surface-2);border-radius:var(--r-sm);font-size:var(--fz-sm)">
+            <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+              <div><span class="muted">Saldo atual: </span><span class="mono" style="font-weight:600" x-text="fmtD(lossLot?.current_quantity_natural_kg) + ' kg MN'"></span></div>
+              <div><span class="muted">MS atual: </span><span class="mono" x-text="fmtD(lossLot?.current_total_dm_kg) + ' kg'"></span></div>
+            </div>
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Quantidade perdida (kg MN) *</label>
+            <input class="input" type="number" min="0.01" step="0.01" style="width:100%" x-model="lossForm.quantity_natural_kg" placeholder="Ex: 500">
+            <div class="small muted" style="margin-top:2px" x-text="lossForm.quantity_natural_kg ? 'Novo saldo: ' + fmtD(Math.max(0, (Number(lossLot?.current_quantity_natural_kg)||0) - Number(lossForm.quantity_natural_kg))) + ' kg MN' : 'Digite a quantidade perdida.'"></div>
+            <template x-if="Number(lossForm.quantity_natural_kg) > Number(lossLot?.current_quantity_natural_kg)">
+              <div class="small" style="color:var(--danger);margin-top:4px">A perda não pode ser maior que o saldo disponível.</div>
+            </template>
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Motivo da perda *</label>
+            <select class="select" style="width:100%" x-model="lossForm.loss_reason">
+              <option value="">Selecione o motivo…</option>
+              <option value="mold">Mofamento / fungos</option>
+              <option value="heating">Aquecimento / autocalor</option>
+              <option value="spoil">Avaria / deterioração</option>
+              <option value="contamination">Contaminação</option>
+              <option value="vermin">Vermes / pragas</option>
+              <option value="water">Inundação / contato com água</option>
+              <option value="collapse">Colapso da estrutura</option>
+              <option value="oxidation">Oxidação</option>
+              <option value="other">Outro motivo</option>
+            </select>
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Descrição do motivo</label>
+            <input class="input" style="width:100%" x-model="lossForm.reason" placeholder="Detalhe o que aconteceu…">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Observações</label>
+            <textarea class="input" style="width:100%;height:60px;resize:vertical" x-model="lossForm.notes" placeholder="Ações corretivas tomadas, responsável pelo registro…"></textarea>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
+          <button class="btn btn-ghost" @click="showLossForm=false">Cancelar</button>
+          <button class="btn btn-primary" style="background:var(--danger)" @click="saveLoss()" :disabled="savingLoss || !lossForm.quantity_natural_kg || !lossForm.loss_reason || Number(lossForm.quantity_natural_kg) > Number(lossLot?.current_quantity_natural_kg)">
+            <template x-if="savingLoss"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+            Registrar perda
+          </button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- ===================== MODAL: AJUSTE ===================== -->
+  <template x-if="showAdjustForm">
+    <div class="modal-overlay" @click.self="showAdjustForm=false">
+      <div class="modal card pad" style="max-width:550px;width:100%">
+        <h3 style="margin:0 0 16px" x-text="'Ajuste de Estoque — ' + (adjustLot?.name || '')"></h3>
+        <div style="display:grid;gap:12px">
+          <div style="padding:10px;background:var(--info-bg);border-radius:var(--r-sm);font-size:var(--fz-sm);border-left:3px solid var(--info)">
+            <span style="font-weight:600;color:var(--info)">Nota:</span>
+            <span class="muted"> Use valores positivos para aumentar o saldo e negativos para diminuir. O ajuste é registrado como movimentação para fins de auditoria.</span>
+          </div>
+          <div style="padding:10px;background:var(--surface-2);border-radius:var(--r-sm);font-size:var(--fz-sm)">
+            <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+              <div><span class="muted">Saldo atual: </span><span class="mono" style="font-weight:600" x-text="fmtD(adjustLot?.current_quantity_natural_kg) + ' kg MN'"></span></div>
+              <div><span class="muted">MS atual: </span><span class="mono" x-text="fmtD(adjustLot?.current_total_dm_kg) + ' kg'"></span></div>
+            </div>
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Quantidade ajustada (kg MN) *</label>
+            <input class="input" type="number" step="0.01" style="width:100%" x-model="adjustForm.quantity_natural_kg" placeholder="Ex: +200 ou -150">
+            <div class="small muted" style="margin-top:2px" x-text="adjustForm.quantity_natural_kg ? 'Novo saldo estimado: ' + fmtD((Number(adjustLot?.current_quantity_natural_kg)||0) + Number(adjustForm.quantity_natural_kg)) + ' kg MN' : 'Use positivo (+) para aumentar, negativo (-) para diminuir.'"></div>
+            <template x-if="Number(adjustForm.quantity_natural_kg) < 0 && Math.abs(Number(adjustForm.quantity_natural_kg)) > Number(adjustLot?.current_quantity_natural_kg)">
+              <div class="small" style="color:var(--danger);margin-top:4px">O ajuste negativo não pode ser maior que o saldo disponível.</div>
+            </template>
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Motivo do ajuste *</label>
+            <input class="input" style="width:100%" x-model="adjustForm.reason" placeholder="Ex: Conferência física do silo, medição de volume, correção de cadastro…">
+          </div>
+          <div>
+            <label class="small" style="font-weight:600;display:block;margin-bottom:4px">Observações</label>
+            <textarea class="input" style="width:100%;height:60px;resize:vertical" x-model="adjustForm.notes" placeholder="Método de medição, responsável, condições…"></textarea>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
+          <button class="btn btn-ghost" @click="showAdjustForm=false">Cancelar</button>
+          <button class="btn btn-primary" @click="saveAdjust()" :disabled="savingAdjust || !adjustForm.quantity_natural_kg || !adjustForm.reason || (Number(adjustForm.quantity_natural_kg) < 0 && Math.abs(Number(adjustForm.quantity_natural_kg)) > Number(adjustLot?.current_quantity_natural_kg))">
+            <template x-if="savingAdjust"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></template>
+            Aplicar ajuste
+          </button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- ===================== MODAL: HISTÓRICO DE MOVIMENTOS ===================== -->
+  <template x-if="showHistory">
+    <div class="modal-overlay" @click.self="showHistory=false">
+      <div class="modal card pad" style="max-width:900px;width:100%">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <div>
+            <h3 style="margin:0" x-text="'Histórico — ' + (historyLot?.name || '')"></h3>
+            <div style="display:flex;gap:12px;margin-top:4px;flex-wrap:wrap">
+              <div class="small muted" x-text="'Saldo: ' + fmtD(historyLot?.current_quantity_natural_kg) + ' kg MN'"></div>
+              <div class="small muted" x-text="'MS: ' + fmtD(historyLot?.current_total_dm_kg) + ' kg'"></div>
+              <div class="small muted" x-text="'Status: ' + lotStatusLabel(historyLot?.status)"></div>
+            </div>
+          </div>
+          <button class="btn btn-ghost" style="padding:6px 10px" @click="showHistory=false">✕</button>
+        </div>
+
+        <!-- Filtros do histórico -->
+        <div class="filters" style="margin-bottom:12px">
+          <select class="select" x-model="historyFilter" style="min-width:140px">
+            <option value="">Todos os tipos</option>
+            <option value="entry">Entradas</option>
+            <option value="withdrawal">Retiradas</option>
+            <option value="loss">Perdas</option>
+            <option value="adjustment">Ajustes</option>
+          </select>
+          <span class="small muted" x-text="filteredMovements.length + ' movimentação(ões)'"></span>
+        </div>
+
+        <template x-if="historyLoading">
+          <div style="text-align:center;padding:20px"><div class="spinner"></div></div>
+        </template>
+        <template x-if="!historyLoading && movements.length === 0">
+          <div class="empty" style="padding:20px">Nenhuma movimentação registrada para este lote.</div>
+        </template>
+        <template x-if="!historyLoading && movements.length > 0">
+          <div>
+            <!-- Resumo do histórico -->
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:16px;padding:12px;background:var(--surface-2);border-radius:var(--r-sm)">
+              <div>
+                <div class="small muted">Entradas</div>
+                <div style="font-weight:700;color:var(--ok)" x-text="movements.filter(m=>m.movement_type==='entry').length"></div>
+              </div>
+              <div>
+                <div class="small muted">Retiradas</div>
+                <div style="font-weight:700;color:var(--warn)" x-text="movements.filter(m=>m.movement_type==='withdrawal').length"></div>
+              </div>
+              <div>
+                <div class="small muted">Perdas</div>
+                <div style="font-weight:700;color:var(--danger)" x-text="movements.filter(m=>m.movement_type==='loss').length"></div>
+              </div>
+              <div>
+                <div class="small muted">Ajustes</div>
+                <div style="font-weight:700;color:var(--info)" x-text="movements.filter(m=>m.movement_type==='adjustment').length"></div>
+              </div>
+              <div>
+                <div class="small muted">Total MN movimentado</div>
+                <div style="font-weight:700" x-text="fmtD(movements.reduce((s,m)=>s+Math.abs(Number(m.quantity_natural_kg)||0),0)) + ' kg'"></div>
+              </div>
+              <div>
+                <div class="small muted">Total MS movimentado</div>
+                <div style="font-weight:700" x-text="fmtD(movements.reduce((s,m)=>s+Math.abs(Number(m.quantity_dm_kg)||0),0)) + ' kg'"></div>
+              </div>
+            </div>
+
+            <div class="table-scroll">
+              <table class="data">
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Tipo</th>
+                    <th>Quantidade (kg MN)</th>
+                    <th>MS (kg)</th>
+                    <th>Saldo antes</th>
+                    <th>Saldo depois</th>
+                    <th>Variação</th>
+                    <th>Motivo</th>
+                    <th>Observações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="(mv,i) in filteredMovements" :key="mv.public_id || i">
+                    <tr>
+                      <td data-label="Data" x-text="mv.movement_at || '—'"></td>
+                      <td data-label="Tipo">
+                        <span class="badge" :class="movementBadgeClass(mv.movement_type)" x-text="movementTypeLabel(mv.movement_type)"></span>
+                      </td>
+                      <td data-label="Quantidade">
+                        <span :style="mv.movement_type==='entry' ? 'color:var(--ok)' : mv.movement_type==='loss' ? 'color:var(--danger)' : 'color:var(--warn)'" x-text="(mv.movement_type==='entry' ? '+' : '-') + fmtD(mv.quantity_natural_kg)"></span>
+                      </td>
+                      <td data-label="MS" x-text="fmtD(mv.quantity_dm_kg)"></td>
+                      <td data-label="Saldo antes" class="mono" x-text="fmtD(mv.balance_before_natural_kg)"></td>
+                      <td data-label="Saldo depois" class="mono" x-text="fmtD(mv.balance_after_natural_kg)"></td>
+                      <td data-label="Variação">
+                        <span :style="Number(mv.balance_after_natural_kg) >= Number(mv.balance_before_natural_kg) ? 'color:var(--ok)' : 'color:var(--danger)'" x-text="(Number(mv.balance_after_natural_kg) >= Number(mv.balance_before_natural_kg) ? '+' : '') + fmtD(Number(mv.balance_after_natural_kg) - Number(mv.balance_before_natural_kg))"></span>
+                      </td>
+                      <td data-label="Motivo" class="small muted" x-text="mv.reason || mv.loss_reason || '—'"></td>
+                      <td data-label="Obs" class="small muted" x-text="mv.notes || '—'"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Botão de conciliação -->
+            <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end;flex-wrap:wrap">
+              <button class="btn btn-ghost" @click="openReconciliation()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px">
+                  <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                </svg>
+                Verificar conciliação
+              </button>
+            </div>
+
+            <!-- Conciliação -->
+            <template x-if="showReconciliation && reconciliation">
+              <div class="card pad" style="margin-top:12px;background:var(--surface-2)">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                  <h4 style="margin:0">Conciliação do Lote</h4>
+                  <span :class="'badge ' + (reconciliation.is_reconciled ? 'ok' : 'danger')" x-text="reconciliation.is_reconciled ? '✓ Conciliado' : '⚠ Divergência'"></span>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;font-size:var(--fz-sm)">
+                  <div>
+                    <div class="small muted">Saldo persistido (banco)</div>
+                    <div style="font-size:var(--fz-lg);font-weight:700" x-text="fmtD(reconciliation.persisted_balance) + ' kg'"></div>
+                  </div>
+                  <div>
+                    <div class="small muted">Saldo ledger (cálculo)</div>
+                    <div style="font-size:var(--fz-lg);font-weight:700" x-text="fmtD(reconciliation.ledger_balance) + ' kg'"></div>
+                  </div>
+                  <div>
+                    <div class="small muted">Diferença</div>
+                    <div style="font-size:var(--fz-lg);font-weight:700" :style="Number(reconciliation.difference) !== 0 ? 'color:var(--danger)' : 'color:var(--ok)'" x-text="fmtD(reconciliation.difference) + ' kg'"></div>
+                  </div>
+                  <div>
+                    <div class="small muted">Movimentações registradas</div>
+                    <div style="font-size:var(--fz-lg);font-weight:700" x-text="reconciliation.movement_count"></div>
+                  </div>
+                </div>
+                <template x-if="!reconciliation.is_reconciled">
+                  <div class="small muted" style="margin-top:8px">
+                    A diferença indica que os movimentos registrados não batem com o saldo persistido. Verifique se houve movimentações não registradas ou erros de digitação.
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
+    </div>
+  </template>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function silagemEstoques(){
+  return {
+    farms:[], selectedFarm:'', activeTab:'dashboard',
+    loadingFarms:false,
+    showHelp:false,
+
+    /* Dashboard / KPIs */
+    dashboard:{
+      total_facilities:0, active_facilities:0, total_lots:0, open_lots:0,
+      closed_lots:0, total_quantity_natural_kg:'0', total_quantity_dm_kg:'0',
+      total_cost:'0', avg_cost_per_dm_kg:'0', movements_today:0, movements_this_month:0
+    },
+    totalUsableDM:'0',
+    periodLosses:'0',
+    lotsNearEnd:0,
+    quarantinedLots:0,
+    dailyUseEstimate:0,
+    estimatedDaysAutonomy:0,
+    estimatedEndDate:'',
+    recentMovements:[],
+    feedTypeBreakdown:[],
+
+    /* Facilities */
+    facilities:[],
+    showFacilityForm:false,
+    editingFacility:null,
+    savingFacility:false,
+    facilityForm:{name:'',code:'',facility_type:'silo',capacity_natural_kg:'',preferred_display_unit:'kg',location_description:'',notes:''},
+
+    /* Lots */
+    lots:[],
+    lotSelection:[],
+    showLotForm:false,
+    editingLot:null,
+    savingLot:false,
+    lotForm:{facility_uuid:'',name:'',feed_type:'silage',custom_feed_type:'',production_date:'',ensiling_date:'',source_description:'',initial_quantity_natural_kg:'',dry_matter_pct:'',utilization_pct:'100',initial_total_cost:'',planned_daily_use_dm_kg:'',notes:''},
+    lotFilter:{status:'',feed_type:''},
+
+    /* Movement (entry) */
+    showMovementForm:false,
+    movementLot:null,
+    savingMovement:false,
+    movementForm:{quantity_natural_kg:'',movement_at:new Date().toISOString().slice(0,10),reason:'',notes:''},
+
+    /* Withdraw */
+    showWithdrawForm:false,
+    withdrawLot:null,
+    savingWithdraw:false,
+    withdrawForm:{quantity_natural_kg:'',reason:'',notes:''},
+
+    /* Loss */
+    showLossForm:false,
+    lossLot:null,
+    savingLoss:false,
+    lossForm:{quantity_natural_kg:'',loss_reason:'',reason:'',notes:''},
+
+    /* Adjust */
+    showAdjustForm:false,
+    adjustLot:null,
+    savingAdjust:false,
+    adjustForm:{quantity_natural_kg:'',reason:'',notes:''},
+
+    /* History / Reconciliation */
+    showHistory:false,
+    historyLot:null,
+    historyLoading:false,
+    movements:[],
+    historyFilter:'',
+    showReconciliation:false,
+    reconciliation:null,
+
+    /* Import to autonomy */
+    autonomySources:[],
+    autonomyLoading:false,
+    importSelection:[],
+    importQuantities:{},
+    importCustomQty:{},
+    importingLots:false,
+
+    /* ========================= INIT ========================= */
+    async init(){
+      this.loadingFarms=true;
+      try{
+        const r=await fetch('/api/v2/farms?limit=100');
+        if(r.ok){const d=await r.json(); this.farms=d.items||[];}
+      }catch(e){}
+      this.loadingFarms=false;
+    },
+
+    /* ========================= LOAD ALL ========================= */
+    async loadAll(){
+      if(!this.selectedFarm) return;
+      await Promise.all([
+        this.loadDashboard(),
+        this.loadFacilities(),
+        this.loadLots(),
+        this.loadRecentMovements()
+      ]);
+    },
+
+    /* ========================= DASHBOARD ========================= */
+    async loadDashboard(){
+      if(!this.selectedFarm) return;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/feed-inventory/dashboard');
+        if(r.ok){
+          const d=await r.json();
+          this.dashboard={...this.dashboard,...d};
+          this.computeExtraKPIs();
+        }
+      }catch(e){}
+    },
+
+    computeExtraKPIs(){
+      let usable=0, losses=0, nearEnd=0, quarantine=0, dailyUse=0;
+      const typeMap={};
+      for(const lot of this.lots){
+        const dm=Number(lot.current_quantity_natural_kg)||0;
+        const pct=Number(lot.dry_matter_pct)||0;
+        const util=Number(lot.utilization_pct)||100;
+        const lotDM=dm*pct/100;
+        usable+=lotDM*util/100;
+        const t=lot.feed_type||'custom';
+        if(!typeMap[t]) typeMap[t]=0;
+        typeMap[t]+=dm;
+        if(lot.status==='open' && Number(lot.days_of_stock)<=7) nearEnd++;
+        if(lot.status==='quarantine') quarantine++;
+        const plannedDaily=Number(lot.planned_daily_use_dm_kg)||0;
+        if(lot.status==='open' && plannedDaily>0) dailyUse+=plannedDaily;
+      }
+      this.totalUsableDM=String(Math.round(usable));
+      this.lotsNearEnd=nearEnd;
+      this.quarantinedLots=quarantine;
+      this.feedTypeBreakdown=Object.entries(typeMap).map(([type,total_kg])=>({type,total_kg}));
+      this.dailyUseEstimate=dailyUse;
+      if(dailyUse>0){
+        this.estimatedDaysAutonomy=usable/dailyUse;
+        const d=new Date();
+        d.setDate(d.getDate()+Math.round(this.estimatedDaysAutonomy));
+        this.estimatedEndDate=d.toLocaleDateString('pt-BR');
+      } else {
+        this.estimatedDaysAutonomy=0;
+        this.estimatedEndDate='';
+      }
+    },
+
+    get filteredMovements(){
+      if(!this.historyFilter) return this.movements;
+      return this.movements.filter(m=>m.movement_type===this.historyFilter);
+    },
+
+    /* ========================= FACILITIES ========================= */
+    async loadFacilities(){
+      if(!this.selectedFarm) return;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/feed-inventory/facilities?limit=100');
+        if(r.ok){const d=await r.json(); this.facilities=d.items||[];}
+      }catch(e){}
+    },
+
+    openFacilityModal(fac){
+      if(fac){
+        this.editingFacility=fac;
+        this.facilityForm={
+          name:fac.name||'',code:fac.code||'',facility_type:fac.facility_type||'silo',
+          capacity_natural_kg:fac.capacity_natural_kg||'',preferred_display_unit:fac.preferred_display_unit||'kg',
+          location_description:fac.location_description||'',notes:fac.notes||''
+        };
+      } else {
+        this.editingFacility=null;
+        this.facilityForm={name:'',code:'',facility_type:'silo',capacity_natural_kg:'',preferred_display_unit:'kg',location_description:'',notes:''};
+      }
+      this.showFacilityForm=true;
+    },
+
+    async saveFacility(){
+      if(!this.facilityForm.name){alert('Nome é obrigatório.');return;}
+      this.savingFacility=true;
+      try{
+        const url=this.editingFacility
+          ?'/api/v2/farms/'+this.selectedFarm+'/feed-inventory/facilities/'+this.editingFacility.public_id
+          :'/api/v2/farms/'+this.selectedFarm+'/feed-inventory/facilities';
+        const method=this.editingFacility?'PUT':'POST';
+        const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(this.facilityForm)});
+        if(r.ok){
+          this.showFacilityForm=false;
+          await this.loadFacilities();
+        } else {
+          const e=await r.json();
+          alert(e.detail?.message||'Erro ao salvar estrutura.');
+        }
+      }catch(e){alert('Erro de conexão.');}
+      this.savingFacility=false;
+    },
+
+    async archiveFacility(fac){
+      if(!confirm('Arquivar a estrutura "'+fac.name+'"? Lotes vinculados não serão removidos.')) return;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/feed-inventory/facilities/'+fac.public_id,{method:'DELETE'});
+        if(r.ok) await this.loadFacilities();
+        else{const e=await r.json(); alert(e.detail?.message||'Erro ao arquivar.');}
+      }catch(e){alert('Erro de conexão.');}
+    },
+
+    /* ========================= LOTS ========================= */
+    async loadLots(){
+      if(!this.selectedFarm) return;
+      let url='/api/v2/farms/'+this.selectedFarm+'/feed-inventory/lots?limit=100';
+      if(this.lotFilter.status) url+='&status='+this.lotFilter.status;
+      if(this.lotFilter.feed_type) url+='&feed_type='+this.lotFilter.feed_type;
+      try{
+        const r=await fetch(url);
+        if(r.ok){
+          const d=await r.json();
+          this.lots=d.items||[];
+          this.computeExtraKPIs();
+        }
+      }catch(e){}
+    },
+
+    openLotModal(lot){
+      if(lot){
+        this.editingLot=lot;
+        this.lotForm={
+          facility_uuid:lot.facility_uuid||'',name:lot.name||'',feed_type:lot.feed_type||'silage',
+          custom_feed_type:lot.custom_feed_type||'',production_date:lot.production_date||'',
+          ensiling_date:lot.ensiling_date||'',source_description:lot.source_description||'',
+          initial_quantity_natural_kg:lot.initial_quantity_natural_kg||'',dry_matter_pct:lot.dry_matter_pct||'',
+          utilization_pct:lot.utilization_pct||'100',initial_total_cost:lot.initial_total_cost||'',
+          planned_daily_use_dm_kg:lot.planned_daily_use_dm_kg||'',notes:lot.notes||''
+        };
+      } else {
+        this.editingLot=null;
+        this.lotForm={facility_uuid:'',name:'',feed_type:'silage',custom_feed_type:'',production_date:'',ensiling_date:'',source_description:'',initial_quantity_natural_kg:'',dry_matter_pct:'',utilization_pct:'100',initial_total_cost:'',planned_daily_use_dm_kg:'',notes:''};
+      }
+      this.showLotForm=true;
+    },
+
+    async saveLot(){
+      if(!this.lotForm.name||!this.lotForm.facility_uuid||!this.lotForm.initial_quantity_natural_kg||!this.lotForm.dry_matter_pct){
+        alert('Nome, estrutura, quantidade e %MS são obrigatórios.');
+        return;
+      }
+      this.savingLot=true;
+      try{
+        const url=this.editingLot
+          ?'/api/v2/farms/'+this.selectedFarm+'/feed-inventory/lots/'+this.editingLot.public_id
+          :'/api/v2/farms/'+this.selectedFarm+'/feed-inventory/lots';
+        const method=this.editingLot?'PUT':'POST';
+        const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(this.lotForm)});
+        if(r.ok){
+          this.showLotForm=false;
+          await this.loadLots();
+          await this.loadDashboard();
+        } else {
+          const e=await r.json();
+          alert(e.detail?.message||'Erro ao salvar lote.');
+        }
+      }catch(e){alert('Erro de conexão.');}
+      this.savingLot=false;
+    },
+
+    async archiveLot(lot){
+      if(!confirm('Arquivar o lote "'+lot.name+'"?')) return;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/feed-inventory/lots/'+lot.public_id,{method:'DELETE'});
+        if(r.ok){
+          await this.loadLots();
+          await this.loadDashboard();
+        } else {
+          const e=await r.json();
+          alert(e.detail?.message||'Erro ao arquivar.');
+        }
+      }catch(e){alert('Erro de conexão.');}
+    },
+
+    selectAllLots(){
+      this.lotSelection=this.lots.map(l=>l.public_id);
+    },
+
+    /* ========================= MOVEMENTS ========================= */
+    openMovementModal(lot){
+      this.movementLot=lot;
+      this.movementForm={quantity_natural_kg:'',movement_at:new Date().toISOString().slice(0,10),reason:'',notes:''};
+      this.showMovementForm=true;
+    },
+
+    async saveMovement(type){
+      if(!this.movementForm.quantity_natural_kg){alert('Quantidade é obrigatória.');return;}
+      this.savingMovement=true;
+      try{
+        const payload={movement_type:type,...this.movementForm};
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/feed-inventory/lots/'+this.movementLot.public_id+'/movements',{
+          method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)
+        });
+        if(r.ok){
+          this.showMovementForm=false;
+          await this.loadLots();
+          await this.loadDashboard();
+          await this.loadRecentMovements();
+        } else {
+          const e=await r.json();
+          alert(e.detail?.message||'Erro ao registrar movimentação.');
+        }
+      }catch(e){alert('Erro de conexão.');}
+      this.savingMovement=false;
+    },
+
+    /* ========================= WITHDRAW ========================= */
+    openWithdrawModal(lot){
+      this.withdrawLot=lot;
+      this.withdrawForm={quantity_natural_kg:'',reason:'',notes:''};
+      this.showWithdrawForm=true;
+    },
+
+    async saveWithdraw(){
+      if(!this.withdrawForm.quantity_natural_kg){alert('Quantidade é obrigatória.');return;}
+      this.savingWithdraw=true;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/feed-inventory/lots/'+this.withdrawLot.public_id+'/withdraw',{
+          method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(this.withdrawForm)
+        });
+        if(r.ok){
+          this.showWithdrawForm=false;
+          await this.loadLots();
+          await this.loadDashboard();
+          await this.loadRecentMovements();
+        } else {
+          const e=await r.json();
+          alert(e.detail?.message||'Erro ao registrar retirada.');
+        }
+      }catch(e){alert('Erro de conexão.');}
+      this.savingWithdraw=false;
+    },
+
+    /* ========================= LOSS ========================= */
+    openLossModal(lot){
+      this.lossLot=lot;
+      this.lossForm={quantity_natural_kg:'',loss_reason:'',reason:'',notes:''};
+      this.showLossForm=true;
+    },
+
+    async saveLoss(){
+      if(!this.lossForm.quantity_natural_kg||!this.lossForm.loss_reason){alert('Quantidade e motivo da perda são obrigatórios.');return;}
+      this.savingLoss=true;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/feed-inventory/lots/'+this.lossLot.public_id+'/record-loss',{
+          method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(this.lossForm)
+        });
+        if(r.ok){
+          this.showLossForm=false;
+          await this.loadLots();
+          await this.loadDashboard();
+          await this.loadRecentMovements();
+        } else {
+          const e=await r.json();
+          alert(e.detail?.message||'Erro ao registrar perda.');
+        }
+      }catch(e){alert('Erro de conexão.');}
+      this.savingLoss=false;
+    },
+
+    /* ========================= ADJUST ========================= */
+    openAdjustModal(lot){
+      this.adjustLot=lot;
+      this.adjustForm={quantity_natural_kg:'',reason:'',notes:''};
+      this.showAdjustForm=true;
+    },
+
+    async saveAdjust(){
+      if(!this.adjustForm.quantity_natural_kg||!this.adjustForm.reason){alert('Quantidade e motivo são obrigatórios.');return;}
+      this.savingAdjust=true;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/feed-inventory/lots/'+this.adjustLot.public_id+'/adjust',{
+          method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(this.adjustForm)
+        });
+        if(r.ok){
+          this.showAdjustForm=false;
+          await this.loadLots();
+          await this.loadDashboard();
+        } else {
+          const e=await r.json();
+          alert(e.detail?.message||'Erro ao aplicar ajuste.');
+        }
+      }catch(e){alert('Erro de conexão.');}
+      this.savingAdjust=false;
+    },
+
+    /* ========================= HISTORY ========================= */
+    async openHistoryModal(lot){
+      this.historyLot=lot;
+      this.movements=[];
+      this.showHistory=true;
+      this.showReconciliation=false;
+      this.reconciliation=null;
+      this.historyLoading=true;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/feed-inventory/lots/'+lot.public_id+'/movements?limit=100');
+        if(r.ok){const d=await r.json(); this.movements=d.items||[];}
+      }catch(e){}
+      this.historyLoading=false;
+    },
+
+    async loadRecentMovements(){
+      if(!this.selectedFarm) return;
+      this.recentMovements=[];
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/feed-inventory/lots?limit=50&status=open');
+        if(!r.ok) return;
+        const d=await r.json();
+        const lots=d.items||[];
+        const allMv=[];
+        for(const lot of lots.slice(0,5)){
+          try{
+            const mr=await fetch('/api/v2/farms/'+this.selectedFarm+'/feed-inventory/lots/'+lot.public_id+'/movements?limit=5');
+            if(mr.ok){
+              const md=await mr.json();
+              allMv.push(...(md.items||[]));
+            }
+          }catch(e){}
+        }
+        allMv.sort((a,b)=>{
+          const da=new Date(a.movement_at||a.created_at||0);
+          const db=new Date(b.movement_at||b.created_at||0);
+          return db-da;
+        });
+        this.recentMovements=allMv.slice(0,10);
+      }catch(e){}
+    },
+
+    /* ========================= RECONCILIATION ========================= */
+    async openReconciliation(){
+      if(!this.historyLot) return;
+      this.showReconciliation=true;
+      this.reconciliation=null;
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/feed-inventory/lots/'+this.historyLot.public_id+'/reconciliation');
+        if(r.ok){this.reconciliation=await r.json();}
+      }catch(e){}
+    },
+
+    /* ========================= IMPORT TO AUTONOMY ========================= */
+    async loadAutonomySources(){
+      if(!this.selectedFarm) return;
+      this.autonomySources=[];
+      this.autonomyLoading=true;
+      this.importSelection=[];
+      this.importQuantities={};
+      this.importCustomQty={};
+      try{
+        const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/feed-inventory/autonomy-sources');
+        if(r.ok){const d=await r.json(); this.autonomySources=d.items||d.sources||[];}
+      }catch(e){}
+      this.autonomyLoading=false;
+    },
+
+    selectAllImport(){
+      this.importSelection=this.autonomySources.map(s=>s.source_public_id);
+    },
+
+    importTotalMN(){
+      let total=0;
+      for(const sid of this.importSelection){
+        const src=this.autonomySources.find(s=>s.source_public_id===sid);
+        if(!src) continue;
+        const qtyMode=this.importQuantities[sid]||'full';
+        let qty=Number(src.quantity_natural_kg)||0;
+        if(qtyMode==='75') qty=qty*0.75;
+        else if(qtyMode==='50') qty=qty*0.5;
+        else if(qtyMode==='25') qty=qty*0.25;
+        else if(qtyMode==='custom') qty=Number(this.importCustomQty[sid])||0;
+        total+=qty;
+      }
+      return Math.round(total);
+    },
+
+    importTotalDM(){
+      let total=0;
+      for(const sid of this.importSelection){
+        const src=this.autonomySources.find(s=>s.source_public_id===sid);
+        if(!src) continue;
+        const qtyMode=this.importQuantities[sid]||'full';
+        let qty=Number(src.quantity_natural_kg)||0;
+        if(qtyMode==='75') qty=qty*0.75;
+        else if(qtyMode==='50') qty=qty*0.5;
+        else if(qtyMode==='25') qty=qty*0.25;
+        else if(qtyMode==='custom') qty=Number(this.importCustomQty[sid])||0;
+        const pct=Number(src.dry_matter_pct)||0;
+        const util=Number(src.utilization_pct)||100;
+        total+=qty*pct*util/10000;
+      }
+      return Math.round(total);
+    },
+
+    async importToAutonomy(){
+      if(this.importSelection.length===0) return;
+      if(!confirm('Importar '+this.importSelection.length+' lote(s) para Autonomia Alimentar?')) return;
+      this.importingLots=true;
+      let imported=0;
+      try{
+        for(const sid of this.importSelection){
+          const src=this.autonomySources.find(s=>s.source_public_id===sid);
+          if(!src) continue;
+          const qtyMode=this.importQuantities[sid]||'full';
+          let qty=Number(src.quantity_natural_kg)||0;
+          if(qtyMode==='75') qty=qty*0.75;
+          else if(qtyMode==='50') qty=qty*0.5;
+          else if(qtyMode==='25') qty=qty*0.25;
+          else if(qtyMode==='custom') qty=Number(this.importCustomQty[sid])||qty;
+          const body={
+            feed_type:src.feed_type,
+            name:src.name,
+            quantity_natural_kg:String(Math.round(qty)),
+            dry_matter_pct:src.dry_matter_pct,
+            utilization_pct:src.utilization_pct,
+            notes:'Importado do módulo Silagem e Estoques em '+new Date().toLocaleDateString('pt-BR')
+          };
+          const r=await fetch('/api/v2/farms/'+this.selectedFarm+'/food-autonomy/feeds',{
+            method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)
+          });
+          if(r.ok) imported++;
+        }
+        if(imported>0){
+          alert(imported+' lote(s) importado(s) com sucesso para Autonomia Alimentar!');
+        } else {
+          alert('Nenhum lote pôde ser importado. Verifique se o módulo de Autonomia está habilitado.');
+        }
+        this.importSelection=[];
+      }catch(e){alert('Erro ao importar lotes: '+(e.message||e));}
+      this.importingLots=false;
+    },
+
+    /* ========================= LABELS & HELPERS ========================= */
+    facilityTypeLabel(t){
+      return{silo:'Silo',bunker:'Bunker',tombamento:'Tombamento',pile:'Pile',warehouse:'Galpão',bunk:'Bunk',bag:'Saco',storage:'Armazenamento',other:'Outro'}[t]||t||'Outro';
+    },
+
+    feedTypeLabel(t){
+      return{silage:'Silagem',hay:'Feno',pre_dried:'Pré-secado',concentrate:'Concentrado',protein_supplement:'Sup. proteico',mineral_supplement:'Sup. mineral',byproduct:'Subproduto',custom:'Outro'}[t]||t||'Outro';
+    },
+
+    feedTypeColor(t){
+      return{silage:'#3a8f3f',hay:'#b8860b',pre_dried:'#d9a441',concentrate:'#1565c0',protein_supplement:'#c0392b',mineral_supplement:'#6b7670',byproduct:'#a07a00',custom:'#4f5a50'}[t]||'#4f5a50';
+    },
+
+    movementTypeLabel(t){
+      return{entry:'Entrada',withdrawal:'Retirada',loss:'Perda',adjustment:'Ajuste'}[t]||t||'Movimento';
+    },
+
+    movementBadgeClass(t){
+      return{entry:'ok',withdrawal:'warn',loss:'danger',adjustment:'info'}[t]||'neutral';
+    },
+
+    lotStatusLabel(s){
+      return{open:'Aberto',quarantine:'Quarentena',closed:'Encerrado'}[s]||s||'Desconhecido';
+    },
+
+    lotStatusBadge(s){
+      return{open:'ok',quarantine:'warn',closed:'neutral'}[s]||'neutral';
+    },
+
+    lotUsableDM(lot){
+      const dm=Number(lot.current_quantity_natural_kg)||0;
+      const pct=Number(lot.dry_matter_pct)||0;
+      const util=Number(lot.utilization_pct)||100;
+      return Math.round(dm*pct*util/10000);
+    },
+
+    lotCostPerDM(lot){
+      const cost=Number(lot.initial_total_cost)||0;
+      const dm=Number(lot.initial_total_dm_kg)||0;
+      if(dm>0 && cost>0) return this.fmtBRL(cost/dm);
+      return '—';
+    },
+
+    fmtD(v){
+      if(v===null||v===undefined||v==='')return 'Não informado';
+      const n=Number(v);
+      return isNaN(n)?'Não informado':n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+    },
+    fmtBRL(v){
+      if(v===null||v===undefined||v==='')return 'Não informado';
+      const n=Number(v);
+      return isNaN(n)?'Não informado':'R$ '+n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+    },
+    pctOf(part,total){const p=Number(part)||0,t=Number(total)||0;return t>0?Math.round(p/t*100):'0';},
+  }
+}
+</script>
+{% endblock %}

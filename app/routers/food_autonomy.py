@@ -10,7 +10,7 @@ from repositories.food_autonomy import FoodAutonomyRepository
 from services.food_autonomy import FoodAutonomyService
 from schemas.food_autonomy import (
     SimulationRequest, ScenarioCreateRequest, ScenarioUpdateRequest,
-    SimulationResponse, ScenarioListResponse,
+    SimulationResponse, ScenarioListResponse, FeedItemSchema,
 )
 
 router = APIRouter(prefix="/api/v2/farms", tags=["food_autonomy"])
@@ -234,3 +234,30 @@ def archive_scenario(
         _handle_auth_error(exc, request_id)
 
     return {"status": "archived"}
+
+
+@router.post(
+    "/{farm_uuid}/food-autonomy/feeds",
+)
+def import_feed(
+    farm_uuid: UUID,
+    payload: FeedItemSchema,
+    request: Request,
+    response: Response,
+):
+    from decimal import Decimal
+    qty = Decimal(str(payload.quantity_natural_kg))
+    dm = Decimal(str(payload.dry_matter_pct))
+    util = Decimal(str(payload.utilization_pct))
+    usable = qty * (dm / 100) * (util / 100)
+
+    return {
+        "public_id": str(uuid4()),
+        "feed_type": payload.feed_type,
+        "name": payload.name,
+        "quantity_natural_kg": str(qty),
+        "dry_matter_pct": str(dm),
+        "utilization_pct": str(util),
+        "usable_dm_kg": f"{usable:.2f}",
+        "notes": payload.notes,
+    }

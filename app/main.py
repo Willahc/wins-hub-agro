@@ -84,6 +84,10 @@ templates.env.globals["enable_food_autonomy"] = ENABLE_FOOD_AUTONOMY
 ENABLE_PASTURE_LIVE = os.getenv("ENABLE_PASTURE_LIVE", "").lower() in {"1", "true", "yes"}
 templates.env.globals["enable_pasture_live"] = ENABLE_PASTURE_LIVE
 
+# Feature flag para o módulo Silagem e Estoques (controle de silos, lotes, movimentações)
+ENABLE_FEED_INVENTORY = os.getenv("ENABLE_FEED_INVENTORY", "").lower() in {"1", "true", "yes"}
+templates.env.globals["enable_feed_inventory"] = ENABLE_FEED_INVENTORY
+
 
 @app.middleware("http")
 async def request_pipeline(request: Request, call_next):
@@ -530,6 +534,12 @@ if ENABLE_PASTURE_LIVE:
     from routers.pasture_live import router as pasture_live_router  # noqa: E402
 
     app.include_router(pasture_live_router)
+
+
+if ENABLE_FEED_INVENTORY:
+    from routers.feed_inventory import router as feed_inventory_router  # noqa: E402
+
+    app.include_router(feed_inventory_router)
 
 
 # ---------------------------------------------------------------------------
@@ -4110,6 +4120,18 @@ if ENABLE_PASTURE_LIVE:
             return RedirectResponse("/login")
         resp = templates.TemplateResponse("pasto_vivo.html",
             {"request": request, "user": user, "active": "pasto_vivo", "app_version": APP_VERSION})
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+
+
+if ENABLE_FEED_INVENTORY:
+    @app.get("/silagem-estoques", response_class=HTMLResponse)
+    def feed_inventory_page(request: Request):
+        user = get_current_user(request)
+        if not user:
+            return RedirectResponse("/login")
+        resp = templates.TemplateResponse("silagem_estoques.html",
+            {"request": request, "user": user, "active": "feed_inventory", "app_version": APP_VERSION})
         resp.headers["Cache-Control"] = "no-store"
         return resp
 

@@ -59,3 +59,33 @@ environment:
 ### Documentação
 
 Consulte a documentação completa em [`docs/pasto_vivo/`](../pasto_vivo/).
+
+## Integração com Silagem e Estoques
+
+O módulo **Autonomia Alimentar** também se integra ao módulo **Silagem e Estoques** para enriquecer os cálculos com dados reais de estoque de insumos armazenados.
+
+### Como funciona
+
+1. **Botão "Importar"**: na tela de Fontes de Alimentação, clique em "Importar de Silagem e Estoques"
+2. **Seleção de lotes**: escolha quais lotes deseja incluir como fonte de alimentação
+3. **Source type**: cada importação é registrada com tipo `feed_inventory` para rastreabilidade
+4. **Dados importados**: quantidade, MS utilizável, custo por kg de MS, dias restantes
+
+### Regras importantes
+
+- A importação é **somente leitura** — o estoque NÃO é reduzido quando usado em simulações de Autonomia Alimentar
+- Alterações no estoque (retiradas, perdas) são refletidas automaticamente na próxima consulta
+- O usuário pode ajustar o percentual de contribuição de cada fonte importada
+
+### Configuração
+
+```bash
+# No docker-compose.staging.yml
+environment:
+  - ENABLE_FOOD_AUTONOMY=true
+  - ENABLE_FEED_INVENTORY=true
+```
+
+### Documentação
+
+Consulte a documentação completa em [`docs/silagem_estoques/`](../silagem_estoques/).
