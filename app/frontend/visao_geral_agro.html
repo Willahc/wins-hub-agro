@@ -98,7 +98,7 @@
           </div>
           <div class="grid grid-4" x-show="mods.clima_operacoes.dashboard">
             <div><span class="small muted">Temperatura</span><div class="kpi" x-text="mods.clima_operacoes.dashboard.current_temp != null ? mods.clima_operacoes.dashboard.current_temp+'°C' : '—'"></div></div>
-            <div><span class="small muted">Chuva recente</span><div class="kpi" x-text="mods.clima_operacoes.dashboard.recent_rainfall_mm+' mm'"></div></div>
+            <div><span class="small muted">Chuva recente</span><div class="kpi" x-text="mods.clima_operacoes.dashboard.recent_rainfall_mm != null ? mods.clima_operacoes.dashboard.recent_rainfall_mm+' mm' : '—'"></div></div>
             <div><span class="small muted">Janelas favoráveis</span><div class="kpi" x-text="mods.clima_operacoes.dashboard.favorable_windows"></div></div>
             <div><span class="small muted">Riscos</span><div class="kpi" x-text="mods.clima_operacoes.dashboard.risks"></div></div>
           </div>

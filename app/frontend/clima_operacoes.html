@@ -146,7 +146,7 @@ function climaOperacoes(){
     async init(){
       try{
         const r=await fetch('/api/v2/farms',{credentials:'same-origin'});
-        if(r.ok){this.farms=await r.json()}
+        if(r.ok){const d=await r.json();this.farms=d.items||[]}
       }catch(e){}
       if(this.farms.length){this.farm=this.farms[0].id;this.load()}
     },
