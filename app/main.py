@@ -561,6 +561,184 @@ if ENABLE_WEATHER_OPERATIONS:
 
 
 # ---------------------------------------------------------------------------
+# Visão Geral Agro — agregador cross-módulo
+# ---------------------------------------------------------------------------
+AGRO_OVERVIEW_ENABLED = True
+templates.env.globals["agro_overview_enabled"] = AGRO_OVERVIEW_ENABLED
+
+
+@app.get("/visao-geral-agro", response_class=HTMLResponse)
+def visao_geral_agro_page(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    resp = templates.TemplateResponse("visao_geral_agro.html",
+        {"request": request, "user": user, "active": "visao_geral_agro", "app_version": APP_VERSION})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.get("/api/agro/overview")
+def api_agro_overview(request: Request, farm_uuid: str | None = None):
+    """Agrega KPIs de todos os módulos Gestão Agro ativos para a fazenda selecionada.
+    Cada módulo que está com feature flag ligada contribui com seus indicadores.
+    Se farm_uuid for omitido, retorna a lista de fazendas autorizadas do usuário."""
+    user = get_current_user(request)
+    subject = (user or {}).get("sub")
+    try:
+        overview = {
+            "modules": {},
+            "farm": None,
+            "farms": [],
+        }
+
+        # If no farm selected, return the list of authorized farms (via farms_v2)
+        if not farm_uuid:
+            from repositories.farms_v2 import FarmsV2Repository  # noqa: E402
+            from services.farms_v2 import FarmsV2Service  # noqa: E402
+            from repositories.foundation import PostgresFoundationRepository  # noqa: E402
+            svc = FarmsV2Service(FarmsV2Repository(), PostgresFoundationRepository())
+            farms_data = svc.list_authorized_farms(
+                subject=subject, organization_uuid=None,
+                limit=100, offset=0, status_filter="active",
+                request_id="agro-overview", source="web",
+            )
+            items = farms_data if isinstance(farms_data, list) else farms_data.get("items", [])
+            overview["farms"] = [{"public_id": str(f["id"]), "name": f["name"]} for f in items]
+            return overview
+
+        # Validate farm access before iterating modules
+        from repositories.foundation import PostgresFoundationRepository as _PFR  # noqa: E402
+        from core.authorization import AuthorizationService as _AS, HiddenResourceError as _HRE  # noqa: E402
+        from core.permissions import ORGANIZATION_WIDE_FARM_ROLES as _OWFR  # noqa: E402
+        from uuid import UUID as _UUID
+        from domain.foundation import RecordStatus as _RS  # noqa: E402
+
+        _auth_repo = _PFR()
+        _auth_service = _AS(_auth_repo)
+        try:
+            _user = _auth_service.require_authenticated_user(subject)
+            _farm_uuid_obj = _UUID(farm_uuid)
+            _farm = _auth_repo.find_farm(_farm_uuid_obj)
+            if not _farm:
+                raise _HRE()
+            _membership = _auth_repo.find_membership(_user.id, _farm.organization_public_id)
+            if not _membership or _membership.status != _RS.ACTIVE:
+                raise _HRE()
+            if _membership.role not in _OWFR:
+                _access = _auth_repo.find_farm_access(_membership.id, _farm.id)
+                if not _access or not _access.is_active():
+                    raise _HRE()
+        except _HRE:
+            return JSONResponse({"error": "Fazenda não encontrada"}, status_code=404)
+
+        overview["farm"] = {"public_id": str(_farm.public_id), "name": _farm.name}
+
+        # --- Food Autonomy ---
+        if ENABLE_FOOD_AUTONOMY:
+            try:
+                from services.food_autonomy import FoodAutonomyService  # noqa: E402
+                from repositories.food_autonomy import FoodAutonomyRepository  # noqa: E402
+                fa = FoodAutonomyService(FoodAutonomyRepository(), auth_repository=_auth_repo)
+                scenarios = fa.list_scenarios(subject=subject, farm_public_id=farm_uuid,
+                                              limit=1, offset=0, status_filter=None, request_id="agro-overview")
+                overview["modules"]["autonomia_alimentar"] = {"available": True, "scenarios_count": scenarios.get("pagination", {}).get("total", 0)}
+            except Exception:
+                pass
+
+        # --- Pasture Live ---
+        if ENABLE_PASTURE_LIVE:
+            try:
+                from services.pasture_live import PastureLiveService  # noqa: E402
+                from repositories.pasture_live import PastureLiveRepository  # noqa: E402
+                pl = PastureLiveService(PastureLiveRepository(), auth_repository=_auth_repo)
+                paddocks = pl.list_paddocks(subject=subject, farm_public_id=farm_uuid,
+                                            limit=1, offset=0, request_id="agro-overview")
+                overview["modules"]["pasto_vivo"] = {"available": True, "paddocks_count": paddocks.get("pagination", {}).get("total", 0)}
+                try:
+                    dashboard = pl.get_dashboard(subject=subject, farm_public_id=farm_uuid, request_id="agro-overview")
+                    overview["modules"]["pasto_vivo"]["dashboard"] = {
+                        "active_paddocks": dashboard.get("active_paddocks", 0),
+                        "total_area_ha": str(dashboard.get("total_area_ha", 0)),
+                        "ready_area_ha": str(dashboard.get("ready_area_ha", 0)),
+                        "grazing_area_ha": str(dashboard.get("grazing_area_ha", 0)),
+                    }
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        # --- Feed Inventory ---
+        if ENABLE_FEED_INVENTORY:
+            try:
+                from services.feed_inventory import FeedInventoryService  # noqa: E402
+                from repositories.feed_inventory import FeedInventoryRepository  # noqa: E402
+                fi = FeedInventoryService(FeedInventoryRepository(), auth_repository=_auth_repo)
+                overview["modules"]["silagem_estoques"] = {"available": True}
+                try:
+                    fb = fi.get_dashboard(subject=subject, farm_public_id=farm_uuid, request_id="agro-overview")
+                    overview["modules"]["silagem_estoques"]["dashboard"] = {
+                        "total_natural_kg": fb.get("total_natural_kg", "0"),
+                        "total_physical_dm_kg": fb.get("total_physical_dm_kg", "0"),
+                        "total_usable_dm_kg": fb.get("total_usable_dm_kg", "0"),
+                        "total_value": fb.get("total_value", "0"),
+                        "total_active_lots": fb.get("total_active_lots", 0),
+                        "total_facilities": fb.get("total_facilities", 0),
+                    }
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        # --- Harvest Silos ---
+        if ENABLE_HARVEST_SILOS:
+            try:
+                from services.harvest_silos import HarvestSilosService  # noqa: E402
+                from repositories.harvest_silos import HarvestSilosRepository  # noqa: E402
+                hs = HarvestSilosService(HarvestSilosRepository(), auth_repository=_auth_repo)
+                overview["modules"]["colheita_silos"] = {"available": True}
+                try:
+                    hd = hs.get_dashboard(subject=subject, farm_public_id=farm_uuid, request_id="agro-overview")
+                    overview["modules"]["colheita_silos"]["dashboard"] = {
+                        "planned_area_ha": hd.get("planned_area_ha", "0"),
+                        "expected_gross_natural_kg": hd.get("expected_gross_natural_kg", "0"),
+                        "expected_net_natural_kg": hd.get("expected_net_natural_kg", "0"),
+                        "expected_dm_kg": hd.get("expected_dm_kg", "0"),
+                        "capacity_needed_kg": hd.get("capacity_needed_kg", "0"),
+                        "capacity_available_kg": hd.get("capacity_available_kg", "0"),
+                    }
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        # --- Weather Operations ---
+        if ENABLE_WEATHER_OPERATIONS:
+            overview["modules"]["clima_operacoes"] = {"available": True}
+            try:
+                from services.weather_operations import WeatherService  # noqa: E402
+                from repositories.weather_operations import WeatherOperationsRepository  # noqa: E402
+                wo = WeatherService(WeatherOperationsRepository(), auth_repository=_auth_repo)
+                try:
+                    wd = wo.get_dashboard(subject=subject, farm_public_id=farm_uuid, request_id="agro-overview")
+                    overview["modules"]["clima_operacoes"]["dashboard"] = {
+                        "integration_status": wd.get("integration_status", "not_configured"),
+                        "current_temp": wd.get("current", {}).get("temperature_c"),
+                        "recent_rainfall_mm": wd.get("recent_rainfall_mm", 0),
+                        "favorable_windows": len(wd.get("upcoming_favorable_windows", [])),
+                        "risks": len(wd.get("risks", [])),
+                    }
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        return overview
+    except Exception as e:
+        return _error(e)
+
+
+# ---------------------------------------------------------------------------
 # API — data endpoints
 # ---------------------------------------------------------------------------
 @app.get("/api/stats")

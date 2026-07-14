@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Visão Geral Agro · WiNS Hub Agro{% endblock %}
+{% block topbar %}Visão Geral Agro{% endblock %}
+{% block content %}
+<div x-data="visaoGeralAgro()" x-init="init()">
+
+  <div class="page-head">
+    <div>
+      <h1>Visão Geral Agro</h1>
+      <div class="sub">Indicadores consolidados de todos os módulos de gestão agro.</div>
+    </div>
+  </div>
+
+  <!-- Seletor de fazenda -->
+  <div class="card pad" style="margin-bottom:16px">
+    <label class="small" style="font-weight:600;display:block;margin-bottom:6px">Fazenda</label>
+    <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">
+      <select class="select" style="flex:1;min-width:240px" x-model="selectedFarm" @change="loadOverview()">
+        <option value="">Selecione uma fazenda…</option>
+        <template x-for="f in farms" :key="f.public_id">
+          <option :value="f.public_id" x-text="f.name"></option>
+        </template>
+      </select>
+      <div class="loading" x-show="loading" style="display:inline-flex"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+  <template x-if="selectedFarm && !loading">
+    <div>
+
+      <!-- Autonomia Alimentar -->
+      <template x-if="mods.autonomia_alimentar">
+        <section class="card" style="margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h2 style="margin:0">Autonomia Alimentar</h2>
+            <a class="btn btn-ghost" href="/autonomia-alimentar">Abrir</a>
+          </div>
+          <div class="grid grid-4">
+            <div><span class="small muted">Cenários</span><div class="kpi" x-text="mods.autonomia_alimentar.scenarios_count"></div></div>
+          </div>
+        </section>
+      </template>
+
+      <!-- Pasto Vivo -->
+      <template x-if="mods.pasto_vivo">
+        <section class="card" style="margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h2 style="margin:0">Pasto Vivo</h2>
+            <a class="btn btn-ghost" href="/pasto-vivo">Abrir</a>
+          </div>
+          <div class="grid grid-4" x-show="mods.pasto_vivo.dashboard">
+            <div><span class="small muted">Piquetes ativos</span><div class="kpi" x-text="mods.pasto_vivo.dashboard.active_paddocks"></div></div>
+            <div><span class="small muted">Área total</span><div class="kpi" x-text="fmt(mods.pasto_vivo.dashboard.total_area_ha)+' ha'"></div></div>
+            <div><span class="small muted">Área pronta</span><div class="kpi" style="color:var(--ok)" x-text="fmt(mods.pasto_vivo.dashboard.ready_area_ha)+' ha'"></div></div>
+            <div><span class="small muted">Área em pastejo</span><div class="kpi" style="color:var(--brand-500)" x-text="fmt(mods.pasto_vivo.dashboard.grazing_area_ha)+' ha'"></div></div>
+          </div>
+        </section>
+      </template>
+
+      <!-- Silagem e Estoques -->
+      <template x-if="mods.silagem_estoques">
+        <section class="card" style="margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h2 style="margin:0">Silagem e Estoques</h2>
+            <a class="btn btn-ghost" href="/silagem-estoques">Abrir</a>
+          </div>
+          <div class="grid grid-4" x-show="mods.silagem_estoques.dashboard">
+            <div><span class="small muted">Saldo total</span><div class="kpi" x-text="fmtKg(mods.silagem_estoques.dashboard.total_natural_kg)"></div></div>
+            <div><span class="small muted">MS total</span><div class="kpi" x-text="fmtKg(mods.silagem_estoques.dashboard.total_physical_dm_kg)"></div></div>
+            <div><span class="small muted">MS utilizável</span><div class="kpi" x-text="fmtKg(mods.silagem_estoques.dashboard.total_usable_dm_kg)"></div></div>
+            <div><span class="small muted">Estruturas</span><div class="kpi" x-text="mods.silagem_estoques.dashboard.total_facilities"></div></div>
+          </div>
+        </section>
+      </template>
+
+      <!-- Colheita e Silos -->
+      <template x-if="mods.colheita_silos">
+        <section class="card" style="margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h2 style="margin:0">Colheita e Silos</h2>
+            <a class="btn btn-ghost" href="/colheita-silos">Abrir</a>
+          </div>
+          <div class="grid grid-4" x-show="mods.colheita_silos.dashboard">
+            <div><span class="small muted">Área planejada</span><div class="kpi" x-text="fmt(mods.colheita_silos.dashboard.planned_area_ha)+' ha'"></div></div>
+            <div><span class="small muted">Produção bruta</span><div class="kpi" x-text="fmtKg(mods.colheita_silos.dashboard.expected_gross_natural_kg)"></div></div>
+            <div><span class="small muted">Produção líquida</span><div class="kpi" x-text="fmtKg(mods.colheita_silos.dashboard.expected_net_natural_kg)"></div></div>
+            <div><span class="small muted">Capacidade restante</span><div class="kpi" x-text="fmtKg(mods.colheita_silos.dashboard.capacity_available_kg)"></div></div>
+          </div>
+        </section>
+      </template>
+
+      <!-- Clima e Operações -->
+      <template x-if="mods.clima_operacoes">
+        <section class="card" style="margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h2 style="margin:0">Clima e Operações</h2>
+            <a class="btn btn-ghost" href="/clima-operacoes">Abrir</a>
+          </div>
+          <div class="grid grid-4" x-show="mods.clima_operacoes.dashboard">
+            <div><span class="small muted">Temperatura</span><div class="kpi" x-text="mods.clima_operacoes.dashboard.current_temp != null ? mods.clima_operacoes.dashboard.current_temp+'°C' : '—'"></div></div>
+            <div><span class="small muted">Chuva recente</span><div class="kpi" x-text="mods.clima_operacoes.dashboard.recent_rainfall_mm+' mm'"></div></div>
+            <div><span class="small muted">Janelas favoráveis</span><div class="kpi" x-text="mods.clima_operacoes.dashboard.favorable_windows"></div></div>
+            <div><span class="small muted">Riscos</span><div class="kpi" x-text="mods.clima_operacoes.dashboard.risks"></div></div>
+          </div>
+        </section>
+      </template>
+
+      <!-- Nenhum módulo ativo -->
+      <div class="empty" x-show="!mods.autonomia_alimentar && !mods.pasto_vivo && !mods.silagem_estoques && !mods.colheita_silos && !mods.clima_operacoes">
+        Nenhum módulo de gestão agro está disponível para esta fazenda.
+      </div>
+
+    </div>
+  </template>
+
+  <div class="empty" x-show="!selectedFarm && !loading && farms.length">
+    Selecione uma fazenda para ver os indicadores consolidados.
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function visaoGeralAgro(){
+  return {
+    farms: [],
+    selectedFarm: '',
+    mods: {},
+    loading: false,
+    async init(){
+      const r = await fetch('/api/agro/overview');
+      const d = await r.json();
+      this.farms = d.farms || [];
+    },
+    async loadOverview(){
+      if(!this.selectedFarm) return;
+      this.loading = true;
+      try{
+        const r = await fetch('/api/agro/overview?farm_uuid='+this.selectedFarm);
+        const d = await r.json();
+        this.mods = d.modules || {};
+      }catch(e){
+        this.mods = {};
+      }
+      this.loading = false;
+    },
+    fmt(n){ return n ? Number(n).toLocaleString('pt-BR') : '0' },
+    fmtKg(s){
+      if(!s) return '0 kg';
+      const n = typeof s === 'string' ? parseFloat(s) : Number(s);
+      return n.toLocaleString('pt-BR', {maximumFractionDigits:0}) + ' kg';
+    },
+  }
+}
+</script>
+{% endblock %}
