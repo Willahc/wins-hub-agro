@@ -32,25 +32,25 @@ CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "$AUTH_HEADER" "$BASE_URL/pasto
 echo "$PAGE" | grep -qi "Pasto Vivo" && ok "Título presente" || fail "Título" "ausente"
 
 # 3. Seletor de fazenda
-echo "$PAGE" | grep -qi "fazenda\|farm" && ok "Seletor de fazenda presente" || fail "Seletor fazenda" "ausente"
+echo "$PAGE" | grep -qiE 'fazenda|farm' && ok "Seletor de fazenda presente" || fail "Seletor fazenda" "ausente"
 
 # 4. KPIs
-echo "$PAGE" | grep -qi "kpi\|resumo\|indicador\|hectare\|área\|MS" && ok "KPIs presentes" || fail "KPIs" "ausentes"
+echo "$PAGE" | grep -qiE 'kpi|resumo|indicador|hectare|área|MS' && ok "KPIs presentes" || fail "KPIs" "ausentes"
 
 # 5. Lista de piquetes
-echo "$PAGE" | grep -qi "piquete\|paddock" && ok "Lista de piquetes presente" || fail "Piquetes" "ausente"
+echo "$PAGE" | grep -qiE 'piquete|paddock' && ok "Lista de piquetes presente" || fail "Piquetes" "ausente"
 
 # 6. Formulário de criação/edição
-echo "$PAGE" | grep -qi "form\|criar\|editar\|salvar" && ok "Formulário de piquete presente" || fail "Formulário" "ausente"
+echo "$PAGE" | grep -qiE 'form|criar|editar|salvar' && ok "Formulário de piquete presente" || fail "Formulário" "ausente"
 
 # 7. Botão de medição
-echo "$PAGE" | grep -qi "medição\|medir\|measurement\|altura" && ok "Formulário de medição presente" || fail "Medição" "ausente"
+echo "$PAGE" | grep -qiE 'medição|medir|measurement|altura' && ok "Formulário de medição presente" || fail "Medição" "ausente"
 
 # 8. Botão de pastejo
-echo "$PAGE" | grep -qi "pastejo\|grazing\|entrar\|sair" && ok "Botão de pastejo presente" || fail "Pastejo" "ausente"
+echo "$PAGE" | grep -qiE 'pastejo|grazing|entrar|sair' && ok "Botão de pastejo presente" || fail "Pastejo" "ausente"
 
 # 9. Status do piquete
-echo "$PAGE" | grep -qi "status\|pronto\|pastejando\|descanso\|atenção" && ok "Indicadores de status presentes" || fail "Status" "ausente"
+echo "$PAGE" | grep -qiE 'status|pronto|pastejando|descanso|atenção' && ok "Indicadores de status presentes" || fail "Status" "ausente"
 
 # 10. Assets
 echo "--- 2. Assets ---"

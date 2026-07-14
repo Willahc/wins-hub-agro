@@ -134,7 +134,10 @@ VALUES (4, '90000000-0000-4000-8000-000000000004', 1, 4, 'viewer', 'active');
 -- Membership Mari
 INSERT INTO foundation.organization_memberships (id, public_id, organization_id, user_id, role, status)
 OVERRIDING SYSTEM VALUE
-VALUES (11, '90000000-0000-4000-8000-000000000011', 1, 11, 'owner', 'active');
+SELECT 11, '90000000-0000-4000-8000-000000000011', o.id, u.id, 'owner', 'active'
+  FROM foundation.organizations o, foundation.app_users u
+ WHERE o.public_id = 'a0000000-0000-4000-8000-00000000000a'
+   AND u.auth_subject = 'mari@winshubagro.cloud';
 
 -- Memberships Beta
 INSERT INTO foundation.organization_memberships (id, public_id, organization_id, user_id, role, status)
