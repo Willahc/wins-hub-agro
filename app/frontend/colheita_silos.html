@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Colheita e Silos — WiNS Agro{% endblock %}
+{% block topbar %}Colheita e Silos{% endblock %}
+{% block content %}
+<div x-data="harvestSilos()" x-init="init()">
+  <section class="card" style="margin-bottom:16px">
+    <div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap">
+      <div style="flex:1;min-width:240px"><label class="small">Fazenda</label>
+        <select class="input" style="width:100%" x-model="farm" @change="load()"><option value="">Selecione</option>
+          <template x-for="f in farms" :key="f.id"><option :value="f.id" x-text="f.name"></option></template>
+        </select></div>
+      <button class="btn btn-primary" :disabled="!farm" @click="newPlan()">Novo plano</button>
+    </div>
+  </section>
+
+  <template x-if="error"><div class="card" style="border-color:#dc2626;color:#b91c1c;margin-bottom:16px" x-text="error"></div></template>
+  <section class="grid grid-4" style="margin-bottom:16px">
+    <div class="card"><div class="small muted">Planos ativos</div><div class="kpi" x-text="dashboard.active_plans_count"></div></div>
+    <div class="card"><div class="small muted">Área planejada</div><div class="kpi" x-text="fmt(dashboard.planned_area_ha)+' ha'"></div></div>
+    <div class="card"><div class="small muted">Produção líquida</div><div class="kpi" x-text="fmtKg(dashboard.expected_net_natural_kg)"></div></div>
+    <div class="card"><div class="small muted">Acima da capacidade</div><div class="kpi" x-text="dashboard.over_capacity_plans_count"></div></div>
+  </section>
+
+  <section class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">Planos de colheita</h2>
+      <span class="small muted" x-text="plans.length+' plano(s)'"></span></div>
+    <div style="overflow:auto;margin-top:12px"><table class="table"><thead><tr><th>Plano</th><th>Cultura</th><th>Período</th><th>Produção líquida</th><th>Capacidade</th><th>Status</th><th></th></tr></thead>
+      <tbody><template x-for="p in plans" :key="p.public_id"><tr><td><strong x-text="p.name"></strong></td><td x-text="p.main_crop"></td>
+        <td x-text="date(p.expected_start_date)+' — '+date(p.expected_end_date)"></td><td x-text="fmtKg(p.expected_net_natural_kg)"></td>
+        <td><span :style="capacityStyle(p)" x-text="capacityLabel(p)"></span></td><td x-text="status(p.status)"></td>
+        <td><button class="btn btn-ghost" @click="view(p)">Ver</button></td></tr></template>
+      <tr x-show="farm && !plans.length"><td colspan="7" class="muted">Nenhum plano cadastrado.</td></tr></tbody></table></div>
+  </section>
+
+  <div class="modal-backdrop" x-show="showForm" x-cloak><div class="modal" style="max-width:920px">
+    <h2 x-text="editing?'Editar plano':'Novo plano'"></h2>
+    <div class="grid grid-2">
+      <label>Nome<input class="input" x-model="form.name"></label><label>Cultura<select class="input" x-model="form.main_crop"><option>milho</option><option>sorgo</option><option>capim</option><option>cana-de-açúcar</option><option>aveia</option><option>azevém</option><option>outra</option></select></label>
+      <label>Finalidade<select class="input" x-model="form.purpose"><option>silagem</option><option>feno</option><option>pré-secado</option><option>outro</option></select></label><span></span>
+      <label>Início previsto<input type="date" class="input" x-model="form.expected_start_date"></label><label>Término previsto<input type="date" class="input" x-model="form.expected_end_date"></label>
+      <label>Perda de campo (%)<input type="number" class="input" x-model="form.expected_field_loss_pct"></label><label>Perda de ensilagem (%)<input type="number" class="input" x-model="form.expected_ensiling_loss_pct"></label>
+    </div>
+    <h3>Áreas</h3><template x-for="(a,i) in form.areas" :key="i"><div class="grid grid-4" style="margin-bottom:8px"><input class="input" placeholder="Área" x-model="a.name"><input class="input" type="number" placeholder="ha" x-model="a.area_ha"><input class="input" type="number" placeholder="t/ha" x-model="a.expected_yield_t_ha"><input class="input" type="number" placeholder="% MS" x-model="a.expected_dm_pct"></div></template>
+    <button class="btn btn-ghost" @click="addArea()">+ Área</button>
+    <h3>Silos e alocação prevista</h3>
+    <template x-for="(a,i) in form.allocations" :key="i"><div class="grid grid-3" style="margin-bottom:8px"><select class="input" x-model="a.facility_uuid"><option value="">Estrutura</option><template x-for="f in facilities"><option :value="f.public_id" x-text="f.name"></option></template></select><input class="input" type="number" placeholder="Quantidade kg" x-model="a.expected_natural_kg"><input class="input" type="number" placeholder="Percentual" x-model="a.percentage"></div></template>
+    <button class="btn btn-ghost" @click="addAllocation()">+ Silo</button>
+    <label style="display:block;margin-top:12px">Observações<textarea class="input" style="width:100%" x-model="form.notes"></textarea></label>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px"><button class="btn btn-ghost" @click="showForm=false">Cancelar</button><button class="btn btn-primary" @click="save()" :disabled="saving" x-text="saving?'Salvando…':'Salvar plano'"></button></div>
+  </div></div>
+
+  <div class="modal-backdrop" x-show="selected" x-cloak><div class="modal" style="max-width:850px" x-show="selected">
+    <div style="display:flex;justify-content:space-between"><h2 x-text="selected?.name"></h2><button class="btn btn-ghost" @click="selected=null">Fechar</button></div>
+    <p><strong>Status:</strong> <span x-text="status(selected?.status)"></span> · <strong>Produção prevista:</strong> <span x-text="fmtKg(selected?.expected_net_natural_kg)"></span></p>
+    <h3>Áreas</h3><ul><template x-for="a in selected?.areas||[]"><li><span x-text="a.name"></span>: <span x-text="fmt(a.area_ha)+' ha · '+fmt(a.expected_yield_t_ha)+' t/ha · '+fmtKg(a.calculated_net_natural_kg)"></span></li></template></ul>
+    <h3>Alocação e capacidade</h3><ul><template x-for="a in selected?.allocations||[]"><li><span x-text="a.facility_name+' — '+fmtKg(a.expected_quantity_natural_kg)+' — '+capacityText(a.capacity_status)"></span></li></template></ul>
+    <div x-show="selected?.status==='completed'"><h3>Lotes criados</h3><ul><template x-for="a in selected?.allocations||[]"><li x-show="a.created_feed_lot_uuid"><a href="/silagem-estoques" x-text="a.facility_name+' · '+a.created_feed_lot_uuid"></a></li></template></ul></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn btn-ghost" x-show="['draft','planned'].includes(selected?.status)" @click="editSelected()">Editar</button><button class="btn btn-primary" x-show="['draft','planned'].includes(selected?.status)" @click="start()">Iniciar</button><button class="btn btn-primary" x-show="selected?.status==='in_progress'" @click="openComplete()">Concluir e criar lotes</button></div>
+  </div></div>
+
+  <div class="modal-backdrop" x-show="showComplete" x-cloak><div class="modal" style="max-width:760px"><h2>Concluir colheita</h2>
+    <div class="grid grid-3"><label>Início<input type="date" class="input" x-model="completion.actual_start_date"></label><label>Término<input type="date" class="input" x-model="completion.actual_end_date"></label><label>Total real (kg)<input type="number" class="input" x-model="completion.actual_natural_kg"></label><label>MS (%)<input type="number" class="input" x-model="completion.actual_dm_pct"></label><label>Perdas (%)<input type="number" class="input" x-model="completion.actual_loss_pct"></label></div>
+    <h3>Lotes por silo</h3><template x-for="(a,i) in completion.allocations" :key="a.facility_uuid"><div class="grid grid-3" style="margin-bottom:8px"><input class="input" x-model="a.lot_name" placeholder="Nome do lote"><input class="input" type="number" x-model="a.actual_natural_kg" placeholder="Quantidade kg"><select class="input" x-model="a.feed_type"><option value="silagem_milho">Silagem de milho</option><option value="silagem_sorgo">Silagem de sorgo</option><option value="silagem_capim">Silagem de capim</option><option value="silagem_cana">Silagem de cana</option><option value="feno">Feno</option><option value="pre_secado">Pré-secado</option><option value="outro">Outro</option></select></div></template>
+    <div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn btn-ghost" @click="showComplete=false">Cancelar</button><button class="btn btn-primary" @click="complete()">Confirmar conclusão</button></div>
+  </div></div>
+</div>
+<script>
+function harvestSilos(){return {farms:[],facilities:[],farm:'',plans:[],selected:null,showForm:false,showComplete:false,editing:null,saving:false,error:'',completion:{},dashboard:{active_plans_count:0,planned_area_ha:'0',expected_net_natural_kg:'0',over_capacity_plans_count:0},form:{},
+ async init(){let r=await fetch('/api/v2/farms?limit=100');if(r.ok)this.farms=(await r.json()).items||[]},
+ async api(path,opt){this.error='';let r=await fetch('/api/v2/farms/'+this.farm+'/harvest-silos'+path,opt);if(!r.ok){let d=await r.json().catch(()=>({}));throw new Error(d.detail?.message||'Não foi possível concluir a operação.')}return r.status===204?null:r.json()},
+ async load(){if(!this.farm)return;try{let [dash,plans,fac]=await Promise.all([this.api('/dashboard'),this.api('/plans?limit=100'),fetch('/api/v2/farms/'+this.farm+'/feed-inventory/facilities?limit=100').then(r=>r.json())]);this.dashboard=dash;this.plans=plans.items||[];this.facilities=fac.items||[]}catch(e){this.error=e.message}},
+ blank(){let today=new Date().toISOString().slice(0,10);return {name:'',main_crop:'milho',purpose:'silagem',expected_start_date:today,expected_end_date:today,expected_field_loss_pct:'5',expected_ensiling_loss_pct:'8',notes:'',areas:[{name:'Área 1',crop:'milho',cultivar:'',area_ha:'20',expected_yield_t_ha:'40',expected_dm_pct:'35',expected_harvest_date:today,notes:''}],allocations:[]}},
+ newPlan(){this.editing=null;this.form=this.blank();this.showForm=true},addArea(){this.form.areas.push({name:'',crop:this.form.main_crop,cultivar:'',area_ha:'',expected_yield_t_ha:'',expected_dm_pct:'',expected_harvest_date:null,notes:''})},addAllocation(){this.form.allocations.push({facility_uuid:'',expected_natural_kg:'',percentage:''})},
+ async save(){this.saving=true;try{this.form.areas.forEach(a=>a.crop=a.crop||this.form.main_crop);let path=this.editing?'/plans/'+this.editing.public_id:'/plans';await this.api(path,{method:this.editing?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(this.form)});this.showForm=false;await this.load()}catch(e){this.error=e.message}finally{this.saving=false}},
+ view(p){this.selected=p},editSelected(){this.editing=this.selected;this.form=JSON.parse(JSON.stringify(this.selected));delete this.form.public_id;delete this.form.status;this.showForm=true;this.selected=null},
+ async start(){try{this.selected=await this.api('/plans/'+this.selected.public_id+'/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({actual_start_date:new Date().toISOString().slice(0,10)})});await this.load()}catch(e){this.error=e.message}},
+ openComplete(){let today=new Date().toISOString().slice(0,10);let feed=({milho:'silagem_milho',sorgo:'silagem_sorgo',capim:'silagem_capim','cana-de-açúcar':'silagem_cana'})[this.selected.main_crop]||'outro';this.completion={actual_start_date:this.selected.actual_start_date||today,actual_end_date:today,actual_natural_kg:this.selected.expected_net_natural_kg,actual_dm_pct:this.selected.areas?.[0]?.expected_dm_pct||'35',actual_loss_pct:'0',request_id:crypto.randomUUID(),allocations:(this.selected.allocations||[]).map((a,i)=>({facility_uuid:a.facility_uuid,actual_natural_kg:a.expected_quantity_natural_kg,lot_name:this.selected.name+' — lote '+(i+1),feed_type:feed,utilization_pct:'100',cost:null,notes:'Origem: Colheita e Silos'}))};this.showComplete=true},
+ async complete(){try{this.selected=await this.api('/plans/'+this.selected.public_id+'/complete',{method:'POST',headers:{'Content-Type':'application/json','X-Request-ID':this.completion.request_id},body:JSON.stringify(this.completion)});this.showComplete=false;await this.load()}catch(e){this.error=e.message}},
+ fmt(v){return Number(v||0).toLocaleString('pt-BR',{maximumFractionDigits:2})},fmtKg(v){return this.fmt(v)+' kg'},date(v){return v?new Date(v+'T00:00:00').toLocaleDateString('pt-BR'):'—'},status(s){return ({draft:'Rascunho',planned:'Planejado',in_progress:'Em execução',completed:'Concluído',canceled:'Cancelado',archived:'Arquivado'})[s]||s},capacityText(s){return ({available:'Disponível',near_capacity:'Próximo do limite',over_capacity:'Acima da capacidade',unknown_capacity:'Capacidade não informada'})[s]||'Não alocado'},capacityLabel(p){let a=p.allocations||[];return a.length?this.capacityText(a.some(x=>x.capacity_status==='over_capacity')?'over_capacity':a.some(x=>x.capacity_status==='near_capacity')?'near_capacity':a.some(x=>x.capacity_status==='unknown_capacity')?'unknown_capacity':'available'):'Não alocado'},capacityStyle(p){return 'font-weight:600;color:'+(this.capacityLabel(p)==='Acima da capacidade'?'#b91c1c':this.capacityLabel(p)==='Próximo do limite'?'#b45309':'#166534')}}}
+}
+</script>
+{% endblock %}

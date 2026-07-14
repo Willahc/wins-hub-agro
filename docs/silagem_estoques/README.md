@@ -45,6 +45,10 @@ O módulo fornece dados de estoque alimentar para o cálculo de autonomia. O bot
 
 Módulo irmão. Enquanto Pasto Vivo gerencia pastagens vivas (biomassa, lotação, descanso), Silagem e Estoques gerencia insumos armazenados (silagem, feno, concentrados). Ambos alimentam a Autonomia Alimentar com fontes complementares.
 
+### Colheita e Silos
+
+Planos concluídos criam lotes reais e movimentos `initial_balance` neste módulo. Cada lote recebe origem “Colheita e Silos”, referência ao UUID do plano e vínculo persistente pela alocação. Depois da criação, o lote segue independente no ledger de estoque; o plano concluído permanece imutável.
+
 ## Fórmulas (feed_inventory.v1)
 
 ```

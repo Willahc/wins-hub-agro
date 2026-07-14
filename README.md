@@ -51,6 +51,13 @@ docker-compose up -d --build
 
 > O Postgres é exposto apenas em `127.0.0.1`. Toda rota `/api/*` exige sessão autenticada.
 
+## Módulos de alimentação
+
+- Autonomia Alimentar — simulações de oferta e demanda.
+- Pasto Vivo — biomassa e eventos de pastejo.
+- Silagem e Estoques — estruturas, lotes e ledger.
+- Colheita e Silos — planejamento, capacidade e conversão do resultado em lotes (`docs/colheita_silos/`).
+
 ## Segurança
 
 - Segredos só via `.env` (gitignored) — nenhuma credencial hardcoded no código

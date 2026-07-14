@@ -88,6 +88,10 @@ templates.env.globals["enable_pasture_live"] = ENABLE_PASTURE_LIVE
 ENABLE_FEED_INVENTORY = os.getenv("ENABLE_FEED_INVENTORY", "").lower() in {"1", "true", "yes"}
 templates.env.globals["enable_feed_inventory"] = ENABLE_FEED_INVENTORY
 
+# Feature flag para planejamento de Colheita e Silos
+ENABLE_HARVEST_SILOS = os.getenv("ENABLE_HARVEST_SILOS", "").lower() in {"1", "true", "yes"}
+templates.env.globals["enable_harvest_silos"] = ENABLE_HARVEST_SILOS
+
 
 @app.middleware("http")
 async def request_pipeline(request: Request, call_next):
@@ -540,6 +544,11 @@ if ENABLE_FEED_INVENTORY:
     from routers.feed_inventory import router as feed_inventory_router  # noqa: E402
 
     app.include_router(feed_inventory_router)
+
+if ENABLE_HARVEST_SILOS:
+    from routers.harvest_silos import router as harvest_silos_router  # noqa: E402
+
+    app.include_router(harvest_silos_router)
 
 
 # ---------------------------------------------------------------------------
@@ -4132,6 +4141,18 @@ if ENABLE_FEED_INVENTORY:
             return RedirectResponse("/login")
         resp = templates.TemplateResponse("silagem_estoques.html",
             {"request": request, "user": user, "active": "feed_inventory", "app_version": APP_VERSION})
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+
+
+if ENABLE_HARVEST_SILOS:
+    @app.get("/colheita-silos", response_class=HTMLResponse)
+    def harvest_silos_page(request: Request):
+        user = get_current_user(request)
+        if not user:
+            return RedirectResponse("/login")
+        resp = templates.TemplateResponse("colheita_silos.html",
+            {"request": request, "user": user, "active": "harvest_silos", "app_version": APP_VERSION})
         resp.headers["Cache-Control"] = "no-store"
         return resp
 

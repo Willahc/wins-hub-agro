@@ -175,3 +175,7 @@ python3 -m compileall -q app   # somente se a próxima tarefa tocar Python
 ```
 
 Se o HEAD não for o commit acima, revisar diffs e atualizar o inventário antes de implementar.
+
+## Atualização — Módulo 4
+
+Colheita e Silos foi implementado sobre os cadastros e o ledger do Módulo 3. O schema `harvest` contém planos, áreas e alocações; a conclusão cria lotes e saldo inicial de forma atômica e preserva o vínculo. A fonte normativa atual está em `docs/colheita_silos/` e a flag é `ENABLE_HARVEST_SILOS`.

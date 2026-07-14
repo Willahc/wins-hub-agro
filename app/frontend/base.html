@@ -60,6 +60,11 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20"/><path d="M5 20V8l7-5 7 5v12"/><path d="M9 20v-6h6v6"/></svg>
       Silagem e Estoques</a>
     {% endif %}
+    {% if enable_harvest_silos %}
+    <a class="nav-item {% if active=='harvest_silos' %}active{% endif %}" href="/colheita-silos">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20h18M5 20V9l7-6 7 6v11M8 13h8M8 16h8"/></svg>
+      Colheita e Silos</a>
+    {% endif %}
 
     <div class="spacer"></div>
     <a class="nav-item" href="/logout">
