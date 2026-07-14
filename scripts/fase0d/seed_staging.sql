@@ -61,6 +61,11 @@ INSERT INTO foundation.app_users (id, public_id, auth_subject, status)
 OVERRIDING SYSTEM VALUE
 VALUES (10, '60000000-0000-4000-8000-000000000001', 'usr_inactive', 'active');
 
+-- User Mari (System Owner)
+INSERT INTO foundation.app_users (id, public_id, auth_subject, status)
+OVERRIDING SYSTEM VALUE
+VALUES (11, '70000000-0000-4000-8000-000000000001', 'mari@winshubagro.cloud', 'active');
+
 
 -- 2. Criação de Organizações Sintéticas
 -- Org Alfa
@@ -126,6 +131,11 @@ INSERT INTO foundation.organization_memberships (id, public_id, organization_id,
 OVERRIDING SYSTEM VALUE
 VALUES (4, '90000000-0000-4000-8000-000000000004', 1, 4, 'viewer', 'active');
 
+-- Membership Mari
+INSERT INTO foundation.organization_memberships (id, public_id, organization_id, user_id, role, status)
+OVERRIDING SYSTEM VALUE
+VALUES (11, '90000000-0000-4000-8000-000000000011', 1, 11, 'owner', 'active');
+
 -- Memberships Beta
 INSERT INTO foundation.organization_memberships (id, public_id, organization_id, user_id, role, status)
 OVERRIDING SYSTEM VALUE
@@ -177,10 +187,10 @@ OVERRIDING SYSTEM VALUE
 VALUES (4, '80000000-0000-4000-8000-000000000004', 1, 3, 3, 'operate', 'revoked', now());
 
 -- Ajusta os contadores de sequência globais
-SELECT setval(pg_get_serial_sequence('foundation.app_users', 'id'), 11);
+SELECT setval(pg_get_serial_sequence('foundation.app_users', 'id'), 12);
 SELECT setval(pg_get_serial_sequence('foundation.organizations', 'id'), 4);
 SELECT setval(pg_get_serial_sequence('foundation.operational_farms', 'id'), 7);
-SELECT setval(pg_get_serial_sequence('foundation.organization_memberships', 'id'), 11);
+SELECT setval(pg_get_serial_sequence('foundation.organization_memberships', 'id'), 12);
 SELECT setval(pg_get_serial_sequence('foundation.farm_access', 'id'), 5);
 
 -- Semeando tabelas legadas para o inventário
