@@ -4518,7 +4518,9 @@ def campo_page(request: Request):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login")
-    resp = templates.TemplateResponse("campo.html", {"request": request, "user": user, "app_version": APP_VERSION})
+    resp = templates.TemplateResponse("campo.html", {
+        "request": request, "user": user, "active": "campo", "app_version": APP_VERSION,
+    })
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"  # shell nunca cacheado (mata downgrade do app/WebView)
     return resp
 
