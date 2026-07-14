@@ -550,6 +550,15 @@ if ENABLE_HARVEST_SILOS:
 
     app.include_router(harvest_silos_router)
 
+# Feature flag para o módulo de Clima e Janelas Operacionais
+ENABLE_WEATHER_OPERATIONS = os.getenv("ENABLE_WEATHER_OPERATIONS", "").lower() in {"1", "true", "yes"}
+templates.env.globals["enable_weather_operations"] = ENABLE_WEATHER_OPERATIONS
+
+if ENABLE_WEATHER_OPERATIONS:
+    from routers.weather_operations import router as weather_operations_router  # noqa: E402
+
+    app.include_router(weather_operations_router)
+
 
 # ---------------------------------------------------------------------------
 # API — data endpoints
@@ -4153,6 +4162,18 @@ if ENABLE_HARVEST_SILOS:
             return RedirectResponse("/login")
         resp = templates.TemplateResponse("colheita_silos.html",
             {"request": request, "user": user, "active": "harvest_silos", "app_version": APP_VERSION})
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+
+
+if ENABLE_WEATHER_OPERATIONS:
+    @app.get("/clima-operacoes", response_class=HTMLResponse)
+    def weather_operations_page(request: Request):
+        user = get_current_user(request)
+        if not user:
+            return RedirectResponse("/login")
+        resp = templates.TemplateResponse("clima_operacoes.html",
+            {"request": request, "user": user, "active": "weather_operations", "app_version": APP_VERSION})
         resp.headers["Cache-Control"] = "no-store"
         return resp
 

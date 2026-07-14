@@ -65,6 +65,11 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20h18M5 20V9l7-6 7 6v11M8 13h8M8 16h8"/></svg>
       Colheita e Silos</a>
     {% endif %}
+    {% if enable_weather_operations %}
+    <a class="nav-item {% if active=='weather_operations' %}active{% endif %}" href="/clima-operacoes">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>
+      Clima e Operações</a>
+    {% endif %}
 
     <div class="spacer"></div>
     <a class="nav-item" href="/logout">

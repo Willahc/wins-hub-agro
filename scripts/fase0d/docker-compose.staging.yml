@@ -54,6 +54,9 @@ services:
       ENABLE_PASTURE_LIVE: "true"
       ENABLE_FEED_INVENTORY: "true"
       ENABLE_HARVEST_SILOS: "true"
+      ENABLE_WEATHER_OPERATIONS: "true"
+      WEATHER_PROVIDER: "open-meteo"
+      WEATHER_TIMEOUT_SECONDS: "10"
       MARI_EMAIL: "mari@winshubagro.cloud"
       MARI_PASSWORD_HASH: "$$2b$$12$$vT2i6.VrwPS/.GDuQgKXKeXAIJxXaOgF0hSL36AcbxUe2dyH5AOWC"
       TZ: America/Sao_Paulo
