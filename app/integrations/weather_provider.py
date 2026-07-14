@@ -206,7 +206,7 @@ def fetch_daily_forecast(latitude: float, longitude: float, timezone_str: str = 
     raise WeatherProviderError("unknown_provider", f"Provider desconhecido: {WEATHER_PROVIDER}")
 
 
-def fetch_recent_history(latitude: float, longitude: float, days: int = 7) -> dict:
+def fetch_recent_history(latitude: float, longitude: float, timezone_str: str = "auto", days: int = 7) -> dict:
     if WEATHER_PROVIDER == "open-meteo":
         end_date = datetime.now(timezone.utc).date()
         start_date = end_date - timedelta(days=days)

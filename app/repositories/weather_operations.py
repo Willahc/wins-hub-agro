@@ -4,6 +4,7 @@ import json
 from uuid import UUID
 from db import query, _tx, _cur
 from domain.audit import AuditEvent, AuditService
+from psycopg2.extras import Json
 
 
 class WeatherOperationsRepository:
@@ -48,6 +49,7 @@ class WeatherOperationsRepository:
     def create_profile(self, data: dict, user_id: int) -> dict:
         with _tx() as conn:
             cur = _cur(conn)
+            sql_data = {k: str(v) if isinstance(v, UUID) else v for k, v in data.items()}
             cur.execute(
                 """INSERT INTO climate.farm_weather_profiles
                    (public_id, organization_id, farm_id, latitude, longitude, timezone,
@@ -58,7 +60,7 @@ class WeatherOperationsRepository:
                            %(provider)s, %(enabled)s, %(refresh_interval_minutes)s,
                            %(forecast_days)s, %(status)s, %(notes)s, %(created_by_user_id)s)
                    RETURNING id, public_id""",
-                data,
+                sql_data,
             )
             row = cur.fetchone()
             AuditService().record(cur, AuditEvent(
@@ -136,6 +138,14 @@ class WeatherOperationsRepository:
     def save_snapshot(self, data: dict) -> dict:
         with _tx() as conn:
             cur = _cur(conn)
+            sql_data = {}
+            for k, v in data.items():
+                if isinstance(v, UUID):
+                    sql_data[k] = str(v)
+                elif isinstance(v, (dict, list)):
+                    sql_data[k] = Json(v)
+                else:
+                    sql_data[k] = v
             cur.execute(
                 """INSERT INTO climate.weather_snapshots
                    (public_id, organization_id, farm_id, profile_id, snapshot_type,
@@ -148,7 +158,7 @@ class WeatherOperationsRepository:
                            %(provider_reference)s, %(normalization_version)s,
                            %(fetched_at)s, %(expires_at)s, %(stale_after)s, %(checksum)s)
                    RETURNING id, public_id""",
-                data,
+                sql_data,
             )
             row = cur.fetchone()
         return {"id": row["id"], "public_id": row["public_id"]}
@@ -182,6 +192,14 @@ class WeatherOperationsRepository:
     def save_evaluation(self, data: dict) -> dict:
         with _tx() as conn:
             cur = _cur(conn)
+            sql_data = {}
+            for k, v in data.items():
+                if isinstance(v, UUID):
+                    sql_data[k] = str(v)
+                elif isinstance(v, (dict, list)):
+                    sql_data[k] = Json(v)
+                else:
+                    sql_data[k] = v
             cur.execute(
                 """INSERT INTO climate.operational_window_evaluations
                    (public_id, organization_id, farm_id, window_type,
@@ -196,7 +214,7 @@ class WeatherOperationsRepository:
                            %(rule_version)s, %(evaluated_at)s, %(expires_at)s,
                            %(related_harvest_plan_id)s)
                    RETURNING id, public_id""",
-                data,
+                sql_data,
             )
             row = cur.fetchone()
             AuditService().record(cur, AuditEvent(

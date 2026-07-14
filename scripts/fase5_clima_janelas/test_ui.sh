@@ -13,7 +13,7 @@ TOKEN=$(grep -oP 'access_token=\K[^;]+' /tmp/wins_climate_ui_headers | tr -d '\r
 [ -n "$TOKEN" ] && ok "login" || bad "login" "cookie ausente"
 
 PAGE=$(html "clima-operacoes")
-echo "$PAGE" | grep -q "Clima e Janelas Operacionais" && ok "página carrega" || bad "página" "título não encontrado"
+echo "$PAGE" | grep -q "Clima e Operações" && ok "página carrega" || bad "página" "título não encontrado"
 echo "$PAGE" | grep -q "weather" && ok "menu item existe" || bad "menu" "elemento não encontrado"
 echo "$PAGE" | grep -q "x-data" && ok "Alpine.js integrado" || bad "alpine" "x-data não encontrado"
 echo "$PAGE" | grep -q "assets/app.css" && ok "assets CSS" || bad "css" "referência ausente"

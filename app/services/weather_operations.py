@@ -424,13 +424,18 @@ class WeatherService:
             plan_start = plan["expected_start_date"]
             plan_end = plan["expected_end_date"]
             for item in items:
-                d = item.get("date")
-                if d and plan_start <= d <= plan_end:
-                    forecast_items.append(item)
-                    expected_precip += float(item.get("precipitation_sum_mm") or 0)
-                    prob = float(item.get("precipitation_probability_max") or 0)
-                    if prob > max_probability:
-                        max_probability = prob
+                d_str = item.get("date")
+                if d_str:
+                    try:
+                        d = datetime.strptime(str(d_str), "%Y-%m-%d").date()
+                    except ValueError:
+                        continue
+                    if plan_start <= d <= plan_end:
+                        forecast_items.append(item)
+                        expected_precip += float(item.get("precipitation_sum_mm") or 0)
+                        prob = float(item.get("precipitation_probability_max") or 0)
+                        if prob > max_probability:
+                            max_probability = prob
         risk_factors = []
         warnings = []
         if expected_precip > 5:

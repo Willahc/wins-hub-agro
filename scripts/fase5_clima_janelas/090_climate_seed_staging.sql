@@ -11,6 +11,8 @@ DECLARE
   v_profile_uuid uuid := 'b1000000-0000-4000-8000-000000000001';
   v_profile_id bigint;
   v_now timestamptz := now();
+  v_daily_json jsonb;
+  v_history_json jsonb;
 BEGIN
   SELECT id INTO v_org_id FROM foundation.organizations WHERE status = 'active' LIMIT 1;
   SELECT f.id INTO v_farm_id FROM foundation.operational_farms f
@@ -52,7 +54,13 @@ BEGIN
        v_now + interval '20 minutes', 'seed_current_001')
     ON CONFLICT DO NOTHING;
 
-    -- Snapshot de previsão diária sintética
+    -- Snapshot de previsão diária sintética (usa jsonb_build_array)
+    v_daily_json := jsonb_build_array(
+      jsonb_build_object('date', (current_date)::text, 'temperature_min_c', 18, 'temperature_max_c', 32, 'precipitation_sum_mm', 0, 'precipitation_probability_max', 10, 'wind_speed_max_kmh', 20, 'wind_gusts_max_kmh', 30),
+      jsonb_build_object('date', (current_date + 1)::text, 'temperature_min_c', 19, 'temperature_max_c', 33, 'precipitation_sum_mm', 2.5, 'precipitation_probability_max', 45, 'wind_speed_max_kmh', 25, 'wind_gusts_max_kmh', 35),
+      jsonb_build_object('date', (current_date + 2)::text, 'temperature_min_c', 20, 'temperature_max_c', 31, 'precipitation_sum_mm', 8.0, 'precipitation_probability_max', 80, 'wind_speed_max_kmh', 30, 'wind_gusts_max_kmh', 45)
+    );
+
     INSERT INTO climate.weather_snapshots
       (public_id, organization_id, farm_id, profile_id, snapshot_type,
        period_start, period_end, payload_normalized, provider,
@@ -60,14 +68,22 @@ BEGIN
     VALUES
       (gen_random_uuid(), v_org_id, v_farm_id, v_profile_id, 'daily_forecast',
        v_now, v_now + interval '7 days',
-       '[{"date": "' || (current_date)::text || '", "temperature_min_c": 18, "temperature_max_c": 32, "precipitation_sum_mm": 0, "precipitation_probability_max": 10, "wind_speed_max_kmh": 20, "wind_gusts_max_kmh": 30},
-         {"date": "' || (current_date + 1)::text || '", "temperature_min_c": 19, "temperature_max_c": 33, "precipitation_sum_mm": 2.5, "precipitation_probability_max": 45, "wind_speed_max_kmh": 25, "wind_gusts_max_kmh": 35},
-         {"date": "' || (current_date + 2)::text || '", "temperature_min_c": 20, "temperature_max_c": 31, "precipitation_sum_mm": 8.0, "precipitation_probability_max": 80, "wind_speed_max_kmh": 30, "wind_gusts_max_kmh": 45}]'::jsonb,
+       v_daily_json,
        'open-meteo', 'weather_normalization.v1', v_now, v_now + interval '2 hours',
        v_now + interval '2 hours', 'seed_daily_001')
     ON CONFLICT DO NOTHING;
 
-    -- Snapshot de histórico recente sintético
+    -- Snapshot de histórico recente sintético (usa jsonb_build_array)
+    v_history_json := jsonb_build_array(
+      jsonb_build_object('date', (current_date - 6)::text, 'precipitation_sum_mm', 0, 'temperature_min_c', 17, 'temperature_max_c', 30),
+      jsonb_build_object('date', (current_date - 5)::text, 'precipitation_sum_mm', 5.2, 'temperature_min_c', 18, 'temperature_max_c', 28),
+      jsonb_build_object('date', (current_date - 4)::text, 'precipitation_sum_mm', 12.0, 'temperature_min_c', 19, 'temperature_max_c', 27),
+      jsonb_build_object('date', (current_date - 3)::text, 'precipitation_sum_mm', 0, 'temperature_min_c', 20, 'temperature_max_c', 31),
+      jsonb_build_object('date', (current_date - 2)::text, 'precipitation_sum_mm', 0, 'temperature_min_c', 21, 'temperature_max_c', 32),
+      jsonb_build_object('date', (current_date - 1)::text, 'precipitation_sum_mm', 1.5, 'temperature_min_c', 19, 'temperature_max_c', 29),
+      jsonb_build_object('date', (current_date)::text, 'precipitation_sum_mm', 0, 'temperature_min_c', 18, 'temperature_max_c', 32)
+    );
+
     INSERT INTO climate.weather_snapshots
       (public_id, organization_id, farm_id, profile_id, snapshot_type,
        period_start, period_end, payload_normalized, provider,
@@ -75,13 +91,7 @@ BEGIN
     VALUES
       (gen_random_uuid(), v_org_id, v_farm_id, v_profile_id, 'recent_history',
        v_now - interval '7 days', v_now,
-       '[{"date": "' || (current_date - 6)::text || '", "precipitation_sum_mm": 0, "temperature_min_c": 17, "temperature_max_c": 30},
-         {"date": "' || (current_date - 5)::text || '", "precipitation_sum_mm": 5.2, "temperature_min_c": 18, "temperature_max_c": 28},
-         {"date": "' || (current_date - 4)::text || '", "precipitation_sum_mm": 12.0, "temperature_min_c": 19, "temperature_max_c": 27},
-         {"date": "' || (current_date - 3)::text || '", "precipitation_sum_mm": 0, "temperature_min_c": 20, "temperature_max_c": 31},
-         {"date": "' || (current_date - 2)::text || '", "precipitation_sum_mm": 0, "temperature_min_c": 21, "temperature_max_c": 32},
-         {"date": "' || (current_date - 1)::text || '", "precipitation_sum_mm": 1.5, "temperature_min_c": 19, "temperature_max_c": 29},
-         {"date": "' || (current_date)::text || '", "precipitation_sum_mm": 0, "temperature_min_c": 18, "temperature_max_c": 32}]'::jsonb,
+       v_history_json,
        'open-meteo', 'weather_normalization.v1', v_now, v_now + interval '12 hours',
        v_now + interval '12 hours', 'seed_history_001')
     ON CONFLICT DO NOTHING;
