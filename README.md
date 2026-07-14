@@ -57,6 +57,7 @@ docker-compose up -d --build
 - Pasto Vivo — biomassa e eventos de pastejo.
 - Silagem e Estoques — estruturas, lotes e ledger.
 - Colheita e Silos — planejamento, capacidade e conversão do resultado em lotes (`docs/colheita_silos/`).
+- Clima e Operações — previsão do tempo, janelas operacionais, integrações com Pasto Vivo e Colheita (`docs/clima_operacoes/`).
 
 ## Segurança
 

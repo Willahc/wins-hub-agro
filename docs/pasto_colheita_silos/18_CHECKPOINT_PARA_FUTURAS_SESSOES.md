@@ -179,3 +179,7 @@ Se o HEAD não for o commit acima, revisar diffs e atualizar o inventário antes
 ## Atualização — Módulo 4
 
 Colheita e Silos foi implementado sobre os cadastros e o ledger do Módulo 3. O schema `harvest` contém planos, áreas e alocações; a conclusão cria lotes e saldo inicial de forma atômica e preserva o vínculo. A fonte normativa atual está em `docs/colheita_silos/` e a flag é `ENABLE_HARVEST_SILOS`.
+
+## Atualização — Módulo 5
+
+Clima e Operações foi implementado com provedor Open-Meteo, normalização, scoring e janelas operacionais. O schema `climate` contém perfis, snapshots e avaliações. Integrações com Pasto Vivo e Colheita como contexto. A documentação está em `docs/clima_operacoes/` e a flag é `ENABLE_WEATHER_OPERATIONS`.

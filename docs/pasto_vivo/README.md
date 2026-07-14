@@ -41,6 +41,7 @@ cd app && python3 -m unittest discover -s tests -p 'test_pasto_vivo_*.py' -v
 
 - **Autonomia Alimentar**: Importação de dados de pastagem para cálculos nutricionais
 - **Gestão de Animais**: Dados de lotação e pastejo
+- **Clima e Operações**: Contexto climático no dashboard (chuva, temperatura, vento)
 
 ## Módulos Irmãos
 
